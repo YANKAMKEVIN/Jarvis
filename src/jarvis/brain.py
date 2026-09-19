@@ -40,6 +40,9 @@ Actions disponibles :
 open_app
 → ouvrir une application macOS
 
+close_app
+→ fermer ou quitter une application macOS
+
 conversation
 → aucune action à exécuter
 
@@ -56,6 +59,14 @@ Réponse :
 Message : Lance Spotify
 Réponse :
 {{"action":"open_app","target":"Spotify"}}
+
+Message : Ferme Safari
+Réponse :
+{{"action":"close_app","target":"Safari"}}
+
+Message : Quitte Spotify
+Réponse :
+{{"action":"close_app","target":"Spotify"}}
 
 Message : Peux-tu ouvrir Notes ?
 Réponse :

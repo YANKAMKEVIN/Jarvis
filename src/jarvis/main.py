@@ -79,6 +79,15 @@ def start_jarvis():
                 print(f"Jarvis > {result}")
                 continue
 
+            if intent.action == "close_app":
+                if not intent.target:
+                    print("Jarvis > Quelle application dois-je fermer ?")
+                    continue
+
+                result = tools.close_app(intent.target)
+                print(f"Jarvis > {result}")
+                continue
+
             print("Jarvis > Cette action n'est pas encore disponible.")
 
         except Exception as error:

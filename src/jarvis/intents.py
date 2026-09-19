@@ -17,6 +17,7 @@ class Intent:
 
 ALLOWED_ACTIONS = {
     "open_app": RiskLevel.SAFE,
+    "close_app": RiskLevel.SAFE,
     "get_time": RiskLevel.SAFE,
     "conversation": RiskLevel.SAFE,
 }
