@@ -43,6 +43,24 @@ open_app
 close_app
 → fermer ou quitter une application macOS
 
+open_url
+→ ouvrir directement un site internet
+
+web_search
+→ effectuer une recherche sur le Web
+
+get_date
+→ donner la date actuelle
+
+set_volume
+→ régler le volume du Mac entre 0 et 100
+
+mute
+→ couper le son du Mac
+
+unmute
+→ réactiver le son du Mac
+
 conversation
 → aucune action à exécuter
 
@@ -75,6 +93,34 @@ Réponse :
 Message : Explique-moi ce qu'est Spotify
 Réponse :
 {{"action":"conversation","target":null}}
+
+Message : Ouvre youtube.com
+Réponse :
+{{"action":"open_url","target":"youtube.com"}}
+
+Message : Va sur wikipedia.org
+Réponse :
+{{"action":"open_url","target":"wikipedia.org"}}
+
+Message : Recherche les actualites sur l'intelligence artificielle
+Réponse :
+{{"action":"web_search","target":"actualites intelligence artificielle"}}
+
+Message : Quelle date sommes-nous ?
+Réponse :
+{{"action":"get_date","target":null}}
+
+Message : Mets le volume a 30 %
+Réponse :
+{{"action":"set_volume","target":"30"}}
+
+Message : Coupe le son
+Réponse :
+{{"action":"mute","target":null}}
+
+Message : Remets le son
+Réponse :
+{{"action":"unmute","target":null}}
 
 Message : Comment vas-tu ?
 Réponse :

@@ -18,7 +18,13 @@ class Intent:
 ALLOWED_ACTIONS = {
     "open_app": RiskLevel.SAFE,
     "close_app": RiskLevel.SAFE,
+    "open_url": RiskLevel.SAFE,
+    "web_search": RiskLevel.SAFE,
     "get_time": RiskLevel.SAFE,
+    "get_date": RiskLevel.SAFE,
+    "set_volume": RiskLevel.SAFE,
+    "mute": RiskLevel.SAFE,
+    "unmute": RiskLevel.SAFE,
     "conversation": RiskLevel.SAFE,
 }
 

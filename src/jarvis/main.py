@@ -88,6 +88,54 @@ def start_jarvis():
                 print(f"Jarvis > {result}")
                 continue
 
+            if intent.action == "open_url":
+                if not intent.target:
+                    print("Jarvis > Quel site dois-je ouvrir ?")
+                    continue
+
+                result = tools.open_url(intent.target)
+                print(f"Jarvis > {result}")
+                continue
+
+            if intent.action == "web_search":
+                if not intent.target:
+                    print("Jarvis > Que dois-je rechercher ?")
+                    continue
+
+                result = tools.web_search(intent.target)
+                print(f"Jarvis > {result}")
+                continue
+
+            if intent.action == "get_date":
+                result = tools.get_date()
+                print(f"Jarvis > Nous sommes le {result}.")
+                continue
+
+            if intent.action == "set_volume":
+                if intent.target is None:
+                    print("Jarvis > A quel niveau dois-je regler le volume ?")
+                    continue
+
+                try:
+                    level = int(intent.target)
+                except (TypeError, ValueError):
+                    print("Jarvis > Je n'ai pas compris le niveau du volume.")
+                    continue
+
+                result = tools.set_volume(level)
+                print(f"Jarvis > {result}")
+                continue
+
+            if intent.action == "mute":
+                result = tools.mute()
+                print(f"Jarvis > {result}")
+                continue
+
+            if intent.action == "unmute":
+                result = tools.unmute()
+                print(f"Jarvis > {result}")
+                continue
+
             print("Jarvis > Cette action n'est pas encore disponible.")
 
         except Exception as error:
