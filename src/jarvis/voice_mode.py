@@ -1,15 +1,96 @@
+import re
+import unicodedata
+
 from jarvis.executor import CommandExecutor
 from jarvis.speech import VoiceOutput
 from jarvis.voice import VoiceInput
 
 
-EXIT_COMMANDS = {
+EXIT_PHRASES = {
     "au revoir",
-    "arrête-toi",
-    "arrete-toi",
+    "arrete toi",
+    "on va s arreter la",
+    "on s arrete la",
     "stop",
     "quitte",
 }
+
+
+def normalize_text(text: str) -> str:
+    """
+    Normalise une phrase pour faciliter la detection
+    des commandes vocales.
+    """
+    text = text.lower()
+
+    # Retire les accents.
+    text = "".join(
+        char
+        for char in unicodedata.normalize("NFD", text)
+        if unicodedata.category(char) != "Mn"
+    )
+
+    # Remplace la ponctuation par des espaces.
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+
+    # Supprime les espaces multiples.
+    return " ".join(text.split())
+
+
+def is_exit_command(command: str) -> bool:
+    """
+    Detecte une intention claire de terminer Jarvis.
+
+    On evite volontairement de quitter si l'utilisateur
+    mentionne simplement l'expression "au revoir".
+    """
+    normalized = normalize_text(command)
+
+    # Commandes exactes.
+    if normalized in EXIT_PHRASES:
+        return True
+
+    # Formulations naturelles de fin de conversation.
+    farewell_patterns = [
+        r"^au revoir(?: jarvis)?$",
+        r"^(?:merci|merci jarvis) au revoir(?: jarvis)?$",
+        r"\bon va s arreter la(?: jarvis)?(?: au revoir)?$",
+        r"\bon s arrete la(?: jarvis)?(?: au revoir)?$",
+        r"\bc est tout(?: pour aujourd hui)?(?: jarvis)?(?: au revoir)?$",
+    ]
+
+    if any(
+        re.search(pattern, normalized)
+        for pattern in farewell_patterns
+    ):
+        return True
+
+    # Ordres explicites pour arreter Jarvis.
+    stop_patterns = [
+        r"^arrete toi(?: jarvis)?$",
+        r"^jarvis arrete toi$",
+        r"^quitte(?: jarvis)?$",
+        r"^stop(?: jarvis)?$",
+    ]
+
+    return any(
+        re.search(pattern, normalized)
+        for pattern in stop_patterns
+    )
+
+
+def is_confirmation(command: str) -> bool:
+    """
+    Detecte une confirmation vocale simple.
+    """
+    normalized = normalize_text(command)
+
+    return normalized in {
+        "oui",
+        "oui jarvis",
+        "je confirme",
+        "confirme",
+    }
 
 
 class VoiceMode:
@@ -33,22 +114,28 @@ class VoiceMode:
             try:
                 command = self.voice.listen()
 
+                # Si une fausse detection audio ne produit
+                # aucun texte, Jarvis recommence simplement
+                # a ecouter sans parler.
                 if not command:
-                    print("Jarvis > Je n'ai rien entendu.")
                     continue
 
                 print(f"Vous > {command}")
 
-                normalized = command.lower().strip().rstrip(".!?")
-
-                if normalized in EXIT_COMMANDS:
+                # Detection naturelle de fin de conversation.
+                if is_exit_command(command):
                     message = "À bientôt."
+
                     print(f"Jarvis > {message}")
                     self.speech.speak(message)
+
                     break
 
+                # Envoi de la commande au moteur commun.
                 result = self.executor.execute(command)
 
+                # Gestion des actions necessitant
+                # une confirmation.
                 if result.needs_confirmation:
                     message = (
                         "Cette action nécessite votre confirmation. "
@@ -59,17 +146,16 @@ class VoiceMode:
                     self.speech.speak(message)
 
                     confirmation = self.voice.listen()
-                    print(f"Vous > {confirmation}")
 
-                    if confirmation.lower().strip().rstrip(".!?") not in {
-                        "oui",
-                        "oui jarvis",
-                        "je confirme",
-                        "confirme",
-                    }:
+                    if confirmation:
+                        print(f"Vous > {confirmation}")
+
+                    if not is_confirmation(confirmation):
                         message = "Action annulée."
+
                         print(f"Jarvis > {message}")
                         self.speech.speak(message)
+
                         continue
 
                     result = self.executor.execute(
@@ -77,6 +163,7 @@ class VoiceMode:
                         confirmed=True,
                     )
 
+                # Reponse finale.
                 print(f"Jarvis > {result.message}")
                 self.speech.speak(result.message)
 
