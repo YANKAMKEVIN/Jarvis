@@ -85,6 +85,21 @@ class MacOSTools:
 
         return f"Volume regle a {level} %."
 
+    def get_volume(self) -> int:
+        result = subprocess.run(
+            [
+                "osascript",
+                "-e",
+                "output volume of (get volume settings)",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        return int(result.stdout.strip())
+
     def mute(self) -> str:
         subprocess.run(
             ["osascript", "-e", "set volume output muted true"],
