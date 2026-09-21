@@ -62,12 +62,28 @@ class RecordingLiveSecurity:
 
 
 class RecordingLiveMacOSTools:
-    def __init__(self, error=None, volume=40, get_error=None):
+    def __init__(
+        self,
+        error=None,
+        volume=40,
+        get_error=None,
+        app_running=True,
+        open_error=None,
+        close_error=None,
+        running_error=None,
+    ):
         self.error = error
         self.volume = volume
         self.get_error = get_error
+        self.app_running = app_running
+        self.open_error = open_error
+        self.close_error = close_error
+        self.running_error = running_error
         self.calls = []
         self.get_calls = 0
+        self.open_calls = []
+        self.close_calls = []
+        self.running_calls = []
 
     def set_volume(self, level):
         self.calls.append(level)
@@ -84,6 +100,30 @@ class RecordingLiveMacOSTools:
             raise self.get_error
 
         return self.volume
+
+    def open_app(self, app_name):
+        self.open_calls.append(app_name)
+
+        if self.open_error is not None:
+            raise self.open_error
+
+        return f"{app_name} a ete ouvert."
+
+    def close_app(self, app_name):
+        self.close_calls.append(app_name)
+
+        if self.close_error is not None:
+            raise self.close_error
+
+        return f"{app_name} a ete ferme."
+
+    def is_app_running(self, app_name):
+        self.running_calls.append(app_name)
+
+        if self.running_error is not None:
+            raise self.running_error
+
+        return self.app_running
 
 
 class LivePocConfigTest(unittest.TestCase):
@@ -190,7 +230,13 @@ class LivePocAgentTest(unittest.TestCase):
         self.assertEqual(assistant.kwargs["instructions"], LIVE_SYSTEM_PROMPT)
         self.assertEqual(
             sorted(tool.info.name for tool in assistant.kwargs["tools"]),
-            ["get_volume", "set_volume"],
+            [
+                "close_app",
+                "get_volume",
+                "is_app_running",
+                "open_app",
+                "set_volume",
+            ],
         )
 
     def test_live_agent_exposes_module_level_server_for_livekit_cli(self):
@@ -252,16 +298,23 @@ class LivePocAgentTest(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertNotIn(fragment, live_source)
 
-    def test_tool_registry_exposes_audio_tools(self):
+    def test_tool_registry_exposes_audio_and_app_tools(self):
         registry = ToolRegistry(
             audio_capability=object(),
+            app_capability=object(),
         )
 
         tools = registry.livekit_tools()
 
         self.assertEqual(
             sorted(tool.info.name for tool in tools),
-            ["get_volume", "set_volume"],
+            [
+                "close_app",
+                "get_volume",
+                "is_app_running",
+                "open_app",
+                "set_volume",
+            ],
         )
 
 
@@ -443,6 +496,167 @@ class LiveGetVolumeToolTest(unittest.TestCase):
 
         self.assertTrue(hasattr(result, "__await__"))
         self.assertTrue(asyncio.run(result)["ok"])
+
+
+class LiveAppToolTest(unittest.TestCase):
+    def make_tools(self, security=None, macos_tools=None):
+        tools = create_live_tools(
+            security=security or RecordingLiveSecurity(),
+            macos_tools=macos_tools or RecordingLiveMacOSTools(),
+        )
+        return {
+            tool.info.name: tool
+            for tool in tools
+        }
+
+    def test_open_app_success_returns_structured_result(self):
+        security = RecordingLiveSecurity()
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(
+            security=security,
+            macos_tools=macos_tools,
+        )["open_app"]
+
+        result = asyncio.run(tool("Safari"))
+
+        self.assertEqual(len(security.intents), 1)
+        self.assertEqual(security.intents[0].action, "open_app")
+        self.assertEqual(security.intents[0].target, "Safari")
+        self.assertEqual(macos_tools.open_calls, ["Safari"])
+        self.assertEqual(
+            result,
+            {
+                "ok": True,
+                "action": "open_app",
+                "target": "Safari",
+                "message": "Safari a ete ouvert.",
+            },
+        )
+
+    def test_close_app_success_returns_structured_result(self):
+        security = RecordingLiveSecurity()
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(
+            security=security,
+            macos_tools=macos_tools,
+        )["close_app"]
+
+        result = asyncio.run(tool("Spotify"))
+
+        self.assertEqual(len(security.intents), 1)
+        self.assertEqual(security.intents[0].action, "close_app")
+        self.assertEqual(security.intents[0].target, "Spotify")
+        self.assertEqual(macos_tools.close_calls, ["Spotify"])
+        self.assertEqual(
+            result,
+            {
+                "ok": True,
+                "action": "close_app",
+                "target": "Spotify",
+                "message": "Spotify a ete ferme.",
+            },
+        )
+
+    def test_is_app_running_true_returns_structured_result(self):
+        macos_tools = RecordingLiveMacOSTools(app_running=True)
+        tool = self.make_tools(macos_tools=macos_tools)["is_app_running"]
+
+        result = asyncio.run(tool("Safari"))
+
+        self.assertEqual(macos_tools.running_calls, ["Safari"])
+        self.assertEqual(
+            result,
+            {
+                "ok": True,
+                "action": "is_app_running",
+                "target": "Safari",
+                "running": True,
+                "message": "Safari est actuellement ouvert.",
+            },
+        )
+
+    def test_is_app_running_false_returns_structured_result(self):
+        macos_tools = RecordingLiveMacOSTools(app_running=False)
+        tool = self.make_tools(macos_tools=macos_tools)["is_app_running"]
+
+        result = asyncio.run(tool("Spotify"))
+
+        self.assertEqual(
+            result,
+            {
+                "ok": True,
+                "action": "is_app_running",
+                "target": "Spotify",
+                "running": False,
+                "message": "Spotify n'est pas ouvert actuellement.",
+            },
+        )
+
+    def test_open_app_security_refusal_does_not_call_macos_tools(self):
+        security = RecordingLiveSecurity(allowed=False)
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(
+            security=security,
+            macos_tools=macos_tools,
+        )["open_app"]
+
+        result = asyncio.run(tool("Safari"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "open_app")
+        self.assertIn("pas autorise", result["message"])
+        self.assertEqual(macos_tools.open_calls, [])
+
+    def test_open_app_macos_failure_returns_explicit_failure(self):
+        macos_tools = RecordingLiveMacOSTools(
+            open_error=RuntimeError("open failed"),
+        )
+        tool = self.make_tools(macos_tools=macos_tools)["open_app"]
+
+        result = asyncio.run(tool("Safari"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "open_app")
+        self.assertIn("open failed", result["message"])
+        self.assertEqual(macos_tools.open_calls, ["Safari"])
+
+    def test_app_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        self.assertEqual(tools["open_app"].info.name, "open_app")
+        self.assertIn("application", tools["open_app"].info.description.lower())
+        self.assertEqual(tools["close_app"].info.name, "close_app")
+        self.assertIn("ferme", tools["close_app"].info.description.lower())
+        self.assertEqual(tools["is_app_running"].info.name, "is_app_running")
+        self.assertIn("ouverte", tools["is_app_running"].info.description.lower())
+
+    def test_app_tool_returns_awaitable_result_for_livekit(self):
+        tool = self.make_tools()["open_app"]
+
+        result = tool("Safari")
+
+        self.assertTrue(hasattr(result, "__await__"))
+        self.assertTrue(asyncio.run(result)["ok"])
+
+    def test_live_tools_use_to_thread_for_app_capability(self):
+        calls = []
+
+        async def fake_to_thread(func, *args):
+            calls.append((func.__name__, args))
+            return func(*args)
+
+        with patch("jarvis.live.registry.asyncio.to_thread", fake_to_thread):
+            tool = self.make_tools()["open_app"]
+            result = asyncio.run(tool("Safari"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(calls, [("open_app", ("Safari",))])
+
+    def test_audio_tools_remain_exposed(self):
+        tools = self.make_tools()
+
+        self.assertIn("get_volume", tools)
+        self.assertIn("set_volume", tools)
 
 
 if __name__ == "__main__":

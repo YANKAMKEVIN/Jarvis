@@ -42,6 +42,26 @@ class MacOSTools:
 
         return f"{app_name} a ete ferme."
 
+    def is_app_running(self, app_name: str) -> bool:
+        if not app_name or not app_name.strip():
+            raise ValueError("Nom d'application manquant.")
+
+        safe_name = app_name.replace("\\", "\\\\").replace('"', '\\"')
+        script = f'application "{safe_name}" is running'
+
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode != 0:
+            error = result.stderr.strip() or "Erreur macOS inconnue."
+            raise RuntimeError(error)
+
+        return result.stdout.strip().lower() == "true"
+
     def open_url(self, url: str) -> str:
         if not url or not url.strip():
             raise ValueError("URL manquante.")
