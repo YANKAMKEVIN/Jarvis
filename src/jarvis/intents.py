@@ -28,6 +28,8 @@ ALLOWED_ACTIONS = {
     "play_pause": RiskLevel.SAFE,
     "next_track": RiskLevel.SAFE,
     "previous_track": RiskLevel.SAFE,
+    "set_brightness": RiskLevel.SAFE,
+    "lock_screen": RiskLevel.SAFE,
     "conversation": RiskLevel.SAFE,
 }
 

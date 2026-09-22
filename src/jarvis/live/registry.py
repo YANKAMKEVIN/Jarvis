@@ -6,6 +6,7 @@ from livekit.agents import function_tool
 from jarvis.capabilities.apps import AppCapability
 from jarvis.capabilities.audio import AudioCapability
 from jarvis.capabilities.media import MediaCapability
+from jarvis.capabilities.system import SystemCapability
 from jarvis.live.config import debug_live
 
 
@@ -15,6 +16,7 @@ class ToolRegistry:
         audio_capability=None,
         app_capability=None,
         media_capability=None,
+        system_capability=None,
     ):
         self.audio = (
             audio_capability
@@ -30,6 +32,11 @@ class ToolRegistry:
             media_capability
             if media_capability is not None
             else MediaCapability()
+        )
+        self.system = (
+            system_capability
+            if system_capability is not None
+            else SystemCapability()
         )
         self.media_lock = asyncio.Lock()
 
@@ -242,6 +249,76 @@ class ToolRegistry:
             self._debug_tool_result("get_media_state", result)
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="get_battery_status",
+            description=(
+                "Lit l'etat reel de la batterie du Mac : pourcentage, charge "
+                "en cours et alimentation secteur."
+            ),
+        )
+        async def get_battery_status() -> dict:
+            """Read the current Mac battery status."""
+            debug_live("tool_call", tool="get_battery_status")
+            result = await asyncio.to_thread(self.system.get_battery_status)
+            self._debug_tool_result("get_battery_status", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="get_system_info",
+            description=(
+                "Lit les informations materielles reelles du Mac utilise, "
+                "comme le modele, l'identifiant modele, la puce et la memoire."
+            ),
+        )
+        async def get_system_info() -> dict:
+            """Read current Mac hardware information."""
+            debug_live("tool_call", tool="get_system_info")
+            result = await asyncio.to_thread(self.system.get_system_info)
+            self._debug_tool_result("get_system_info", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="get_brightness",
+            description=(
+                "Lit la luminosite actuelle de l'ecran principal du Mac. "
+                "Utilise ce tool quand l'utilisateur demande la luminosite actuelle."
+            ),
+        )
+        async def get_brightness() -> dict:
+            """Read the current main display brightness."""
+            debug_live("tool_call", tool="get_brightness")
+            result = await asyncio.to_thread(self.system.get_brightness)
+            self._debug_tool_result("get_brightness", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="set_brightness",
+            description=(
+                "Regle la luminosite de l'ecran principal du Mac a une valeur "
+                "entiere entre 0 et 100, puis retourne la luminosite observee."
+            ),
+        )
+        async def set_brightness(level: int) -> dict:
+            """Set the main display brightness to a value between 0 and 100."""
+            debug_live("tool_call", tool="set_brightness", level=level)
+            result = await asyncio.to_thread(self.system.set_brightness, level)
+            self._debug_tool_result("set_brightness", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="lock_screen",
+            description=(
+                "Verrouille la session du Mac. Utilise ce tool uniquement "
+                "quand l'utilisateur demande explicitement de verrouiller son Mac."
+            ),
+        )
+        async def lock_screen() -> dict:
+            """Lock the current Mac session."""
+            debug_live("tool_call", tool="lock_screen")
+            result = await asyncio.to_thread(self.system.lock_screen)
+            self._debug_tool_result("lock_screen", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
@@ -252,6 +329,11 @@ class ToolRegistry:
             next_track,
             previous_track,
             get_media_state,
+            get_battery_status,
+            get_system_info,
+            get_brightness,
+            set_brightness,
+            lock_screen,
         ]
 
     @staticmethod
@@ -278,6 +360,7 @@ def create_live_tools(
     audio_capability=None,
     app_capability=None,
     media_capability=None,
+    system_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -297,8 +380,15 @@ def create_live_tools(
             macos_tools=macos_tools,
         )
 
+    if system_capability is None:
+        system_capability = SystemCapability(
+            security=security,
+            macos_tools=macos_tools,
+        )
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
         media_capability=media_capability,
+        system_capability=system_capability,
     ).livekit_tools()

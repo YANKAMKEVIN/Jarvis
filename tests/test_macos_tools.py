@@ -127,6 +127,160 @@ class MacOSToolsTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "State check failed"):
                 MacOSTools().is_app_running("Spotify")
 
+    def test_get_battery_status_parses_charging_battery(self):
+        output = (
+            "Now drawing from 'AC Power'\n"
+            " -InternalBattery-0 (id=1234567)\t74%; charging; 1:20 remaining present: true\n"
+        )
+
+        with patch(
+            "jarvis.tools.macos.subprocess.run",
+            return_value=FakeCompletedProcess(stdout=output),
+        ) as run:
+            status = MacOSTools().get_battery_status()
+
+        self.assertEqual(status["percentage"], 74)
+        self.assertTrue(status["charging"])
+        self.assertTrue(status["external_power"])
+        run.assert_called_once_with(
+            ["pmset", "-g", "batt"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+    def test_get_battery_status_parses_non_charging_battery(self):
+        output = (
+            "Now drawing from 'Battery Power'\n"
+            " -InternalBattery-0 (id=1234567)\t42%; discharging; 4:00 remaining present: true\n"
+        )
+
+        with patch(
+            "jarvis.tools.macos.subprocess.run",
+            return_value=FakeCompletedProcess(stdout=output),
+        ):
+            status = MacOSTools().get_battery_status()
+
+        self.assertEqual(status["percentage"], 42)
+        self.assertFalse(status["charging"])
+        self.assertFalse(status["external_power"])
+
+    def test_get_battery_status_raises_on_error(self):
+        with patch(
+            "jarvis.tools.macos.subprocess.run",
+            return_value=FakeCompletedProcess(returncode=1, stderr="pmset failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "pmset failed"):
+                MacOSTools().get_battery_status()
+
+    def test_get_system_info_parses_system_profiler_json(self):
+        payload = (
+            '{"SPHardwareDataType":[{"machine_name":"MacBook Pro",'
+            '"machine_model":"Mac15,3","chip_type":"Apple M3",'
+            '"physical_memory":"8 GB","serial_number":"TEST123"}]}'
+        )
+
+        with patch(
+            "jarvis.tools.macos.subprocess.run",
+            return_value=FakeCompletedProcess(stdout=payload),
+        ) as run:
+            info = MacOSTools().get_system_info()
+
+        self.assertEqual(info["model_name"], "MacBook Pro")
+        self.assertEqual(info["model_identifier"], "Mac15,3")
+        self.assertEqual(info["chip"], "Apple M3")
+        self.assertEqual(info["memory"], "8 GB")
+        run.assert_called_once_with(
+            ["system_profiler", "SPHardwareDataType", "-json"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+
+    def test_get_brightness_reads_display_brightness(self):
+        tools = MacOSTools()
+
+        with patch.object(tools, "_get_display_brightness", return_value=0.42):
+            brightness = tools.get_brightness()
+
+        self.assertEqual(brightness, 42)
+
+    def test_set_brightness_sets_and_reads_observed_value(self):
+        tools = MacOSTools()
+
+        with patch.object(tools, "_set_display_brightness") as set_brightness:
+            with patch.object(tools, "get_brightness", return_value=31):
+                state = tools.set_brightness(30)
+
+        set_brightness.assert_called_once_with(0.3)
+        self.assertEqual(
+            state,
+            {
+                "requested_brightness": 30,
+                "brightness": 31,
+            },
+        )
+
+    def test_set_brightness_rejects_out_of_range_before_backend(self):
+        tools = MacOSTools()
+
+        with patch.object(tools, "_set_display_brightness") as set_brightness:
+            with self.assertRaisesRegex(ValueError, "0 et 100"):
+                tools.set_brightness(101)
+
+        set_brightness.assert_not_called()
+
+    def test_lock_screen_uses_system_events_shortcut_without_real_lock(self):
+        with patch.object(MacOSTools, "_read_lock_screen_state", return_value=None):
+            with patch(
+                "jarvis.tools.macos.subprocess.run",
+                return_value=FakeCompletedProcess(),
+            ) as run:
+                state = MacOSTools().lock_screen()
+
+        self.assertEqual(
+            state,
+            {
+                "command_executed": True,
+                "state_confirmed": False,
+                "locked": None,
+                "backend": "system_events_control_command_q",
+            },
+        )
+        run.assert_called_once_with(
+            [
+                "osascript",
+                "-e",
+                (
+                    'tell application "System Events" '
+                    'to key code 12 using {control down, command down}'
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+    def test_lock_screen_can_return_confirmed_state_when_backend_confirms_it(self):
+        with patch.object(MacOSTools, "_read_lock_screen_state", return_value=True):
+            with patch(
+                "jarvis.tools.macos.subprocess.run",
+                return_value=FakeCompletedProcess(),
+            ):
+                state = MacOSTools().lock_screen()
+
+        self.assertTrue(state["command_executed"])
+        self.assertTrue(state["state_confirmed"])
+        self.assertTrue(state["locked"])
+
+    def test_lock_screen_raises_on_error(self):
+        with patch(
+            "jarvis.tools.macos.subprocess.run",
+            return_value=FakeCompletedProcess(returncode=1, stderr="lock failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "lock failed"):
+                MacOSTools().lock_screen()
+
     def test_get_media_state_reads_music_metadata_without_real_macos_call(self):
         with patch(
             "jarvis.tools.macos.subprocess.run",

@@ -26,13 +26,18 @@ from jarvis.voice_mode import VoiceMode
 
 EXPECTED_LIVE_TOOL_NAMES = [
     "close_app",
+    "get_battery_status",
+    "get_brightness",
     "get_media_state",
+    "get_system_info",
     "get_volume",
     "is_app_running",
+    "lock_screen",
     "next_track",
     "open_app",
     "play_pause",
     "previous_track",
+    "set_brightness",
     "set_volume",
 ]
 
@@ -86,6 +91,11 @@ class RecordingLiveMacOSTools:
         running_error=None,
         media_state=None,
         media_error=None,
+        battery=None,
+        system_info=None,
+        brightness=50,
+        system_error=None,
+        lock_state=None,
     ):
         self.error = error
         self.volume = volume
@@ -102,6 +112,28 @@ class RecordingLiveMacOSTools:
             "app": "Music",
         }
         self.media_error = media_error
+        self.battery = battery or {
+            "percentage": 74,
+            "charging": True,
+            "charged": False,
+            "external_power": True,
+            "raw": "test battery",
+        }
+        self.system_info = system_info or {
+            "model_name": "MacBook Pro",
+            "model_identifier": "Mac15,3",
+            "chip": "Apple M3",
+            "memory": "8 GB",
+            "serial_number": "TEST123",
+        }
+        self.brightness = brightness
+        self.system_error = system_error
+        self.lock_state = lock_state or {
+            "command_executed": True,
+            "state_confirmed": False,
+            "locked": None,
+            "backend": "test_backend",
+        }
         self.calls = []
         self.get_calls = 0
         self.open_calls = []
@@ -111,6 +143,11 @@ class RecordingLiveMacOSTools:
         self.next_calls = 0
         self.previous_calls = 0
         self.media_state_calls = 0
+        self.battery_calls = 0
+        self.system_info_calls = 0
+        self.get_brightness_calls = 0
+        self.set_brightness_calls = []
+        self.lock_calls = 0
 
     def set_volume(self, level):
         self.calls.append(level)
@@ -183,6 +220,49 @@ class RecordingLiveMacOSTools:
             raise self.media_error
 
         return dict(self.media_state)
+
+    def get_battery_status(self):
+        self.battery_calls += 1
+
+        if self.system_error is not None:
+            raise self.system_error
+
+        return dict(self.battery)
+
+    def get_system_info(self):
+        self.system_info_calls += 1
+
+        if self.system_error is not None:
+            raise self.system_error
+
+        return dict(self.system_info)
+
+    def get_brightness(self):
+        self.get_brightness_calls += 1
+
+        if self.system_error is not None:
+            raise self.system_error
+
+        return self.brightness
+
+    def set_brightness(self, level):
+        self.set_brightness_calls.append(level)
+
+        if self.system_error is not None:
+            raise self.system_error
+
+        return {
+            "requested_brightness": level,
+            "brightness": level,
+        }
+
+    def lock_screen(self):
+        self.lock_calls += 1
+
+        if self.system_error is not None:
+            raise self.system_error
+
+        return dict(self.lock_state)
 
 
 class LivePocConfigTest(unittest.TestCase):
@@ -297,8 +377,18 @@ class LivePocAgentTest(unittest.TestCase):
         self.assertIn("get_media_state pour le média", LIVE_SYSTEM_PROMPT)
         self.assertIn("get_volume pour le volume", LIVE_SYSTEM_PROMPT)
         self.assertIn("is_app_running pour une application", LIVE_SYSTEM_PROMPT)
+        self.assertIn("get_battery_status pour la batterie", LIVE_SYSTEM_PROMPT)
+        self.assertIn("get_brightness pour la luminosité", LIVE_SYSTEM_PROMPT)
+        self.assertIn("get_system_info pour les informations du Mac", LIVE_SYSTEM_PROMPT)
         self.assertIn("appelle uniquement le tool d'action média", LIVE_SYSTEM_PROMPT)
         self.assertIn("ne lance pas get_media_state en parallèle", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Pour changer la luminosité", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Pour verrouiller le Mac", LIVE_SYSTEM_PROMPT)
+        self.assertIn("state_confirmed=false", LIVE_SYSTEM_PROMPT)
+        self.assertIn("locked=null", LIVE_SYSTEM_PROMPT)
+        self.assertIn("ne dis jamais que le Mac est verrouillé", LIVE_SYSTEM_PROMPT)
+        self.assertIn("la commande a été envoyée", LIVE_SYSTEM_PROMPT)
+        self.assertIn("n'a pas pu être confirmé", LIVE_SYSTEM_PROMPT)
 
     def test_live_agent_exposes_module_level_server_for_livekit_cli(self):
         self.assertTrue(hasattr(agent, "build_live_server"))
@@ -929,6 +1019,142 @@ class LiveMediaToolTest(unittest.TestCase):
         self.assertIn("open_app", tools)
         self.assertIn("close_app", tools)
         self.assertIn("is_app_running", tools)
+
+
+class LiveSystemToolTest(unittest.TestCase):
+    def make_tools(self, security=None, macos_tools=None):
+        tools = create_live_tools(
+            security=security or RecordingLiveSecurity(),
+            macos_tools=macos_tools or RecordingLiveMacOSTools(),
+        )
+        return {
+            tool.info.name: tool
+            for tool in tools
+        }
+
+    def test_get_battery_status_success_returns_structured_result(self):
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(macos_tools=macos_tools)["get_battery_status"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "get_battery_status")
+        self.assertEqual(result["percentage"], 74)
+        self.assertTrue(result["charging"])
+        self.assertEqual(macos_tools.battery_calls, 1)
+
+    def test_get_system_info_success_returns_structured_result(self):
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(macos_tools=macos_tools)["get_system_info"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["model_name"], "MacBook Pro")
+        self.assertEqual(result["chip"], "Apple M3")
+        self.assertEqual(macos_tools.system_info_calls, 1)
+
+    def test_get_brightness_success_returns_structured_result(self):
+        macos_tools = RecordingLiveMacOSTools(brightness=42)
+        tool = self.make_tools(macos_tools=macos_tools)["get_brightness"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["brightness"], 42)
+        self.assertEqual(macos_tools.get_brightness_calls, 1)
+
+    def test_set_brightness_success_uses_security_and_backend(self):
+        security = RecordingLiveSecurity()
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(
+            security=security,
+            macos_tools=macos_tools,
+        )["set_brightness"]
+
+        result = asyncio.run(tool(30))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["requested_brightness"], 30)
+        self.assertEqual(result["brightness"], 30)
+        self.assertEqual(security.intents[0].action, "set_brightness")
+        self.assertEqual(macos_tools.set_brightness_calls, [30])
+
+    def test_lock_screen_success_uses_security_and_backend(self):
+        security = RecordingLiveSecurity()
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(
+            security=security,
+            macos_tools=macos_tools,
+        )["lock_screen"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["command_executed"])
+        self.assertFalse(result["state_confirmed"])
+        self.assertIsNone(result["locked"])
+        self.assertEqual(security.intents[0].action, "lock_screen")
+        self.assertEqual(macos_tools.lock_calls, 1)
+
+    def test_system_tool_failure_returns_explicit_failure(self):
+        macos_tools = RecordingLiveMacOSTools(
+            system_error=RuntimeError("system failed"),
+        )
+        tool = self.make_tools(macos_tools=macos_tools)["get_battery_status"]
+
+        result = asyncio.run(tool())
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "get_battery_status")
+        self.assertIn("system failed", result["message"])
+
+    def test_system_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        self.assertEqual(tools["get_battery_status"].info.name, "get_battery_status")
+        self.assertIn("batterie", tools["get_battery_status"].info.description.lower())
+        self.assertEqual(tools["get_system_info"].info.name, "get_system_info")
+        self.assertIn("modele", tools["get_system_info"].info.description.lower())
+        self.assertEqual(tools["get_brightness"].info.name, "get_brightness")
+        self.assertIn("luminosite", tools["get_brightness"].info.description.lower())
+        self.assertEqual(tools["set_brightness"].info.name, "set_brightness")
+        self.assertIn("0 et 100", tools["set_brightness"].info.description.lower())
+        self.assertEqual(tools["lock_screen"].info.name, "lock_screen")
+        self.assertIn("verrouille", tools["lock_screen"].info.description.lower())
+
+    def test_system_tool_returns_awaitable_result_for_livekit(self):
+        tool = self.make_tools()["get_battery_status"]
+
+        result = tool()
+
+        self.assertTrue(hasattr(result, "__await__"))
+        self.assertTrue(asyncio.run(result)["ok"])
+
+    def test_live_tools_use_to_thread_for_system_capability(self):
+        calls = []
+
+        async def fake_to_thread(func, *args):
+            calls.append((func.__name__, args))
+            return func(*args)
+
+        with patch("jarvis.live.registry.asyncio.to_thread", fake_to_thread):
+            tool = self.make_tools()["set_brightness"]
+            result = asyncio.run(tool(30))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(calls, [("set_brightness", (30,))])
+
+    def test_audio_app_and_media_tools_remain_exposed(self):
+        tools = self.make_tools()
+
+        self.assertIn("get_volume", tools)
+        self.assertIn("set_volume", tools)
+        self.assertIn("open_app", tools)
+        self.assertIn("close_app", tools)
+        self.assertIn("play_pause", tools)
+        self.assertIn("get_media_state", tools)
 
 
 if __name__ == "__main__":
