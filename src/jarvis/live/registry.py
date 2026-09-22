@@ -5,11 +5,17 @@ from livekit.agents import function_tool
 
 from jarvis.capabilities.apps import AppCapability
 from jarvis.capabilities.audio import AudioCapability
+from jarvis.capabilities.media import MediaCapability
 from jarvis.live.config import debug_live
 
 
 class ToolRegistry:
-    def __init__(self, audio_capability=None, app_capability=None):
+    def __init__(
+        self,
+        audio_capability=None,
+        app_capability=None,
+        media_capability=None,
+    ):
         self.audio = (
             audio_capability
             if audio_capability is not None
@@ -20,6 +26,12 @@ class ToolRegistry:
             if app_capability is not None
             else AppCapability()
         )
+        self.media = (
+            media_capability
+            if media_capability is not None
+            else MediaCapability()
+        )
+        self.media_lock = asyncio.Lock()
 
     def livekit_tools(self) -> list[Any]:
         @function_tool(
@@ -166,13 +178,98 @@ class ToolRegistry:
 
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="play_pause",
+            description=(
+                "Met en pause ou reprend la lecture du média actif compatible "
+                "sur le Mac. Utilise ce tool pour les demandes comme pause, "
+                "reprends la lecture, play ou mets la musique en pause."
+            ),
+        )
+        async def play_pause() -> dict:
+            """Toggle play/pause for the active supported media app."""
+            debug_live("tool_call", tool="play_pause")
+            async with self.media_lock:
+                result = await asyncio.to_thread(self.media.play_pause)
+            self._debug_tool_result("play_pause", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="next_track",
+            description=(
+                "Passe au morceau suivant dans l'application média compatible "
+                "active. Utilise ce tool quand l'utilisateur demande la "
+                "suivante, le titre suivant ou de passer au prochain morceau."
+            ),
+        )
+        async def next_track() -> dict:
+            """Skip to the next track in the active supported media app."""
+            debug_live("tool_call", tool="next_track")
+            async with self.media_lock:
+                result = await asyncio.to_thread(self.media.next_track)
+            self._debug_tool_result("next_track", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="previous_track",
+            description=(
+                "Revient au morceau précédent dans l'application média "
+                "compatible active. Utilise ce tool quand l'utilisateur "
+                "demande la chanson précédente ou de revenir en arrière."
+            ),
+        )
+        async def previous_track() -> dict:
+            """Go back to the previous track in the active supported media app."""
+            debug_live("tool_call", tool="previous_track")
+            async with self.media_lock:
+                result = await asyncio.to_thread(self.media.previous_track)
+            self._debug_tool_result("previous_track", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="get_media_state",
+            description=(
+                "Lit l'état réel du média actif compatible sur le Mac. "
+                "Utilise ce tool quand l'utilisateur demande ce qui joue, "
+                "quel morceau est en cours ou si la lecture est active."
+            ),
+        )
+        async def get_media_state() -> dict:
+            """Read the current supported media playback state."""
+            debug_live("tool_call", tool="get_media_state")
+            async with self.media_lock:
+                result = await asyncio.to_thread(self.media.get_media_state)
+            self._debug_tool_result("get_media_state", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
             open_app,
             close_app,
             is_app_running,
+            play_pause,
+            next_track,
+            previous_track,
+            get_media_state,
         ]
+
+    @staticmethod
+    def _debug_tool_result(tool_name: str, result) -> None:
+        if result.ok:
+            debug_live(
+                "tool_succeeded",
+                tool=tool_name,
+                app=result.data.get("app"),
+                title=result.data.get("title"),
+                playing=result.data.get("playing"),
+            )
+        else:
+            debug_live(
+                "tool_failed",
+                tool=tool_name,
+                error=result.error_code,
+            )
 
 
 def create_live_tools(
@@ -180,6 +277,7 @@ def create_live_tools(
     macos_tools=None,
     audio_capability=None,
     app_capability=None,
+    media_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -193,7 +291,14 @@ def create_live_tools(
             macos_tools=macos_tools,
         )
 
+    if media_capability is None:
+        media_capability = MediaCapability(
+            security=security,
+            macos_tools=macos_tools,
+        )
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
+        media_capability=media_capability,
     ).livekit_tools()

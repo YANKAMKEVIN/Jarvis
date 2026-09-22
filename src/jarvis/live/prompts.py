@@ -10,6 +10,11 @@ Pour fermer ou quitter une application macOS, utilise le tool close_app.
 Pour savoir si une application est ouverte ou lancée, utilise obligatoirement le tool is_app_running.
 Ne dis jamais qu'une application a été ouverte ou fermée avant d'avoir reçu un résultat positif du tool.
 Pour une question d'état d'application, ne devine pas : utilise is_app_running.
+Pour mettre en pause, reprendre, jouer, passer au morceau suivant ou revenir au morceau précédent, utilise les tools média.
+Ne dis jamais que la lecture a changé ou que la piste a changé avant d'avoir reçu un résultat positif du tool média.
+Pour savoir ce qui est en train de jouer ou connaître l'état réel de lecture, utilise get_media_state.
+Pour toute question sur l'état actuel du Mac, relis l'état avec le tool adapté au lieu de déduire depuis l'historique : get_media_state pour le média, get_volume pour le volume, is_app_running pour une application.
+Pour une demande composée du type "passe au morceau suivant puis dis-moi ce qui joue", appelle uniquement le tool d'action média et utilise l'état retourné par ce tool ; ne lance pas get_media_state en parallèle d'une action média.
 Si le tool échoue, informe l'utilisateur de l'échec.
 """.strip()
 

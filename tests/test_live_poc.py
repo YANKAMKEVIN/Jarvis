@@ -24,6 +24,19 @@ from jarvis.security import SecurityDecision
 from jarvis.voice_mode import VoiceMode
 
 
+EXPECTED_LIVE_TOOL_NAMES = [
+    "close_app",
+    "get_media_state",
+    "get_volume",
+    "is_app_running",
+    "next_track",
+    "open_app",
+    "play_pause",
+    "previous_track",
+    "set_volume",
+]
+
+
 class FakeRealtime:
     def __init__(self):
         self.created = []
@@ -71,6 +84,8 @@ class RecordingLiveMacOSTools:
         open_error=None,
         close_error=None,
         running_error=None,
+        media_state=None,
+        media_error=None,
     ):
         self.error = error
         self.volume = volume
@@ -79,11 +94,23 @@ class RecordingLiveMacOSTools:
         self.open_error = open_error
         self.close_error = close_error
         self.running_error = running_error
+        self.media_state = media_state or {
+            "media_available": True,
+            "playing": True,
+            "title": "Song",
+            "artist": "Artist",
+            "app": "Music",
+        }
+        self.media_error = media_error
         self.calls = []
         self.get_calls = 0
         self.open_calls = []
         self.close_calls = []
         self.running_calls = []
+        self.play_calls = 0
+        self.next_calls = 0
+        self.previous_calls = 0
+        self.media_state_calls = 0
 
     def set_volume(self, level):
         self.calls.append(level)
@@ -124,6 +151,38 @@ class RecordingLiveMacOSTools:
             raise self.running_error
 
         return self.app_running
+
+    def play_pause(self):
+        self.play_calls += 1
+
+        if self.media_error is not None:
+            raise self.media_error
+
+        return dict(self.media_state)
+
+    def next_track(self):
+        self.next_calls += 1
+
+        if self.media_error is not None:
+            raise self.media_error
+
+        return dict(self.media_state)
+
+    def previous_track(self):
+        self.previous_calls += 1
+
+        if self.media_error is not None:
+            raise self.media_error
+
+        return dict(self.media_state)
+
+    def get_media_state(self):
+        self.media_state_calls += 1
+
+        if self.media_error is not None:
+            raise self.media_error
+
+        return dict(self.media_state)
 
 
 class LivePocConfigTest(unittest.TestCase):
@@ -230,14 +289,16 @@ class LivePocAgentTest(unittest.TestCase):
         self.assertEqual(assistant.kwargs["instructions"], LIVE_SYSTEM_PROMPT)
         self.assertEqual(
             sorted(tool.info.name for tool in assistant.kwargs["tools"]),
-            [
-                "close_app",
-                "get_volume",
-                "is_app_running",
-                "open_app",
-                "set_volume",
-            ],
+            EXPECTED_LIVE_TOOL_NAMES,
         )
+
+    def test_live_prompt_requires_fresh_state_tools_for_current_state(self):
+        self.assertIn("état actuel du Mac", LIVE_SYSTEM_PROMPT)
+        self.assertIn("get_media_state pour le média", LIVE_SYSTEM_PROMPT)
+        self.assertIn("get_volume pour le volume", LIVE_SYSTEM_PROMPT)
+        self.assertIn("is_app_running pour une application", LIVE_SYSTEM_PROMPT)
+        self.assertIn("appelle uniquement le tool d'action média", LIVE_SYSTEM_PROMPT)
+        self.assertIn("ne lance pas get_media_state en parallèle", LIVE_SYSTEM_PROMPT)
 
     def test_live_agent_exposes_module_level_server_for_livekit_cli(self):
         self.assertTrue(hasattr(agent, "build_live_server"))
@@ -308,13 +369,7 @@ class LivePocAgentTest(unittest.TestCase):
 
         self.assertEqual(
             sorted(tool.info.name for tool in tools),
-            [
-                "close_app",
-                "get_volume",
-                "is_app_running",
-                "open_app",
-                "set_volume",
-            ],
+            EXPECTED_LIVE_TOOL_NAMES,
         )
 
 
@@ -657,6 +712,223 @@ class LiveAppToolTest(unittest.TestCase):
 
         self.assertIn("get_volume", tools)
         self.assertIn("set_volume", tools)
+
+
+class LiveMediaToolTest(unittest.TestCase):
+    def make_tools(self, security=None, macos_tools=None):
+        tools = create_live_tools(
+            security=security or RecordingLiveSecurity(),
+            macos_tools=macos_tools or RecordingLiveMacOSTools(),
+        )
+        return {
+            tool.info.name: tool
+            for tool in tools
+        }
+
+    def test_play_pause_success_returns_structured_result(self):
+        security = RecordingLiveSecurity()
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(
+            security=security,
+            macos_tools=macos_tools,
+        )["play_pause"]
+
+        result = asyncio.run(tool())
+
+        self.assertEqual(len(security.intents), 1)
+        self.assertEqual(security.intents[0].action, "play_pause")
+        self.assertEqual(macos_tools.play_calls, 1)
+        self.assertEqual(
+            result,
+            {
+                "ok": True,
+                "action": "play_pause",
+                "media_available": True,
+                "playing": True,
+                "title": "Song",
+                "artist": "Artist",
+                "app": "Music",
+                "message": "Song de Artist est en cours de lecture dans Music.",
+            },
+        )
+
+    def test_next_track_success_returns_structured_result(self):
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(macos_tools=macos_tools)["next_track"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "next_track")
+        self.assertEqual(result["title"], "Song")
+        self.assertEqual(macos_tools.next_calls, 1)
+
+    def test_media_command_attempts_are_serialized_for_gemini(self):
+        macos_tools = RecordingLiveMacOSTools(
+            media_state={
+                "media_available": True,
+                "playing": True,
+                "title": "Previous Song",
+                "artist": "Artist",
+                "app": "Music",
+                "command_executed": True,
+                "media_observed": True,
+                "previous_title": "Current Song",
+                "previous_artist": "Artist",
+                "track_changed": True,
+                "observation_attempts": 1,
+                "command_attempts": 2,
+            }
+        )
+        tool = self.make_tools(macos_tools=macos_tools)["previous_track"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "previous_track")
+        self.assertEqual(result["title"], "Previous Song")
+        self.assertEqual(result["command_attempts"], 2)
+        self.assertEqual(result["observation_attempts"], 1)
+
+    def test_previous_track_success_returns_structured_result(self):
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(macos_tools=macos_tools)["previous_track"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "previous_track")
+        self.assertEqual(result["title"], "Song")
+        self.assertEqual(macos_tools.previous_calls, 1)
+
+    def test_get_media_state_success_returns_structured_result(self):
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(macos_tools=macos_tools)["get_media_state"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "get_media_state")
+        self.assertEqual(result["playing"], True)
+        self.assertEqual(result["title"], "Song")
+        self.assertEqual(macos_tools.media_state_calls, 1)
+
+    def test_get_media_state_without_compatible_media_is_explicit(self):
+        macos_tools = RecordingLiveMacOSTools(
+            media_state={
+                "media_available": False,
+                "playing": False,
+                "title": None,
+                "artist": None,
+                "app": None,
+            }
+        )
+        tool = self.make_tools(macos_tools=macos_tools)["get_media_state"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["media_available"])
+        self.assertIsNone(result["title"])
+        self.assertIn("Aucun media compatible", result["message"])
+
+    def test_media_tool_failure_returns_explicit_failure(self):
+        macos_tools = RecordingLiveMacOSTools(
+            media_error=RuntimeError("media failed"),
+        )
+        tool = self.make_tools(macos_tools=macos_tools)["play_pause"]
+
+        result = asyncio.run(tool())
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "play_pause")
+        self.assertIn("media failed", result["message"])
+
+    def test_media_security_refusal_does_not_call_macos(self):
+        security = RecordingLiveSecurity(allowed=False)
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(
+            security=security,
+            macos_tools=macos_tools,
+        )["next_track"]
+
+        result = asyncio.run(tool())
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "next_track")
+        self.assertEqual(macos_tools.next_calls, 0)
+
+    def test_media_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        self.assertEqual(tools["play_pause"].info.name, "play_pause")
+        self.assertIn("pause", tools["play_pause"].info.description.lower())
+        self.assertEqual(tools["next_track"].info.name, "next_track")
+        self.assertIn("suivant", tools["next_track"].info.description.lower())
+        self.assertEqual(tools["previous_track"].info.name, "previous_track")
+        self.assertIn(
+            "précédent",
+            tools["previous_track"].info.description.lower(),
+        )
+        self.assertEqual(tools["get_media_state"].info.name, "get_media_state")
+        self.assertIn("morceau", tools["get_media_state"].info.description.lower())
+
+    def test_media_tool_returns_awaitable_result_for_livekit(self):
+        tool = self.make_tools()["play_pause"]
+
+        result = tool()
+
+        self.assertTrue(hasattr(result, "__await__"))
+        self.assertTrue(asyncio.run(result)["ok"])
+
+    def test_live_tools_use_to_thread_for_media_capability(self):
+        calls = []
+
+        async def fake_to_thread(func, *args):
+            calls.append((func.__name__, args))
+            return func(*args)
+
+        with patch("jarvis.live.registry.asyncio.to_thread", fake_to_thread):
+            tool = self.make_tools()["next_track"]
+            result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(calls, [("next_track", ())])
+
+    def test_media_tools_share_lock_for_concurrent_livekit_calls(self):
+        order = []
+
+        async def fake_to_thread(func, *args):
+            order.append(f"start:{func.__name__}")
+            await asyncio.sleep(0)
+            order.append(f"end:{func.__name__}")
+            return func(*args)
+
+        async def run_tools():
+            tools = self.make_tools()
+
+            with patch("jarvis.live.registry.asyncio.to_thread", fake_to_thread):
+                return await asyncio.gather(
+                    tools["next_track"](),
+                    tools["get_media_state"](),
+                )
+
+        results = asyncio.run(run_tools())
+
+        self.assertTrue(all(result["ok"] for result in results))
+        self.assertEqual(order[0], "start:next_track")
+        self.assertEqual(order[1], "end:next_track")
+        self.assertEqual(order[2], "start:get_media_state")
+        self.assertEqual(order[3], "end:get_media_state")
+
+    def test_audio_and_app_tools_remain_exposed(self):
+        tools = self.make_tools()
+
+        self.assertIn("get_volume", tools)
+        self.assertIn("set_volume", tools)
+        self.assertIn("open_app", tools)
+        self.assertIn("close_app", tools)
+        self.assertIn("is_app_running", tools)
 
 
 if __name__ == "__main__":

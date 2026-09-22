@@ -25,6 +25,9 @@ ALLOWED_ACTIONS = {
     "set_volume": RiskLevel.SAFE,
     "mute": RiskLevel.SAFE,
     "unmute": RiskLevel.SAFE,
+    "play_pause": RiskLevel.SAFE,
+    "next_track": RiskLevel.SAFE,
+    "previous_track": RiskLevel.SAFE,
     "conversation": RiskLevel.SAFE,
 }
 
