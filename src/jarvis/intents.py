@@ -39,6 +39,8 @@ ALLOWED_ACTIONS = {
     "create_folder": RiskLevel.SAFE,
     "rename_file": RiskLevel.SAFE,
     "move_file": RiskLevel.SAFE,
+    "set_clipboard_text": RiskLevel.SAFE,
+    "clear_clipboard": RiskLevel.SAFE,
     "conversation": RiskLevel.SAFE,
 }
 

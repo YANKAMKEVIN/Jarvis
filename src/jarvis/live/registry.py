@@ -5,6 +5,7 @@ from livekit.agents import function_tool
 
 from jarvis.capabilities.apps import AppCapability
 from jarvis.capabilities.audio import AudioCapability
+from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.system import SystemCapability
@@ -21,6 +22,7 @@ class ToolRegistry:
         system_capability=None,
         window_capability=None,
         files_capability=None,
+        clipboard_capability=None,
     ):
         self.audio = (
             audio_capability
@@ -52,7 +54,13 @@ class ToolRegistry:
             if files_capability is not None
             else FilesCapability()
         )
+        self.clipboard = (
+            clipboard_capability
+            if clipboard_capability is not None
+            else ClipboardCapability()
+        )
         self.media_lock = asyncio.Lock()
+        self.clipboard_lock = asyncio.Lock()
 
     def livekit_tools(self) -> list[Any]:
         @function_tool(
@@ -545,6 +553,63 @@ class ToolRegistry:
             self._debug_tool_result("move_file", result)
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="get_clipboard_text",
+            description=(
+                "Lit le texte actuellement disponible dans le presse-papiers "
+                "du Mac. Utilise ce tool pour savoir ce qui a ete copie ou "
+                "si le presse-papiers contient du texte."
+            ),
+        )
+        async def get_clipboard_text() -> dict:
+            """Read current readable text from the Mac clipboard."""
+            debug_live("tool_call", tool="get_clipboard_text")
+            async with self.clipboard_lock:
+                result = await asyncio.to_thread(
+                    self.clipboard.get_clipboard_text,
+                )
+            self._debug_clipboard_result("get_clipboard_text", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="set_clipboard_text",
+            description=(
+                "Remplace le contenu texte du presse-papiers du Mac par le "
+                "texte fourni, puis verifie que le texte relu est identique."
+            ),
+        )
+        async def set_clipboard_text(text: str) -> dict:
+            """Set Mac clipboard text and verify the result."""
+            debug_live(
+                "tool_call",
+                tool="set_clipboard_text",
+                length=len(text) if isinstance(text, str) else None,
+            )
+            async with self.clipboard_lock:
+                result = await asyncio.to_thread(
+                    self.clipboard.set_clipboard_text,
+                    text,
+                )
+            self._debug_clipboard_result("set_clipboard_text", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="clear_clipboard",
+            description=(
+                "Efface le texte lisible du presse-papiers du Mac, puis "
+                "verifie prudemment qu'aucun texte lisible n'est detecte."
+            ),
+        )
+        async def clear_clipboard() -> dict:
+            """Clear readable text from the Mac clipboard."""
+            debug_live("tool_call", tool="clear_clipboard")
+            async with self.clipboard_lock:
+                result = await asyncio.to_thread(
+                    self.clipboard.clear_clipboard,
+                )
+            self._debug_clipboard_result("clear_clipboard", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
@@ -573,6 +638,9 @@ class ToolRegistry:
             create_folder,
             rename_file,
             move_file,
+            get_clipboard_text,
+            set_clipboard_text,
+            clear_clipboard,
         ]
 
     @staticmethod
@@ -592,17 +660,41 @@ class ToolRegistry:
                 error=result.error_code,
             )
 
+    @staticmethod
+    def _debug_clipboard_result(tool_name: str, result) -> None:
+        fields = {
+            "tool": tool_name,
+            "has_text": result.data.get("has_text"),
+            "length": result.data.get("length"),
+            "returned_length": result.data.get("returned_length"),
+            "truncated": result.data.get("truncated"),
+            "content_type": result.data.get("content_type"),
+            "command_executed": result.data.get("command_executed"),
+            "state_confirmed": result.data.get("state_confirmed"),
+        }
+
+        if result.ok:
+            debug_live("tool_succeeded", **fields)
+        else:
+            debug_live(
+                "tool_failed",
+                tool=tool_name,
+                error=result.error_code,
+            )
+
 
 def create_live_tools(
     security=None,
     macos_tools=None,
     filesystem_tools=None,
+    clipboard_tools=None,
     audio_capability=None,
     app_capability=None,
     media_capability=None,
     system_capability=None,
     window_capability=None,
     files_capability=None,
+    clipboard_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -640,6 +732,12 @@ def create_live_tools(
             filesystem_tools=filesystem_tools,
         )
 
+    if clipboard_capability is None:
+        clipboard_capability = ClipboardCapability(
+            security=security,
+            clipboard_tools=clipboard_tools,
+        )
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
@@ -647,4 +745,5 @@ def create_live_tools(
         system_capability=system_capability,
         window_capability=window_capability,
         files_capability=files_capability,
+        clipboard_capability=clipboard_capability,
     ).livekit_tools()

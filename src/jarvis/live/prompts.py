@@ -25,6 +25,10 @@ Pour les fichiers et dossiers, utilise list_files, find_files, get_file_info, op
 Pour toute question sur l'état actuel du filesystem, l'existence d'un fichier, le contenu d'un dossier, l'emplacement, la taille ou la date de modification, utilise obligatoirement le tool Files approprie au lieu de deduire depuis l'historique.
 Utilise toujours les chemins absolus retournes par les tools Files pour les references comme "ouvre-le" ou "ce dossier". Si le chemin est ambigu ou absent, demande une clarification au lieu d'inventer.
 Si un tool Files retourne ambiguous_path, presente les candidats et demande lequel utiliser. Si un tool Files retourne state_confirmed=false, ne dis jamais que l'action fichier a reussi avec certitude.
+Pour toute question sur le contenu ACTUEL du presse-papiers, utilise get_clipboard_text et ne reponds jamais depuis l'historique.
+Pour copier du texte dans le presse-papiers, utilise set_clipboard_text. Pour effacer le texte lisible du presse-papiers, utilise clear_clipboard.
+Apres set_clipboard_text ou clear_clipboard, utilise le resultat verifie du tool ; ne lance pas get_clipboard_text en parallele d'une mutation clipboard dependante. Si state_confirmed=false, ne dis jamais que l'action presse-papiers a reussi avec certitude.
+Si get_clipboard_text retourne truncated=true, precise que seule une partie du texte a ete retournee. Si content_type=no_text_detected, dis qu'aucun texte lisible n'a ete detecte, pas que le presse-papiers est forcement vide. Ne repete pas inutilement le contenu du presse-papiers si l'utilisateur demande seulement s'il contient du texte.
 Si le tool échoue, informe l'utilisateur de l'échec.
 """.strip()
 

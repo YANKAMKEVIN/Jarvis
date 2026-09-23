@@ -3,8 +3,14 @@ from jarvis.live.config import (
     debug_live,
     get_live_config,
 )
+from jarvis.live.logging import install_livekit_pii_log_filter
 from jarvis.live.prompts import LIVE_SESSION_GREETING, LIVE_SYSTEM_PROMPT
 from jarvis.live.tools import create_live_tools
+
+
+LIVEKIT_RECORDING_OPTIONS = {
+    "redaction": True,
+}
 
 
 def create_realtime_model(google_module, config: LiveConfig):
@@ -34,6 +40,8 @@ def create_assistant_class(agent_base_class):
 
 
 def build_live_server(config: LiveConfig | None = None):
+    install_livekit_pii_log_filter()
+
     try:
         from livekit.agents import (
             Agent,
@@ -67,6 +75,7 @@ def build_live_server(config: LiveConfig | None = None):
         await session.start(
             agent=assistant_class(),
             room=ctx.room,
+            record=LIVEKIT_RECORDING_OPTIONS,
         )
         debug_live("session_started", agent_name=config.agent_name)
 

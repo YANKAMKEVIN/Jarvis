@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import pathlib
 import tomllib
@@ -18,6 +19,10 @@ from jarvis.live.config import (
     get_live_config,
     get_required_runtime_env_names,
 )
+from jarvis.live.logging import (
+    REDACTED_PII_VALUE,
+    install_livekit_pii_log_filter,
+)
 from jarvis.live.prompts import LIVE_SYSTEM_PROMPT
 from jarvis.live.tools import ToolRegistry, create_live_tools
 from jarvis.security import SecurityDecision
@@ -25,6 +30,7 @@ from jarvis.voice_mode import VoiceMode
 
 
 EXPECTED_LIVE_TOOL_NAMES = [
+    "clear_clipboard",
     "close_app",
     "create_folder",
     "find_files",
@@ -32,6 +38,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "get_active_window",
     "get_battery_status",
     "get_brightness",
+    "get_clipboard_text",
     "get_file_info",
     "get_media_state",
     "get_system_info",
@@ -51,6 +58,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "previous_track",
     "rename_file",
     "set_brightness",
+    "set_clipboard_text",
     "set_volume",
 ]
 
@@ -75,6 +83,26 @@ class FakeGoogle:
 class FakeAgentBase:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
+
+
+class FakeJobContext:
+    room = object()
+
+
+class RecordingAgentSession:
+    instances = []
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.start_calls = []
+        self.generate_reply_calls = []
+        RecordingAgentSession.instances.append(self)
+
+    async def start(self, **kwargs):
+        self.start_calls.append(kwargs)
+
+    async def generate_reply(self, **kwargs):
+        self.generate_reply_calls.append(kwargs)
 
 
 class RecordingLiveSecurity:
@@ -432,6 +460,53 @@ class RecordingLiveFileSystemTools:
         }
 
 
+class RecordingLiveClipboardTools:
+    def __init__(self, error=None, text_state=None, set_state=None, clear_state=None):
+        self.error = error
+        self.text_state = text_state or {
+            "has_text": True,
+            "text": "Bonjour",
+            "length": 7,
+            "returned_length": 7,
+            "truncated": False,
+            "content_type": "text",
+        }
+        self.set_state = set_state or {
+            "command_executed": True,
+            "state_confirmed": True,
+            "length": 7,
+            "has_text": True,
+            "content_type": "text",
+        }
+        self.clear_state = clear_state or {
+            "command_executed": True,
+            "state_confirmed": True,
+            "length": 0,
+            "has_text": False,
+            "content_type": "no_text_detected",
+        }
+        self.calls = []
+
+    def _raise_if_needed(self):
+        if self.error is not None:
+            raise self.error
+
+    def get_text(self):
+        self.calls.append(("get_text",))
+        self._raise_if_needed()
+        return dict(self.text_state)
+
+    def set_text(self, text):
+        self.calls.append(("set_text", text))
+        self._raise_if_needed()
+        return dict(self.set_state)
+
+    def clear(self):
+        self.calls.append(("clear",))
+        self._raise_if_needed()
+        return dict(self.clear_state)
+
+
 class LivePocConfigTest(unittest.TestCase):
     def test_pyproject_marks_repository_as_agent_project_for_livekit_cli(self):
         pyproject_path = pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml"
@@ -503,6 +578,94 @@ class LivePocConfigTest(unittest.TestCase):
         self.assertIn("model: gemini", debug_output)
 
 
+class LiveLoggingPrivacyTest(unittest.TestCase):
+    def emit_livekit_log(self, **extra):
+        logger = logging.getLogger("livekit.agents")
+        old_level = logger.level
+        old_propagate = logger.propagate
+        records = []
+
+        class RecordingHandler(logging.Handler):
+            def emit(self, record):
+                records.append(dict(record.__dict__))
+
+        handler = RecordingHandler()
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+
+        try:
+            install_livekit_pii_log_filter()
+            logger.debug("executing tool", extra=extra)
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+            logger.propagate = old_propagate
+
+        self.assertEqual(len(records), 1)
+        return records[0]
+
+    def test_livekit_pii_arguments_are_redacted_in_local_logs(self):
+        secret = "JARVIS_SECRET_ARGUMENT_SENTINEL_2ef6"
+
+        record = self.emit_livekit_log(
+            function="set_clipboard_text",
+            **{"lk.pii.arguments": f'{{"text": "{secret}"}}'},
+        )
+
+        self.assertEqual(record["function"], "set_clipboard_text")
+        self.assertEqual(record["lk.pii.arguments"], REDACTED_PII_VALUE)
+        self.assertNotIn(secret, str(record))
+
+    def test_livekit_pii_text_is_redacted_in_local_logs(self):
+        secret = "JARVIS_SECRET_TEXT_SENTINEL_9b03"
+
+        record = self.emit_livekit_log(
+            role="user",
+            **{"lk.pii.text": secret},
+        )
+
+        self.assertEqual(record["role"], "user")
+        self.assertEqual(record["lk.pii.text"], REDACTED_PII_VALUE)
+        self.assertNotIn(secret, str(record))
+
+    def test_livekit_nested_pii_fields_are_redacted_in_local_logs(self):
+        secret = "JARVIS_SECRET_OUTPUT_SENTINEL_b75c"
+
+        record = self.emit_livekit_log(
+            function="get_clipboard_text",
+            **{"lk.pii.function_tool.output": f'{{"text": "{secret}"}}'},
+        )
+
+        self.assertEqual(
+            record["lk.pii.function_tool.output"],
+            REDACTED_PII_VALUE,
+        )
+        self.assertNotIn(secret, str(record))
+
+    def test_livekit_non_pii_log_fields_are_unchanged(self):
+        record = self.emit_livekit_log(
+            function="get_volume",
+            safe_field="visible diagnostic",
+        )
+
+        self.assertEqual(record["function"], "get_volume")
+        self.assertEqual(record["safe_field"], "visible diagnostic")
+
+    def test_livekit_pii_filter_installation_is_idempotent(self):
+        logger = logging.getLogger("livekit.agents")
+
+        install_livekit_pii_log_filter()
+        install_livekit_pii_log_filter()
+
+        filters = [
+            item
+            for item in logger.filters
+            if item.__class__.__name__ == "LiveKitPIILogFilter"
+        ]
+        self.assertEqual(len(filters), 1)
+
+
 class LivePocAgentTest(unittest.TestCase):
     def test_realtime_model_is_created_from_config(self):
         fake_google = FakeGoogle()
@@ -568,6 +731,13 @@ class LivePocAgentTest(unittest.TestCase):
         self.assertIn("état actuel du filesystem", LIVE_SYSTEM_PROMPT)
         self.assertIn("chemins absolus retournes par les tools Files", LIVE_SYSTEM_PROMPT)
         self.assertIn("ambiguous_path", LIVE_SYSTEM_PROMPT)
+        self.assertIn("contenu ACTUEL du presse-papiers", LIVE_SYSTEM_PROMPT)
+        self.assertIn("get_clipboard_text", LIVE_SYSTEM_PROMPT)
+        self.assertIn("set_clipboard_text", LIVE_SYSTEM_PROMPT)
+        self.assertIn("clear_clipboard", LIVE_SYSTEM_PROMPT)
+        self.assertIn("truncated=true", LIVE_SYSTEM_PROMPT)
+        self.assertIn("content_type=no_text_detected", LIVE_SYSTEM_PROMPT)
+        self.assertIn("ne reponds jamais depuis l'historique", LIVE_SYSTEM_PROMPT)
 
     def test_live_agent_exposes_module_level_server_for_livekit_cli(self):
         self.assertTrue(hasattr(agent, "build_live_server"))
@@ -605,6 +775,31 @@ class LivePocAgentTest(unittest.TestCase):
 
         self.assertIsInstance(built_server, AgentServer)
         self.assertFalse(hasattr(built_server, "_proc_pool"))
+
+    def test_live_session_start_enables_livekit_recording_redaction(self):
+        config = LiveConfig(
+            model="gemini-test-live",
+            voice="Puck",
+            temperature=0.8,
+            agent_name="jarvis-test",
+        )
+        RecordingAgentSession.instances.clear()
+
+        with patch("livekit.agents.AgentSession", RecordingAgentSession):
+            with patch.object(
+                agent,
+                "create_realtime_model",
+                return_value={"type": "fake-model"},
+            ):
+                built_server = agent.build_live_server(config)
+                asyncio.run(built_server._entrypoint_fnc(FakeJobContext()))
+
+        session = RecordingAgentSession.instances[0]
+        self.assertEqual(
+            session.start_calls[0]["record"],
+            {"redaction": True},
+        )
+        self.assertIs(session.start_calls[0]["room"], FakeJobContext.room)
 
     def test_voice_mode_still_imports_alongside_live_poc(self):
         self.assertTrue(hasattr(VoiceMode, "run"))
@@ -1636,6 +1831,193 @@ class LiveFilesToolTest(unittest.TestCase):
         self.assertIn("play_pause", tools)
         self.assertIn("get_battery_status", tools)
         self.assertIn("get_active_window", tools)
+
+
+class LiveClipboardToolTest(unittest.TestCase):
+    def make_tools(self, security=None, clipboard_tools=None):
+        tools = create_live_tools(
+            security=security or RecordingLiveSecurity(),
+            clipboard_tools=clipboard_tools or RecordingLiveClipboardTools(),
+        )
+        return {
+            tool.info.name: tool
+            for tool in tools
+        }
+
+    def test_get_clipboard_text_success_returns_structured_result(self):
+        clipboard_tools = RecordingLiveClipboardTools()
+        tool = self.make_tools(clipboard_tools=clipboard_tools)["get_clipboard_text"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "get_clipboard_text")
+        self.assertEqual(result["text"], "Bonjour")
+        self.assertEqual(result["length"], 7)
+        self.assertEqual(clipboard_tools.calls, [("get_text",)])
+
+    def test_set_clipboard_text_success_uses_security_and_backend(self):
+        security = RecordingLiveSecurity()
+        clipboard_tools = RecordingLiveClipboardTools()
+        tool = self.make_tools(
+            security=security,
+            clipboard_tools=clipboard_tools,
+        )["set_clipboard_text"]
+
+        result = asyncio.run(tool("Bonjour"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "set_clipboard_text")
+        self.assertTrue(result["command_executed"])
+        self.assertTrue(result["state_confirmed"])
+        self.assertEqual(security.intents[0].action, "set_clipboard_text")
+        self.assertEqual(clipboard_tools.calls, [("set_text", "Bonjour")])
+
+    def test_clipboard_tool_arguments_are_not_modified_by_log_redaction(self):
+        secret = "JARVIS_CLIPBOARD_ARGUMENT_SENTINEL_41d4"
+        clipboard_tools = RecordingLiveClipboardTools()
+        tool = self.make_tools(clipboard_tools=clipboard_tools)[
+            "set_clipboard_text"
+        ]
+
+        result = asyncio.run(tool(secret))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(clipboard_tools.calls, [("set_text", secret)])
+
+    def test_get_clipboard_text_still_returns_text_to_gemini(self):
+        secret = "JARVIS_CLIPBOARD_RESULT_SENTINEL_60bb"
+        clipboard_tools = RecordingLiveClipboardTools(
+            text_state={
+                "has_text": True,
+                "text": secret,
+                "length": len(secret),
+                "returned_length": len(secret),
+                "truncated": False,
+                "content_type": "text",
+            },
+        )
+        tool = self.make_tools(clipboard_tools=clipboard_tools)[
+            "get_clipboard_text"
+        ]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["text"], secret)
+
+    def test_clear_clipboard_success_uses_security_and_backend(self):
+        security = RecordingLiveSecurity()
+        clipboard_tools = RecordingLiveClipboardTools()
+        tool = self.make_tools(
+            security=security,
+            clipboard_tools=clipboard_tools,
+        )["clear_clipboard"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "clear_clipboard")
+        self.assertTrue(result["command_executed"])
+        self.assertTrue(result["state_confirmed"])
+        self.assertEqual(security.intents[0].action, "clear_clipboard")
+        self.assertEqual(clipboard_tools.calls, [("clear",)])
+
+    def test_clipboard_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        self.assertEqual(
+            tools["get_clipboard_text"].info.name,
+            "get_clipboard_text",
+        )
+        self.assertIn(
+            "presse-papiers",
+            tools["get_clipboard_text"].info.description.lower(),
+        )
+        self.assertEqual(
+            tools["set_clipboard_text"].info.name,
+            "set_clipboard_text",
+        )
+        self.assertEqual(
+            tools["clear_clipboard"].info.name,
+            "clear_clipboard",
+        )
+
+    def test_clipboard_tool_returns_awaitable_result_for_livekit(self):
+        tool = self.make_tools()["get_clipboard_text"]
+
+        result = tool()
+
+        self.assertTrue(hasattr(result, "__await__"))
+        self.assertTrue(asyncio.run(result)["ok"])
+
+    def test_live_tools_use_to_thread_for_clipboard_capability(self):
+        calls = []
+
+        async def fake_to_thread(func, *args):
+            calls.append((func.__name__, args))
+            return func(*args)
+
+        with patch("jarvis.live.registry.asyncio.to_thread", fake_to_thread):
+            tool = self.make_tools()["set_clipboard_text"]
+            result = asyncio.run(tool("Bonjour"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(calls, [("set_clipboard_text", ("Bonjour",))])
+
+    def test_clipboard_tools_share_a_lock_without_affecting_media_lock(self):
+        registry = ToolRegistry(
+            clipboard_capability=object(),
+            media_capability=object(),
+        )
+
+        self.assertIsNot(registry.clipboard_lock, registry.media_lock)
+        self.assertTrue(hasattr(registry.clipboard_lock, "acquire"))
+
+    def test_clipboard_debug_does_not_log_raw_secret_text(self):
+        secret = "JARVIS_CLIPBOARD_SECRET_SENTINEL_7f31"
+        clipboard_tools = RecordingLiveClipboardTools(
+            text_state={
+                "has_text": True,
+                "text": secret,
+                "length": len(secret),
+                "returned_length": len(secret),
+                "truncated": False,
+                "content_type": "text",
+            },
+            set_state={
+                "command_executed": True,
+                "state_confirmed": True,
+                "length": len(secret),
+                "has_text": True,
+                "content_type": "text",
+            },
+        )
+        tools = self.make_tools(clipboard_tools=clipboard_tools)
+
+        with patch.dict(os.environ, {"JARVIS_DEBUG_LIVE": "1"}, clear=True):
+            output = StringIO()
+
+            with redirect_stdout(output):
+                asyncio.run(tools["get_clipboard_text"]())
+                asyncio.run(tools["set_clipboard_text"](secret))
+
+        debug_output = output.getvalue()
+
+        self.assertNotIn(secret, debug_output)
+        self.assertIn("get_clipboard_text", debug_output)
+        self.assertIn("set_clipboard_text", debug_output)
+        self.assertIn(f"length: {len(secret)}", debug_output)
+
+    def test_existing_capability_tools_remain_exposed_with_clipboard(self):
+        tools = self.make_tools()
+
+        self.assertIn("get_volume", tools)
+        self.assertIn("open_app", tools)
+        self.assertIn("play_pause", tools)
+        self.assertIn("get_battery_status", tools)
+        self.assertIn("get_active_window", tools)
+        self.assertIn("list_files", tools)
 
 
 if __name__ == "__main__":
