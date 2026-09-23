@@ -26,6 +26,8 @@ from jarvis.voice_mode import VoiceMode
 
 EXPECTED_LIVE_TOOL_NAMES = [
     "close_app",
+    "focus_window",
+    "get_active_window",
     "get_battery_status",
     "get_brightness",
     "get_media_state",
@@ -33,6 +35,9 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "get_volume",
     "is_app_running",
     "lock_screen",
+    "maximize_window",
+    "minimize_window",
+    "move_window",
     "next_track",
     "open_app",
     "play_pause",
@@ -96,6 +101,8 @@ class RecordingLiveMacOSTools:
         brightness=50,
         system_error=None,
         lock_state=None,
+        window_state=None,
+        window_error=None,
     ):
         self.error = error
         self.volume = volume
@@ -134,6 +141,20 @@ class RecordingLiveMacOSTools:
             "locked": None,
             "backend": "test_backend",
         }
+        self.window_state = window_state or {
+            "target_app": "Safari",
+            "frontmost": True,
+            "window_title": "Example",
+            "position": {"x": 0, "y": 25},
+            "size": {"width": 800, "height": 600},
+            "minimized": False,
+            "fullscreen": False,
+            "command_executed": True,
+            "state_confirmed": True,
+            "previous_position": {"x": 100, "y": 100},
+            "previous_size": {"width": 600, "height": 400},
+        }
+        self.window_error = window_error
         self.calls = []
         self.get_calls = 0
         self.open_calls = []
@@ -148,6 +169,11 @@ class RecordingLiveMacOSTools:
         self.get_brightness_calls = 0
         self.set_brightness_calls = []
         self.lock_calls = 0
+        self.active_window_calls = 0
+        self.focus_window_calls = []
+        self.minimize_window_calls = []
+        self.maximize_window_calls = []
+        self.move_window_calls = []
 
     def set_volume(self, level):
         self.calls.append(level)
@@ -263,6 +289,46 @@ class RecordingLiveMacOSTools:
             raise self.system_error
 
         return dict(self.lock_state)
+
+    def get_active_window(self):
+        self.active_window_calls += 1
+
+        if self.window_error is not None:
+            raise self.window_error
+
+        return dict(self.window_state)
+
+    def focus_window(self, app_name):
+        self.focus_window_calls.append(app_name)
+
+        if self.window_error is not None:
+            raise self.window_error
+
+        return dict(self.window_state)
+
+    def minimize_window(self, app_name=None):
+        self.minimize_window_calls.append(app_name)
+
+        if self.window_error is not None:
+            raise self.window_error
+
+        return dict(self.window_state)
+
+    def maximize_window(self, app_name=None):
+        self.maximize_window_calls.append(app_name)
+
+        if self.window_error is not None:
+            raise self.window_error
+
+        return dict(self.window_state)
+
+    def move_window(self, position, app_name=None):
+        self.move_window_calls.append((position, app_name))
+
+        if self.window_error is not None:
+            raise self.window_error
+
+        return dict(self.window_state)
 
 
 class LivePocConfigTest(unittest.TestCase):
@@ -380,6 +446,7 @@ class LivePocAgentTest(unittest.TestCase):
         self.assertIn("get_battery_status pour la batterie", LIVE_SYSTEM_PROMPT)
         self.assertIn("get_brightness pour la luminosité", LIVE_SYSTEM_PROMPT)
         self.assertIn("get_system_info pour les informations du Mac", LIVE_SYSTEM_PROMPT)
+        self.assertIn("get_active_window pour la fenêtre active", LIVE_SYSTEM_PROMPT)
         self.assertIn("appelle uniquement le tool d'action média", LIVE_SYSTEM_PROMPT)
         self.assertIn("ne lance pas get_media_state en parallèle", LIVE_SYSTEM_PROMPT)
         self.assertIn("Pour changer la luminosité", LIVE_SYSTEM_PROMPT)
@@ -389,6 +456,13 @@ class LivePocAgentTest(unittest.TestCase):
         self.assertIn("ne dis jamais que le Mac est verrouillé", LIVE_SYSTEM_PROMPT)
         self.assertIn("la commande a été envoyée", LIVE_SYSTEM_PROMPT)
         self.assertIn("n'a pas pu être confirmé", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Pour contrôler les fenêtres", LIVE_SYSTEM_PROMPT)
+        self.assertIn("maximize_window agrandit la fenêtre sans plein écran", LIVE_SYSTEM_PROMPT)
+        self.assertIn("move_window avec position=fullscreen", LIVE_SYSTEM_PROMPT)
+        self.assertIn("tool de fenêtre retourne state_confirmed=false", LIVE_SYSTEM_PROMPT)
+        self.assertIn('Ne dis jamais "je vois"', LIVE_SYSTEM_PROMPT)
+        self.assertIn("je confirme visuellement", LIVE_SYSTEM_PROMPT)
+        self.assertIn("d'après l'état de la fenêtre", LIVE_SYSTEM_PROMPT)
 
     def test_live_agent_exposes_module_level_server_for_livekit_cli(self):
         self.assertTrue(hasattr(agent, "build_live_server"))
@@ -1155,6 +1229,172 @@ class LiveSystemToolTest(unittest.TestCase):
         self.assertIn("close_app", tools)
         self.assertIn("play_pause", tools)
         self.assertIn("get_media_state", tools)
+
+
+class LiveWindowToolTest(unittest.TestCase):
+    def make_tools(self, security=None, macos_tools=None):
+        tools = create_live_tools(
+            security=security or RecordingLiveSecurity(),
+            macos_tools=macos_tools or RecordingLiveMacOSTools(),
+        )
+        return {
+            tool.info.name: tool
+            for tool in tools
+        }
+
+    def test_get_active_window_success_returns_structured_result(self):
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(macos_tools=macos_tools)["get_active_window"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "get_active_window")
+        self.assertEqual(result["target_app"], "Safari")
+        self.assertEqual(result["window_title"], "Example")
+        self.assertEqual(macos_tools.active_window_calls, 1)
+
+    def test_focus_window_success_uses_security_and_backend(self):
+        security = RecordingLiveSecurity()
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(
+            security=security,
+            macos_tools=macos_tools,
+        )["focus_window"]
+
+        result = asyncio.run(tool("Safari"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(security.intents[0].action, "focus_window")
+        self.assertEqual(macos_tools.focus_window_calls, ["Safari"])
+
+    def test_minimize_window_can_target_active_window(self):
+        security = RecordingLiveSecurity()
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(
+            security=security,
+            macos_tools=macos_tools,
+        )["minimize_window"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(security.intents[0].action, "minimize_window")
+        self.assertEqual(macos_tools.minimize_window_calls, [None])
+
+    def test_maximize_window_uses_backend_without_fullscreen_claim(self):
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(macos_tools=macos_tools)["maximize_window"]
+
+        result = asyncio.run(tool("Visual Studio Code"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(macos_tools.maximize_window_calls, ["Visual Studio Code"])
+
+    def test_move_window_success_passes_position_and_app_name(self):
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(macos_tools=macos_tools)["move_window"]
+
+        result = asyncio.run(tool("left", "Safari"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(macos_tools.move_window_calls, [("left", "Safari")])
+
+    def test_move_window_invalid_position_is_rejected_before_backend(self):
+        security = RecordingLiveSecurity()
+        macos_tools = RecordingLiveMacOSTools()
+        tool = self.make_tools(
+            security=security,
+            macos_tools=macos_tools,
+        )["move_window"]
+
+        result = asyncio.run(tool("top", "Safari"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["message"], "La position doit etre left, right, center ou fullscreen.")
+        self.assertEqual(security.intents, [])
+        self.assertEqual(macos_tools.move_window_calls, [])
+
+    def test_window_tool_failure_returns_explicit_failure(self):
+        macos_tools = RecordingLiveMacOSTools(
+            window_error=RuntimeError("System Events erreur -10827"),
+        )
+        tool = self.make_tools(macos_tools=macos_tools)["get_active_window"]
+
+        result = asyncio.run(tool())
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "get_active_window")
+        self.assertIn("-10827", result["message"])
+
+    def test_state_confirmed_false_survives_to_livekit_dict(self):
+        macos_tools = RecordingLiveMacOSTools(
+            window_state={
+                "target_app": "Safari",
+                "frontmost": True,
+                "window_title": "Example",
+                "position": {"x": 100, "y": 100},
+                "size": {"width": 600, "height": 400},
+                "minimized": False,
+                "fullscreen": False,
+                "command_executed": True,
+                "state_confirmed": False,
+                "previous_position": {"x": 100, "y": 100},
+                "previous_size": {"width": 600, "height": 400},
+            }
+        )
+        tool = self.make_tools(macos_tools=macos_tools)["move_window"]
+
+        result = asyncio.run(tool("left", "Safari"))
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["command_executed"])
+        self.assertFalse(result["state_confirmed"])
+        self.assertIn("pas pu confirmer", result["message"])
+
+    def test_window_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        self.assertEqual(tools["get_active_window"].info.name, "get_active_window")
+        self.assertIn("fenetre active", tools["get_active_window"].info.description.lower())
+        self.assertEqual(tools["focus_window"].info.name, "focus_window")
+        self.assertIn("premier plan", tools["focus_window"].info.description.lower())
+        self.assertEqual(tools["minimize_window"].info.name, "minimize_window")
+        self.assertIn("minimise", tools["minimize_window"].info.description.lower())
+        self.assertEqual(tools["maximize_window"].info.name, "maximize_window")
+        self.assertIn("sans activer", tools["maximize_window"].info.description.lower())
+        self.assertEqual(tools["move_window"].info.name, "move_window")
+        self.assertIn("left", tools["move_window"].info.description.lower())
+
+    def test_window_tool_returns_awaitable_result_for_livekit(self):
+        tool = self.make_tools()["get_active_window"]
+
+        result = tool()
+
+        self.assertTrue(hasattr(result, "__await__"))
+        self.assertTrue(asyncio.run(result)["ok"])
+
+    def test_live_tools_use_to_thread_for_window_capability(self):
+        calls = []
+
+        async def fake_to_thread(func, *args):
+            calls.append((func.__name__, args))
+            return func(*args)
+
+        with patch("jarvis.live.registry.asyncio.to_thread", fake_to_thread):
+            tool = self.make_tools()["move_window"]
+            result = asyncio.run(tool("center", "Safari"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(calls, [("move_window", ("center", "Safari"))])
+
+    def test_existing_capability_tools_remain_exposed(self):
+        tools = self.make_tools()
+
+        self.assertIn("get_volume", tools)
+        self.assertIn("open_app", tools)
+        self.assertIn("play_pause", tools)
+        self.assertIn("get_battery_status", tools)
 
 
 if __name__ == "__main__":

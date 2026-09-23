@@ -7,6 +7,7 @@ from jarvis.capabilities.apps import AppCapability
 from jarvis.capabilities.audio import AudioCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.system import SystemCapability
+from jarvis.capabilities.windows import WindowCapability
 from jarvis.live.config import debug_live
 
 
@@ -17,6 +18,7 @@ class ToolRegistry:
         app_capability=None,
         media_capability=None,
         system_capability=None,
+        window_capability=None,
     ):
         self.audio = (
             audio_capability
@@ -37,6 +39,11 @@ class ToolRegistry:
             system_capability
             if system_capability is not None
             else SystemCapability()
+        )
+        self.windows = (
+            window_capability
+            if window_capability is not None
+            else WindowCapability()
         )
         self.media_lock = asyncio.Lock()
 
@@ -319,6 +326,87 @@ class ToolRegistry:
             self._debug_tool_result("lock_screen", result)
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="get_active_window",
+            description=(
+                "Lit la fenetre active reelle du Mac : application, titre, "
+                "position, taille, et etats minimise ou plein ecran."
+            ),
+        )
+        async def get_active_window() -> dict:
+            """Read the currently active Mac window."""
+            debug_live("tool_call", tool="get_active_window")
+            result = await asyncio.to_thread(self.windows.get_active_window)
+            self._debug_tool_result("get_active_window", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="focus_window",
+            description=(
+                "Met au premier plan une fenetre d'application macOS par nom "
+                "d'application, puis verifie l'etat observe."
+            ),
+        )
+        async def focus_window(app_name: str) -> dict:
+            """Focus a macOS application window."""
+            debug_live("tool_call", tool="focus_window", app_name=app_name)
+            result = await asyncio.to_thread(self.windows.focus_window, app_name)
+            self._debug_tool_result("focus_window", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="minimize_window",
+            description=(
+                "Minimise la fenetre active, ou la fenetre d'une application "
+                "si app_name est fourni, puis verifie l'etat observe."
+            ),
+        )
+        async def minimize_window(app_name: str | None = None) -> dict:
+            """Minimize the active window or an app window."""
+            debug_live("tool_call", tool="minimize_window", app_name=app_name)
+            result = await asyncio.to_thread(self.windows.minimize_window, app_name)
+            self._debug_tool_result("minimize_window", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="maximize_window",
+            description=(
+                "Agrandit la fenetre active, ou la fenetre d'une application "
+                "si app_name est fourni, dans le cadre utilisable sans activer "
+                "le plein ecran macOS."
+            ),
+        )
+        async def maximize_window(app_name: str | None = None) -> dict:
+            """Maximize the active window or an app window without fullscreen."""
+            debug_live("tool_call", tool="maximize_window", app_name=app_name)
+            result = await asyncio.to_thread(self.windows.maximize_window, app_name)
+            self._debug_tool_result("maximize_window", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="move_window",
+            description=(
+                "Deplace la fenetre active, ou la fenetre d'une application "
+                "si app_name est fourni. position accepte uniquement left, "
+                "right, center ou fullscreen."
+            ),
+        )
+        async def move_window(position: str, app_name: str | None = None) -> dict:
+            """Move the active window or an app window."""
+            debug_live(
+                "tool_call",
+                tool="move_window",
+                position=position,
+                app_name=app_name,
+            )
+            result = await asyncio.to_thread(
+                self.windows.move_window,
+                position,
+                app_name,
+            )
+            self._debug_tool_result("move_window", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
@@ -334,6 +422,11 @@ class ToolRegistry:
             get_brightness,
             set_brightness,
             lock_screen,
+            get_active_window,
+            focus_window,
+            minimize_window,
+            maximize_window,
+            move_window,
         ]
 
     @staticmethod
@@ -361,6 +454,7 @@ def create_live_tools(
     app_capability=None,
     media_capability=None,
     system_capability=None,
+    window_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -386,9 +480,16 @@ def create_live_tools(
             macos_tools=macos_tools,
         )
 
+    if window_capability is None:
+        window_capability = WindowCapability(
+            security=security,
+            macos_tools=macos_tools,
+        )
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
         media_capability=media_capability,
         system_capability=system_capability,
+        window_capability=window_capability,
     ).livekit_tools()

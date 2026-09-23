@@ -30,6 +30,10 @@ ALLOWED_ACTIONS = {
     "previous_track": RiskLevel.SAFE,
     "set_brightness": RiskLevel.SAFE,
     "lock_screen": RiskLevel.SAFE,
+    "focus_window": RiskLevel.SAFE,
+    "minimize_window": RiskLevel.SAFE,
+    "maximize_window": RiskLevel.SAFE,
+    "move_window": RiskLevel.SAFE,
     "conversation": RiskLevel.SAFE,
 }
 

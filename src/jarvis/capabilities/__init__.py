@@ -3,6 +3,7 @@ from jarvis.capabilities.audio import AudioCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.results import CapabilityError, ToolResult
 from jarvis.capabilities.system import SystemCapability
+from jarvis.capabilities.windows import WindowCapability
 
 __all__ = [
     "AppCapability",
@@ -11,4 +12,5 @@ __all__ = [
     "MediaCapability",
     "SystemCapability",
     "ToolResult",
+    "WindowCapability",
 ]
