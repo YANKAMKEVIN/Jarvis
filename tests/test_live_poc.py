@@ -25,6 +25,7 @@ from jarvis.live.logging import (
 )
 from jarvis.live.prompts import LIVE_SYSTEM_PROMPT
 from jarvis.live.tools import ToolRegistry, create_live_tools
+from jarvis.capabilities.results import ToolResult
 from jarvis.security import SecurityDecision
 from jarvis.voice_mode import VoiceMode
 
@@ -43,6 +44,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "get_media_state",
     "get_system_info",
     "get_volume",
+    "hotkey",
     "is_app_running",
     "list_files",
     "lock_screen",
@@ -55,11 +57,13 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "open_file",
     "open_folder",
     "play_pause",
+    "press_key",
     "previous_track",
     "rename_file",
     "set_brightness",
     "set_clipboard_text",
     "set_volume",
+    "type_text",
 ]
 
 
@@ -507,6 +511,63 @@ class RecordingLiveClipboardTools:
         return dict(self.clear_state)
 
 
+class RecordingLiveKeyboardCapability:
+    def __init__(self, error_result=None):
+        self.error_result = error_result
+        self.calls = []
+
+    def type_text(self, text):
+        self.calls.append(("type_text", text))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="type_text",
+            message=(
+                "La commande de saisie a ete envoyee, mais Jarvis ne peut "
+                "pas confirmer que le texte a ete applique."
+            ),
+            command_executed=True,
+            state_confirmed=False,
+            length=len(text),
+            target_app="Safari",
+            target_window="Example",
+        )
+
+    def press_key(self, key):
+        self.calls.append(("press_key", key))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="press_key",
+            message="La touche a ete envoyee.",
+            command_executed=True,
+            state_confirmed=False,
+            key=key,
+            target_app="Safari",
+            target_window="Example",
+        )
+
+    def hotkey(self, keys):
+        self.calls.append(("hotkey", keys))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="hotkey",
+            message="Le raccourci clavier a ete envoye.",
+            command_executed=True,
+            state_confirmed=False,
+            keys=list(keys),
+            target_app="Safari",
+            target_window="Example",
+        )
+
+
 class LivePocConfigTest(unittest.TestCase):
     def test_pyproject_marks_repository_as_agent_project_for_livekit_cli(self):
         pyproject_path = pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml"
@@ -738,6 +799,21 @@ class LivePocAgentTest(unittest.TestCase):
         self.assertIn("truncated=true", LIVE_SYSTEM_PROMPT)
         self.assertIn("content_type=no_text_detected", LIVE_SYSTEM_PROMPT)
         self.assertIn("ne reponds jamais depuis l'historique", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Pour les actions clavier", LIVE_SYSTEM_PROMPT)
+        self.assertIn("fenetre actuellement active", LIVE_SYSTEM_PROMPT)
+        self.assertIn("focus_window d'abord et attends son resultat", LIVE_SYSTEM_PROMPT)
+        self.assertIn("type_text n'appuie jamais automatiquement sur Entree", LIVE_SYSTEM_PROMPT)
+        self.assertIn("state_confirmed=false", LIVE_SYSTEM_PROMPT)
+        self.assertIn("command_executed=true signifie uniquement", LIVE_SYSTEM_PROMPT)
+        self.assertIn("ne dis jamais que l'effet dans l'application s'est produit", LIVE_SYSTEM_PROMPT)
+        self.assertIn("c'est copie", LIVE_SYSTEM_PROMPT)
+        self.assertIn("j'ai annule", LIVE_SYSTEM_PROMPT)
+        self.assertIn("cela a fonctionne", LIVE_SYSTEM_PROMPT)
+        self.assertIn("normalement", LIVE_SYSTEM_PROMPT)
+        self.assertIn("probablement", LIVE_SYSTEM_PROMPT)
+        self.assertIn("ca devrait etre bon", LIVE_SYSTEM_PROMPT)
+        self.assertIn("la commande clavier a ete envoyee", LIVE_SYSTEM_PROMPT)
+        self.assertIn("texte sensible inutilement", LIVE_SYSTEM_PROMPT)
 
     def test_live_agent_exposes_module_level_server_for_livekit_cli(self):
         self.assertTrue(hasattr(agent, "build_live_server"))
@@ -2018,6 +2094,124 @@ class LiveClipboardToolTest(unittest.TestCase):
         self.assertIn("get_battery_status", tools)
         self.assertIn("get_active_window", tools)
         self.assertIn("list_files", tools)
+
+
+class LiveKeyboardToolTest(unittest.TestCase):
+    def make_tools(self, keyboard_capability=None):
+        tools = create_live_tools(
+            security=RecordingLiveSecurity(),
+            keyboard_capability=(
+                keyboard_capability or RecordingLiveKeyboardCapability()
+            ),
+        )
+        return {
+            tool.info.name: tool
+            for tool in tools
+        }
+
+    def test_keyboard_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        self.assertEqual(tools["type_text"].info.name, "type_text")
+        self.assertEqual(tools["press_key"].info.name, "press_key")
+        self.assertEqual(tools["hotkey"].info.name, "hotkey")
+        self.assertIn("fenetre", tools["type_text"].info.description.lower())
+        self.assertIn("raccourci", tools["hotkey"].info.description.lower())
+        self.assertIn('["command", "a"]', tools["hotkey"].info.description)
+
+    def test_type_text_success_returns_structured_result_without_confirmation(self):
+        capability = RecordingLiveKeyboardCapability()
+        tool = self.make_tools(keyboard_capability=capability)["type_text"]
+
+        result = asyncio.run(tool("Bonjour"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "type_text")
+        self.assertTrue(result["command_executed"])
+        self.assertFalse(result["state_confirmed"])
+        self.assertEqual(result["length"], 7)
+        self.assertNotIn("text", result)
+        self.assertEqual(capability.calls, [("type_text", "Bonjour")])
+
+    def test_press_key_success_returns_structured_result(self):
+        capability = RecordingLiveKeyboardCapability()
+        tool = self.make_tools(keyboard_capability=capability)["press_key"]
+
+        result = asyncio.run(tool("enter"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["key"], "enter")
+        self.assertFalse(result["state_confirmed"])
+        self.assertEqual(capability.calls, [("press_key", "enter")])
+
+    def test_hotkey_success_returns_structured_result(self):
+        capability = RecordingLiveKeyboardCapability()
+        tool = self.make_tools(keyboard_capability=capability)["hotkey"]
+
+        result = asyncio.run(tool(["command", "a"]))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["keys"], ["command", "a"])
+        self.assertFalse(result["state_confirmed"])
+        self.assertEqual(capability.calls, [("hotkey", ["command", "a"])])
+
+    def test_keyboard_tools_return_awaitable_result_for_livekit(self):
+        tool = self.make_tools()["press_key"]
+
+        result = tool("enter")
+
+        self.assertTrue(hasattr(result, "__await__"))
+        self.assertTrue(asyncio.run(result)["ok"])
+
+    def test_live_tools_use_to_thread_for_keyboard_capability(self):
+        calls = []
+
+        async def fake_to_thread(func, *args):
+            calls.append((func.__name__, args))
+            return func(*args)
+
+        with patch("jarvis.live.registry.asyncio.to_thread", fake_to_thread):
+            tool = self.make_tools()["hotkey"]
+            result = asyncio.run(tool(["command", "a"]))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(calls, [("hotkey", (["command", "a"],))])
+
+    def test_keyboard_tools_share_a_lock_without_affecting_existing_locks(self):
+        registry = ToolRegistry(
+            keyboard_capability=object(),
+            media_capability=object(),
+            clipboard_capability=object(),
+        )
+
+        self.assertIsNot(registry.keyboard_lock, registry.media_lock)
+        self.assertIsNot(registry.keyboard_lock, registry.clipboard_lock)
+        self.assertTrue(hasattr(registry.keyboard_lock, "acquire"))
+
+    def test_keyboard_debug_does_not_log_raw_text(self):
+        secret = "JARVIS_KEYBOARD_SECRET_SENTINEL_42a1"
+        capability = RecordingLiveKeyboardCapability()
+        tools = self.make_tools(keyboard_capability=capability)
+
+        with patch.dict(os.environ, {"JARVIS_DEBUG_LIVE": "1"}, clear=True):
+            output = StringIO()
+
+            with redirect_stdout(output):
+                asyncio.run(tools["type_text"](secret))
+
+        debug_output = output.getvalue()
+
+        self.assertNotIn(secret, debug_output)
+        self.assertIn("type_text", debug_output)
+        self.assertIn(f"length: {len(secret)}", debug_output)
+
+    def test_existing_capability_tools_remain_exposed_with_keyboard(self):
+        tools = self.make_tools()
+
+        self.assertIn("get_volume", tools)
+        self.assertIn("open_app", tools)
+        self.assertIn("get_active_window", tools)
+        self.assertIn("get_clipboard_text", tools)
 
 
 if __name__ == "__main__":

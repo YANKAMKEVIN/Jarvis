@@ -41,6 +41,9 @@ ALLOWED_ACTIONS = {
     "move_file": RiskLevel.SAFE,
     "set_clipboard_text": RiskLevel.SAFE,
     "clear_clipboard": RiskLevel.SAFE,
+    "type_text": RiskLevel.SAFE,
+    "press_key": RiskLevel.SAFE,
+    "hotkey": RiskLevel.SAFE,
     "conversation": RiskLevel.SAFE,
 }
 

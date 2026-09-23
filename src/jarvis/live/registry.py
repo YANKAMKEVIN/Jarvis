@@ -7,6 +7,7 @@ from jarvis.capabilities.apps import AppCapability
 from jarvis.capabilities.audio import AudioCapability
 from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.files import FilesCapability
+from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.system import SystemCapability
 from jarvis.capabilities.windows import WindowCapability
@@ -23,6 +24,7 @@ class ToolRegistry:
         window_capability=None,
         files_capability=None,
         clipboard_capability=None,
+        keyboard_capability=None,
     ):
         self.audio = (
             audio_capability
@@ -59,8 +61,14 @@ class ToolRegistry:
             if clipboard_capability is not None
             else ClipboardCapability()
         )
+        self.keyboard = (
+            keyboard_capability
+            if keyboard_capability is not None
+            else KeyboardCapability()
+        )
         self.media_lock = asyncio.Lock()
         self.clipboard_lock = asyncio.Lock()
+        self.keyboard_lock = asyncio.Lock()
 
     def livekit_tools(self) -> list[Any]:
         @function_tool(
@@ -610,6 +618,60 @@ class ToolRegistry:
             self._debug_clipboard_result("clear_clipboard", result)
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="type_text",
+            description=(
+                "Saisit le texte fourni dans la fenetre macOS actuellement "
+                "active. N'appuie jamais automatiquement sur Entree."
+            ),
+        )
+        async def type_text(text: str) -> dict:
+            """Type text into the currently active macOS window."""
+            debug_live(
+                "tool_call",
+                tool="type_text",
+                length=len(text) if isinstance(text, str) else None,
+            )
+            async with self.keyboard_lock:
+                result = await asyncio.to_thread(self.keyboard.type_text, text)
+            self._debug_keyboard_result("type_text", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="press_key",
+            description=(
+                "Appuie sur une touche clavier autorisee dans la fenetre "
+                "macOS actuellement active : enter, escape, tab, space, "
+                "arrow_up, arrow_down, arrow_left ou arrow_right."
+            ),
+        )
+        async def press_key(key: str) -> dict:
+            """Press one allowed key in the currently active macOS window."""
+            debug_live("tool_call", tool="press_key", key=key)
+            async with self.keyboard_lock:
+                result = await asyncio.to_thread(self.keyboard.press_key, key)
+            self._debug_keyboard_result("press_key", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="hotkey",
+            description=(
+                "Envoie un raccourci clavier explicitement autorise dans la "
+                "fenetre macOS actuellement active. Passe keys comme une "
+                'liste separee, par exemple ["command", "a"] ou '
+                '["command", "shift", "z"]. Raccourcis V1 : command+a, '
+                "command+c, command+v, command+z, command+shift+z, "
+                "command+f, command+s."
+            ),
+        )
+        async def hotkey(keys: list[str]) -> dict:
+            """Send one allowed hotkey in the active macOS window."""
+            debug_live("tool_call", tool="hotkey", keys=keys)
+            async with self.keyboard_lock:
+                result = await asyncio.to_thread(self.keyboard.hotkey, keys)
+            self._debug_keyboard_result("hotkey", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
@@ -641,6 +703,9 @@ class ToolRegistry:
             get_clipboard_text,
             set_clipboard_text,
             clear_clipboard,
+            type_text,
+            press_key,
+            hotkey,
         ]
 
     @staticmethod
@@ -682,12 +747,34 @@ class ToolRegistry:
                 error=result.error_code,
             )
 
+    @staticmethod
+    def _debug_keyboard_result(tool_name: str, result) -> None:
+        fields = {
+            "tool": tool_name,
+            "length": result.data.get("length"),
+            "key": result.data.get("key"),
+            "keys": result.data.get("keys"),
+            "target_app": result.data.get("target_app"),
+            "command_executed": result.data.get("command_executed"),
+            "state_confirmed": result.data.get("state_confirmed"),
+        }
+
+        if result.ok:
+            debug_live("tool_succeeded", **fields)
+        else:
+            debug_live(
+                "tool_failed",
+                tool=tool_name,
+                error=result.error_code,
+            )
+
 
 def create_live_tools(
     security=None,
     macos_tools=None,
     filesystem_tools=None,
     clipboard_tools=None,
+    keyboard_tools=None,
     audio_capability=None,
     app_capability=None,
     media_capability=None,
@@ -695,6 +782,7 @@ def create_live_tools(
     window_capability=None,
     files_capability=None,
     clipboard_capability=None,
+    keyboard_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -738,6 +826,12 @@ def create_live_tools(
             clipboard_tools=clipboard_tools,
         )
 
+    if keyboard_capability is None:
+        keyboard_capability = KeyboardCapability(
+            security=security,
+            keyboard_tools=keyboard_tools,
+        )
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
@@ -746,4 +840,5 @@ def create_live_tools(
         window_capability=window_capability,
         files_capability=files_capability,
         clipboard_capability=clipboard_capability,
+        keyboard_capability=keyboard_capability,
     ).livekit_tools()
