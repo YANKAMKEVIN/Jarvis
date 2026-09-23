@@ -4,6 +4,7 @@ from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.media import MediaCapability
+from jarvis.capabilities.mouse import MouseCapability
 from jarvis.capabilities.results import CapabilityError, ToolResult
 from jarvis.capabilities.system import SystemCapability
 from jarvis.capabilities.windows import WindowCapability
@@ -16,6 +17,7 @@ __all__ = [
     "FilesCapability",
     "KeyboardCapability",
     "MediaCapability",
+    "MouseCapability",
     "SystemCapability",
     "ToolResult",
     "WindowCapability",

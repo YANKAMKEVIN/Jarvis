@@ -9,6 +9,7 @@ from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.media import MediaCapability
+from jarvis.capabilities.mouse import MouseCapability
 from jarvis.capabilities.system import SystemCapability
 from jarvis.capabilities.windows import WindowCapability
 from jarvis.live.config import debug_live
@@ -25,6 +26,7 @@ class ToolRegistry:
         files_capability=None,
         clipboard_capability=None,
         keyboard_capability=None,
+        mouse_capability=None,
     ):
         self.audio = (
             audio_capability
@@ -66,9 +68,15 @@ class ToolRegistry:
             if keyboard_capability is not None
             else KeyboardCapability()
         )
+        self.mouse = (
+            mouse_capability
+            if mouse_capability is not None
+            else MouseCapability()
+        )
         self.media_lock = asyncio.Lock()
         self.clipboard_lock = asyncio.Lock()
         self.keyboard_lock = asyncio.Lock()
+        self.mouse_lock = asyncio.Lock()
 
     def livekit_tools(self) -> list[Any]:
         @function_tool(
@@ -672,6 +680,105 @@ class ToolRegistry:
             self._debug_keyboard_result("hotkey", result)
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="get_mouse_position",
+            description=(
+                "Lit la position actuelle reelle du pointeur de souris dans "
+                "les coordonnees globales macOS."
+            ),
+        )
+        async def get_mouse_position() -> dict:
+            """Read the current mouse pointer position."""
+            debug_live("tool_call", tool="get_mouse_position")
+            async with self.mouse_lock:
+                result = await asyncio.to_thread(self.mouse.get_mouse_position)
+            self._debug_mouse_result("get_mouse_position", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="move_mouse",
+            description=(
+                "Deplace le pointeur de souris vers des coordonnees macOS "
+                "explicites x/y. Ne devine jamais ces coordonnees."
+            ),
+        )
+        async def move_mouse(x: int, y: int) -> dict:
+            """Move the mouse pointer to explicit macOS coordinates."""
+            debug_live("tool_call", tool="move_mouse", x=x, y=y)
+            async with self.mouse_lock:
+                result = await asyncio.to_thread(self.mouse.move_mouse, x, y)
+            self._debug_mouse_result("move_mouse", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="click",
+            description=(
+                "Envoie un clic gauche a la position actuelle du pointeur. "
+                "Ce tool ne confirme pas l'effet applicatif du clic."
+            ),
+        )
+        async def click() -> dict:
+            """Send one left click at the current mouse position."""
+            debug_live("tool_call", tool="click")
+            async with self.mouse_lock:
+                result = await asyncio.to_thread(self.mouse.click)
+            self._debug_mouse_result("click", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="double_click",
+            description=(
+                "Envoie un double clic gauche a la position actuelle du "
+                "pointeur. Ce tool ne confirme pas l'effet applicatif."
+            ),
+        )
+        async def double_click() -> dict:
+            """Send one double left click at the current mouse position."""
+            debug_live("tool_call", tool="double_click")
+            async with self.mouse_lock:
+                result = await asyncio.to_thread(self.mouse.double_click)
+            self._debug_mouse_result("double_click", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="right_click",
+            description=(
+                "Envoie un clic droit a la position actuelle du pointeur. "
+                "Ce tool ne confirme pas l'effet applicatif du clic."
+            ),
+        )
+        async def right_click() -> dict:
+            """Send one right click at the current mouse position."""
+            debug_live("tool_call", tool="right_click")
+            async with self.mouse_lock:
+                result = await asyncio.to_thread(self.mouse.right_click)
+            self._debug_mouse_result("right_click", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="scroll",
+            description=(
+                "Envoie un scroll souris dans une direction explicite : up, "
+                "down, left ou right, avec amount entre 1 et 10."
+            ),
+        )
+        async def scroll(direction: str, amount: int = 3) -> dict:
+            """Send a bounded mouse scroll command."""
+            debug_live(
+                "tool_call",
+                tool="scroll",
+                direction=direction,
+                amount=amount,
+            )
+            async with self.mouse_lock:
+                result = await asyncio.to_thread(
+                    self.mouse.scroll,
+                    direction,
+                    amount,
+                )
+            self._debug_mouse_result("scroll", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
@@ -706,6 +813,12 @@ class ToolRegistry:
             type_text,
             press_key,
             hotkey,
+            get_mouse_position,
+            move_mouse,
+            click,
+            double_click,
+            right_click,
+            scroll,
         ]
 
     @staticmethod
@@ -768,6 +881,29 @@ class ToolRegistry:
                 error=result.error_code,
             )
 
+    @staticmethod
+    def _debug_mouse_result(tool_name: str, result) -> None:
+        fields = {
+            "tool": tool_name,
+            "x": result.data.get("x"),
+            "y": result.data.get("y"),
+            "direction": result.data.get("direction"),
+            "amount": result.data.get("amount"),
+            "button": result.data.get("button"),
+            "click_count": result.data.get("click_count"),
+            "command_executed": result.data.get("command_executed"),
+            "state_confirmed": result.data.get("state_confirmed"),
+        }
+
+        if result.ok:
+            debug_live("tool_succeeded", **fields)
+        else:
+            debug_live(
+                "tool_failed",
+                tool=tool_name,
+                error=result.error_code,
+            )
+
 
 def create_live_tools(
     security=None,
@@ -775,6 +911,7 @@ def create_live_tools(
     filesystem_tools=None,
     clipboard_tools=None,
     keyboard_tools=None,
+    mouse_tools=None,
     audio_capability=None,
     app_capability=None,
     media_capability=None,
@@ -783,6 +920,7 @@ def create_live_tools(
     files_capability=None,
     clipboard_capability=None,
     keyboard_capability=None,
+    mouse_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -832,6 +970,12 @@ def create_live_tools(
             keyboard_tools=keyboard_tools,
         )
 
+    if mouse_capability is None:
+        mouse_capability = MouseCapability(
+            security=security,
+            mouse_tools=mouse_tools,
+        )
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
@@ -841,4 +985,5 @@ def create_live_tools(
         files_capability=files_capability,
         clipboard_capability=clipboard_capability,
         keyboard_capability=keyboard_capability,
+        mouse_capability=mouse_capability,
     ).livekit_tools()

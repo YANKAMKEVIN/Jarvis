@@ -32,8 +32,10 @@ from jarvis.voice_mode import VoiceMode
 
 EXPECTED_LIVE_TOOL_NAMES = [
     "clear_clipboard",
+    "click",
     "close_app",
     "create_folder",
+    "double_click",
     "find_files",
     "focus_window",
     "get_active_window",
@@ -42,6 +44,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "get_clipboard_text",
     "get_file_info",
     "get_media_state",
+    "get_mouse_position",
     "get_system_info",
     "get_volume",
     "hotkey",
@@ -51,6 +54,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "maximize_window",
     "minimize_window",
     "move_file",
+    "move_mouse",
     "move_window",
     "next_track",
     "open_app",
@@ -60,6 +64,8 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "press_key",
     "previous_track",
     "rename_file",
+    "right_click",
+    "scroll",
     "set_brightness",
     "set_clipboard_text",
     "set_volume",
@@ -568,6 +574,92 @@ class RecordingLiveKeyboardCapability:
         )
 
 
+class RecordingLiveMouseCapability:
+    def __init__(self, error_result=None):
+        self.error_result = error_result
+        self.calls = []
+
+    def get_mouse_position(self):
+        self.calls.append(("get_mouse_position",))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="get_mouse_position",
+            message="La souris est en position x=10, y=20.",
+            x=10,
+            y=20,
+            screen_index=0,
+        )
+
+    def move_mouse(self, x, y):
+        self.calls.append(("move_mouse", x, y))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="move_mouse",
+            message="Le pointeur a ete deplace.",
+            command_executed=True,
+            state_confirmed=True,
+            previous_x=1,
+            previous_y=2,
+            target_x=x,
+            target_y=y,
+            x=x,
+            y=y,
+            screen_index=0,
+        )
+
+    def click(self):
+        self.calls.append(("click",))
+        return self._click_result("click", "left", 1)
+
+    def double_click(self):
+        self.calls.append(("double_click",))
+        return self._click_result("double_click", "left", 2)
+
+    def right_click(self):
+        self.calls.append(("right_click",))
+        return self._click_result("right_click", "right", 1)
+
+    def scroll(self, direction, amount=3):
+        self.calls.append(("scroll", direction, amount))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="scroll",
+            message="La commande de scroll a ete envoyee.",
+            command_executed=True,
+            state_confirmed=False,
+            direction=direction,
+            amount=amount,
+            x=10,
+            y=20,
+            screen_index=0,
+        )
+
+    def _click_result(self, action, button, click_count):
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action=action,
+            message="La commande de clic a ete envoyee.",
+            command_executed=True,
+            state_confirmed=False,
+            button=button,
+            click_count=click_count,
+            x=10,
+            y=20,
+            screen_index=0,
+        )
+
+
 class LivePocConfigTest(unittest.TestCase):
     def test_pyproject_marks_repository_as_agent_project_for_livekit_cli(self):
         pyproject_path = pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml"
@@ -814,6 +906,30 @@ class LivePocAgentTest(unittest.TestCase):
         self.assertIn("ca devrait etre bon", LIVE_SYSTEM_PROMPT)
         self.assertIn("la commande clavier a ete envoyee", LIVE_SYSTEM_PROMPT)
         self.assertIn("texte sensible inutilement", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Pour la souris", LIVE_SYSTEM_PROMPT)
+        self.assertIn("get_mouse_position", LIVE_SYSTEM_PROMPT)
+        self.assertIn("ne deduis jamais cette position depuis l'historique", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Ne devine jamais de coordonnees", LIVE_SYSTEM_PROMPT)
+        self.assertIn("MouseCapability ne comprend pas l'interface", LIVE_SYSTEM_PROMPT)
+        self.assertIn("attends son resultat", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Ne lance jamais move_mouse et click en parallele", LIVE_SYSTEM_PROMPT)
+        self.assertIn("command_executed=true autorise seulement", LIVE_SYSTEM_PROMPT)
+        self.assertIn("executee cote systeme", LIVE_SYSTEM_PROMPT)
+        self.assertIn("l'effet applicatif est confirme", LIVE_SYSTEM_PROMPT)
+        self.assertIn("c'est fait", LIVE_SYSTEM_PROMPT)
+        self.assertIn("le defilement a reussi", LIVE_SYSTEM_PROMPT)
+        self.assertIn("le clic a fonctionne", LIVE_SYSTEM_PROMPT)
+        self.assertIn("le bouton a ete active", LIVE_SYSTEM_PROMPT)
+        self.assertIn("D'accord.", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Je l'ai envoye.", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Voila.", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Ne demande pas systematiquement", LIVE_SYSTEM_PROMPT)
+        self.assertIn("est-ce que ca a fonctionne", LIVE_SYSTEM_PROMPT)
+        self.assertIn("est-ce que ca te convient", LIVE_SYSTEM_PROMPT)
+        self.assertIn("qu'est-ce que tu vois", LIVE_SYSTEM_PROMPT)
+        self.assertIn("necessaire pour poursuivre une sequence dependante", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Pas de spam de clics", LIVE_SYSTEM_PROMPT)
+        self.assertIn("pas de drag/drop en V1", LIVE_SYSTEM_PROMPT)
 
     def test_live_agent_exposes_module_level_server_for_livekit_cli(self):
         self.assertTrue(hasattr(agent, "build_live_server"))
@@ -2212,6 +2328,150 @@ class LiveKeyboardToolTest(unittest.TestCase):
         self.assertIn("open_app", tools)
         self.assertIn("get_active_window", tools)
         self.assertIn("get_clipboard_text", tools)
+
+
+class LiveMouseToolTest(unittest.TestCase):
+    def make_tools(self, mouse_capability=None):
+        tools = create_live_tools(
+            security=RecordingLiveSecurity(),
+            mouse_capability=(
+                mouse_capability or RecordingLiveMouseCapability()
+            ),
+        )
+        return {
+            tool.info.name: tool
+            for tool in tools
+        }
+
+    def test_mouse_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        self.assertEqual(tools["get_mouse_position"].info.name, "get_mouse_position")
+        self.assertEqual(tools["move_mouse"].info.name, "move_mouse")
+        self.assertEqual(tools["click"].info.name, "click")
+        self.assertEqual(tools["double_click"].info.name, "double_click")
+        self.assertEqual(tools["right_click"].info.name, "right_click")
+        self.assertEqual(tools["scroll"].info.name, "scroll")
+        self.assertIn("coordonnees", tools["move_mouse"].info.description.lower())
+        self.assertIn("up", tools["scroll"].info.description)
+        self.assertIn("down", tools["scroll"].info.description)
+
+    def test_get_mouse_position_success_returns_structured_result(self):
+        capability = RecordingLiveMouseCapability()
+        tool = self.make_tools(mouse_capability=capability)["get_mouse_position"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "get_mouse_position")
+        self.assertEqual(result["x"], 10)
+        self.assertEqual(result["y"], 20)
+        self.assertEqual(result["screen_index"], 0)
+        self.assertEqual(capability.calls, [("get_mouse_position",)])
+
+    def test_move_mouse_success_returns_structured_result(self):
+        capability = RecordingLiveMouseCapability()
+        tool = self.make_tools(mouse_capability=capability)["move_mouse"]
+
+        result = asyncio.run(tool(100, 200))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "move_mouse")
+        self.assertTrue(result["command_executed"])
+        self.assertTrue(result["state_confirmed"])
+        self.assertEqual(result["target_x"], 100)
+        self.assertEqual(result["target_y"], 200)
+        self.assertEqual(capability.calls, [("move_mouse", 100, 200)])
+
+    def test_click_tools_return_unconfirmed_results(self):
+        capability = RecordingLiveMouseCapability()
+        tools = self.make_tools(mouse_capability=capability)
+
+        click = asyncio.run(tools["click"]())
+        double_click = asyncio.run(tools["double_click"]())
+        right_click = asyncio.run(tools["right_click"]())
+
+        self.assertFalse(click["state_confirmed"])
+        self.assertEqual(click["button"], "left")
+        self.assertEqual(click["click_count"], 1)
+        self.assertEqual(double_click["click_count"], 2)
+        self.assertEqual(right_click["button"], "right")
+        self.assertEqual(
+            capability.calls,
+            [("click",), ("double_click",), ("right_click",)],
+        )
+
+    def test_scroll_success_returns_structured_result(self):
+        capability = RecordingLiveMouseCapability()
+        tool = self.make_tools(mouse_capability=capability)["scroll"]
+
+        result = asyncio.run(tool("down", 4))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["direction"], "down")
+        self.assertEqual(result["amount"], 4)
+        self.assertFalse(result["state_confirmed"])
+        self.assertEqual(capability.calls, [("scroll", "down", 4)])
+
+    def test_mouse_tools_return_awaitable_result_for_livekit(self):
+        tool = self.make_tools()["get_mouse_position"]
+
+        result = tool()
+
+        self.assertTrue(hasattr(result, "__await__"))
+        self.assertTrue(asyncio.run(result)["ok"])
+
+    def test_live_tools_use_to_thread_for_mouse_capability(self):
+        calls = []
+
+        async def fake_to_thread(func, *args):
+            calls.append((func.__name__, args))
+            return func(*args)
+
+        with patch("jarvis.live.registry.asyncio.to_thread", fake_to_thread):
+            tool = self.make_tools()["move_mouse"]
+            result = asyncio.run(tool(100, 200))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(calls, [("move_mouse", (100, 200))])
+
+    def test_mouse_tools_share_a_lock_without_affecting_existing_locks(self):
+        registry = ToolRegistry(
+            mouse_capability=object(),
+            keyboard_capability=object(),
+            media_capability=object(),
+            clipboard_capability=object(),
+        )
+
+        self.assertIsNot(registry.mouse_lock, registry.keyboard_lock)
+        self.assertIsNot(registry.mouse_lock, registry.media_lock)
+        self.assertIsNot(registry.mouse_lock, registry.clipboard_lock)
+        self.assertTrue(hasattr(registry.mouse_lock, "acquire"))
+
+    def test_mouse_debug_logs_only_metadata(self):
+        capability = RecordingLiveMouseCapability()
+        tools = self.make_tools(mouse_capability=capability)
+
+        with patch.dict(os.environ, {"JARVIS_DEBUG_LIVE": "1"}, clear=True):
+            output = StringIO()
+
+            with redirect_stdout(output):
+                asyncio.run(tools["scroll"]("down", 4))
+
+        debug_output = output.getvalue()
+
+        self.assertIn("scroll", debug_output)
+        self.assertIn("direction: down", debug_output)
+        self.assertIn("amount: 4", debug_output)
+        self.assertIn("state_confirmed: False", debug_output)
+
+    def test_existing_capability_tools_remain_exposed_with_mouse(self):
+        tools = self.make_tools()
+
+        self.assertIn("get_volume", tools)
+        self.assertIn("open_app", tools)
+        self.assertIn("get_active_window", tools)
+        self.assertIn("type_text", tools)
 
 
 if __name__ == "__main__":

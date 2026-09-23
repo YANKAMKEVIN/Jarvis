@@ -44,6 +44,11 @@ ALLOWED_ACTIONS = {
     "type_text": RiskLevel.SAFE,
     "press_key": RiskLevel.SAFE,
     "hotkey": RiskLevel.SAFE,
+    "move_mouse": RiskLevel.SAFE,
+    "click": RiskLevel.SAFE,
+    "double_click": RiskLevel.SAFE,
+    "right_click": RiskLevel.SAFE,
+    "scroll": RiskLevel.SAFE,
     "conversation": RiskLevel.SAFE,
 }
 
