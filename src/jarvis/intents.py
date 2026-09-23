@@ -34,6 +34,11 @@ ALLOWED_ACTIONS = {
     "minimize_window": RiskLevel.SAFE,
     "maximize_window": RiskLevel.SAFE,
     "move_window": RiskLevel.SAFE,
+    "open_file": RiskLevel.SAFE,
+    "open_folder": RiskLevel.SAFE,
+    "create_folder": RiskLevel.SAFE,
+    "rename_file": RiskLevel.SAFE,
+    "move_file": RiskLevel.SAFE,
     "conversation": RiskLevel.SAFE,
 }
 

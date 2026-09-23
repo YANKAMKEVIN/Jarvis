@@ -5,6 +5,7 @@ from livekit.agents import function_tool
 
 from jarvis.capabilities.apps import AppCapability
 from jarvis.capabilities.audio import AudioCapability
+from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.system import SystemCapability
 from jarvis.capabilities.windows import WindowCapability
@@ -19,6 +20,7 @@ class ToolRegistry:
         media_capability=None,
         system_capability=None,
         window_capability=None,
+        files_capability=None,
     ):
         self.audio = (
             audio_capability
@@ -44,6 +46,11 @@ class ToolRegistry:
             window_capability
             if window_capability is not None
             else WindowCapability()
+        )
+        self.files = (
+            files_capability
+            if files_capability is not None
+            else FilesCapability()
         )
         self.media_lock = asyncio.Lock()
 
@@ -407,6 +414,137 @@ class ToolRegistry:
             self._debug_tool_result("move_window", result)
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="list_files",
+            description=(
+                "Liste les fichiers et dossiers d'un chemin local macOS. "
+                "Utilise ce tool pour connaitre le contenu actuel d'un dossier."
+            ),
+        )
+        async def list_files(path: str | None = None) -> dict:
+            """List files in a local folder."""
+            debug_live("tool_call", tool="list_files", path=path)
+            result = await asyncio.to_thread(self.files.list_files, path)
+            self._debug_tool_result("list_files", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="find_files",
+            description=(
+                "Recherche de maniere bornee des fichiers ou dossiers locaux "
+                "par nom, correspondance partielle ou extension."
+            ),
+        )
+        async def find_files(query: str, path: str | None = None) -> dict:
+            """Find files or folders by name in a local folder."""
+            debug_live("tool_call", tool="find_files", query=query, path=path)
+            result = await asyncio.to_thread(self.files.find_files, query, path)
+            self._debug_tool_result("find_files", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="get_file_info",
+            description=(
+                "Lit les informations actuelles d'un fichier ou dossier local : "
+                "type, taille, date de modification et chemin absolu."
+            ),
+        )
+        async def get_file_info(path: str) -> dict:
+            """Read metadata for a local file or folder."""
+            debug_live("tool_call", tool="get_file_info", path=path)
+            result = await asyncio.to_thread(self.files.get_file_info, path)
+            self._debug_tool_result("get_file_info", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="open_file",
+            description=(
+                "Ouvre un fichier local avec l'application macOS associee. "
+                "Le chemin doit etre exact, idealement un chemin absolu retourne "
+                "par un tool Files."
+            ),
+        )
+        async def open_file(path: str) -> dict:
+            """Open a local file with macOS."""
+            debug_live("tool_call", tool="open_file", path=path)
+            result = await asyncio.to_thread(self.files.open_file, path)
+            self._debug_tool_result("open_file", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="open_folder",
+            description=(
+                "Ouvre un dossier local dans Finder. Le chemin doit etre exact, "
+                "idealement un chemin absolu retourne par un tool Files."
+            ),
+        )
+        async def open_folder(path: str) -> dict:
+            """Open a local folder in Finder."""
+            debug_live("tool_call", tool="open_folder", path=path)
+            result = await asyncio.to_thread(self.files.open_folder, path)
+            self._debug_tool_result("open_folder", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="create_folder",
+            description=(
+                "Cree un dossier local sans ecraser de chemin existant, puis "
+                "verifie son existence."
+            ),
+        )
+        async def create_folder(path: str) -> dict:
+            """Create a local folder without overwriting."""
+            debug_live("tool_call", tool="create_folder", path=path)
+            result = await asyncio.to_thread(self.files.create_folder, path)
+            self._debug_tool_result("create_folder", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="rename_file",
+            description=(
+                "Renomme un fichier ou dossier local sans ecraser une destination "
+                "existante, puis verifie le resultat."
+            ),
+        )
+        async def rename_file(path: str, new_name: str) -> dict:
+            """Rename a local file or folder without overwriting."""
+            debug_live(
+                "tool_call",
+                tool="rename_file",
+                path=path,
+                new_name=new_name,
+            )
+            result = await asyncio.to_thread(
+                self.files.rename_file,
+                path,
+                new_name,
+            )
+            self._debug_tool_result("rename_file", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="move_file",
+            description=(
+                "Deplace un fichier ou dossier local vers une destination exacte "
+                "sans jamais ecraser de chemin existant."
+            ),
+        )
+        async def move_file(source: str, destination: str) -> dict:
+            """Move a local file or folder without overwriting."""
+            debug_live(
+                "tool_call",
+                tool="move_file",
+                source=source,
+                destination=destination,
+            )
+            result = await asyncio.to_thread(
+                self.files.move_file,
+                source,
+                destination,
+            )
+            self._debug_tool_result("move_file", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
@@ -427,6 +565,14 @@ class ToolRegistry:
             minimize_window,
             maximize_window,
             move_window,
+            list_files,
+            find_files,
+            get_file_info,
+            open_file,
+            open_folder,
+            create_folder,
+            rename_file,
+            move_file,
         ]
 
     @staticmethod
@@ -450,11 +596,13 @@ class ToolRegistry:
 def create_live_tools(
     security=None,
     macos_tools=None,
+    filesystem_tools=None,
     audio_capability=None,
     app_capability=None,
     media_capability=None,
     system_capability=None,
     window_capability=None,
+    files_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -486,10 +634,17 @@ def create_live_tools(
             macos_tools=macos_tools,
         )
 
+    if files_capability is None:
+        files_capability = FilesCapability(
+            security=security,
+            filesystem_tools=filesystem_tools,
+        )
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
         media_capability=media_capability,
         system_capability=system_capability,
         window_capability=window_capability,
+        files_capability=files_capability,
     ).livekit_tools()

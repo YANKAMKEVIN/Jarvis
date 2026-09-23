@@ -26,22 +26,30 @@ from jarvis.voice_mode import VoiceMode
 
 EXPECTED_LIVE_TOOL_NAMES = [
     "close_app",
+    "create_folder",
+    "find_files",
     "focus_window",
     "get_active_window",
     "get_battery_status",
     "get_brightness",
+    "get_file_info",
     "get_media_state",
     "get_system_info",
     "get_volume",
     "is_app_running",
+    "list_files",
     "lock_screen",
     "maximize_window",
     "minimize_window",
+    "move_file",
     "move_window",
     "next_track",
     "open_app",
+    "open_file",
+    "open_folder",
     "play_pause",
     "previous_track",
+    "rename_file",
     "set_brightness",
     "set_volume",
 ]
@@ -331,6 +339,99 @@ class RecordingLiveMacOSTools:
         return dict(self.window_state)
 
 
+class RecordingLiveFileSystemTools:
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = []
+
+    def _raise_if_needed(self):
+        if self.error is not None:
+            raise self.error
+
+    def list_files(self, path=None):
+        self.calls.append(("list_files", path))
+        self._raise_if_needed()
+        return {
+            "path": "/Users/test",
+            "results": [],
+            "result_count": 0,
+            "truncated": False,
+        }
+
+    def find_files(self, query, path=None):
+        self.calls.append(("find_files", query, path))
+        self._raise_if_needed()
+        return {
+            "query": query,
+            "path": "/Users/test",
+            "results": [{"path": "/Users/test/report.pdf", "name": "report.pdf"}],
+            "result_count": 1,
+            "truncated": False,
+        }
+
+    def get_file_info(self, path):
+        self.calls.append(("get_file_info", path))
+        self._raise_if_needed()
+        return {
+            "path": path,
+            "name": "report.pdf",
+            "kind": "file",
+            "size_bytes": 42,
+            "modified_at": "2026-09-23T12:00:00",
+            "is_hidden": False,
+            "is_symlink": False,
+        }
+
+    def open_file(self, path):
+        self.calls.append(("open_file", path))
+        self._raise_if_needed()
+        return {
+            "path": path,
+            "command_executed": True,
+            "state_confirmed": False,
+        }
+
+    def open_folder(self, path):
+        self.calls.append(("open_folder", path))
+        self._raise_if_needed()
+        return {
+            "path": path,
+            "command_executed": True,
+            "state_confirmed": False,
+        }
+
+    def create_folder(self, path):
+        self.calls.append(("create_folder", path))
+        self._raise_if_needed()
+        return {
+            "path": path,
+            "command_executed": True,
+            "state_confirmed": True,
+        }
+
+    def rename_file(self, path, new_name):
+        self.calls.append(("rename_file", path, new_name))
+        self._raise_if_needed()
+        return {
+            "previous_path": path,
+            "path": f"/Users/test/{new_name}",
+            "destination": f"/Users/test/{new_name}",
+            "command_executed": True,
+            "state_confirmed": True,
+        }
+
+    def move_file(self, source, destination):
+        self.calls.append(("move_file", source, destination))
+        self._raise_if_needed()
+        return {
+            "previous_path": source,
+            "path": destination,
+            "destination": destination,
+            "command_executed": True,
+            "state_confirmed": True,
+        }
+
+
 class LivePocConfigTest(unittest.TestCase):
     def test_pyproject_marks_repository_as_agent_project_for_livekit_cli(self):
         pyproject_path = pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml"
@@ -463,6 +564,10 @@ class LivePocAgentTest(unittest.TestCase):
         self.assertIn('Ne dis jamais "je vois"', LIVE_SYSTEM_PROMPT)
         self.assertIn("je confirme visuellement", LIVE_SYSTEM_PROMPT)
         self.assertIn("d'après l'état de la fenêtre", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Pour les fichiers et dossiers", LIVE_SYSTEM_PROMPT)
+        self.assertIn("état actuel du filesystem", LIVE_SYSTEM_PROMPT)
+        self.assertIn("chemins absolus retournes par les tools Files", LIVE_SYSTEM_PROMPT)
+        self.assertIn("ambiguous_path", LIVE_SYSTEM_PROMPT)
 
     def test_live_agent_exposes_module_level_server_for_livekit_cli(self):
         self.assertTrue(hasattr(agent, "build_live_server"))
@@ -1395,6 +1500,142 @@ class LiveWindowToolTest(unittest.TestCase):
         self.assertIn("open_app", tools)
         self.assertIn("play_pause", tools)
         self.assertIn("get_battery_status", tools)
+
+
+class LiveFilesToolTest(unittest.TestCase):
+    def make_tools(self, security=None, filesystem_tools=None):
+        tools = create_live_tools(
+            security=security or RecordingLiveSecurity(),
+            filesystem_tools=filesystem_tools or RecordingLiveFileSystemTools(),
+        )
+        return {
+            tool.info.name: tool
+            for tool in tools
+        }
+
+    def test_list_files_success_returns_structured_result(self):
+        filesystem_tools = RecordingLiveFileSystemTools()
+        tool = self.make_tools(filesystem_tools=filesystem_tools)["list_files"]
+
+        result = asyncio.run(tool("Documents"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "list_files")
+        self.assertEqual(result["result_count"], 0)
+        self.assertEqual(filesystem_tools.calls, [("list_files", "Documents")])
+
+    def test_find_files_success_returns_structured_result(self):
+        filesystem_tools = RecordingLiveFileSystemTools()
+        tool = self.make_tools(filesystem_tools=filesystem_tools)["find_files"]
+
+        result = asyncio.run(tool("report", "Downloads"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "find_files")
+        self.assertEqual(result["result_count"], 1)
+        self.assertEqual(
+            filesystem_tools.calls,
+            [("find_files", "report", "Downloads")],
+        )
+
+    def test_get_file_info_success_returns_structured_result(self):
+        filesystem_tools = RecordingLiveFileSystemTools()
+        tool = self.make_tools(filesystem_tools=filesystem_tools)["get_file_info"]
+
+        result = asyncio.run(tool("/Users/test/report.pdf"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["kind"], "file")
+        self.assertEqual(result["size_bytes"], 42)
+        self.assertEqual(
+            filesystem_tools.calls,
+            [("get_file_info", "/Users/test/report.pdf")],
+        )
+
+    def test_open_file_and_folder_preserve_unconfirmed_state(self):
+        filesystem_tools = RecordingLiveFileSystemTools()
+        tools = self.make_tools(filesystem_tools=filesystem_tools)
+
+        file_result = asyncio.run(tools["open_file"]("/Users/test/report.pdf"))
+        folder_result = asyncio.run(tools["open_folder"]("/Users/test/Documents"))
+
+        self.assertTrue(file_result["command_executed"])
+        self.assertFalse(file_result["state_confirmed"])
+        self.assertTrue(folder_result["command_executed"])
+        self.assertFalse(folder_result["state_confirmed"])
+
+    def test_create_rename_and_move_files_use_security(self):
+        security = RecordingLiveSecurity()
+        filesystem_tools = RecordingLiveFileSystemTools()
+        tools = self.make_tools(
+            security=security,
+            filesystem_tools=filesystem_tools,
+        )
+
+        create = asyncio.run(tools["create_folder"]("/Users/test/New"))
+        rename = asyncio.run(
+            tools["rename_file"]("/Users/test/old.txt", "new.txt")
+        )
+        move = asyncio.run(
+            tools["move_file"]("/Users/test/new.txt", "/Users/test/Done/new.txt")
+        )
+
+        self.assertTrue(create["state_confirmed"])
+        self.assertTrue(rename["state_confirmed"])
+        self.assertTrue(move["state_confirmed"])
+        self.assertEqual(
+            [intent.action for intent in security.intents],
+            ["create_folder", "rename_file", "move_file"],
+        )
+
+    def test_files_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        self.assertEqual(tools["list_files"].info.name, "list_files")
+        self.assertIn("dossier", tools["list_files"].info.description.lower())
+        self.assertEqual(tools["find_files"].info.name, "find_files")
+        self.assertIn("extension", tools["find_files"].info.description.lower())
+        self.assertEqual(tools["get_file_info"].info.name, "get_file_info")
+        self.assertIn("taille", tools["get_file_info"].info.description.lower())
+        self.assertEqual(tools["open_file"].info.name, "open_file")
+        self.assertEqual(tools["open_folder"].info.name, "open_folder")
+        self.assertEqual(tools["create_folder"].info.name, "create_folder")
+        self.assertEqual(tools["rename_file"].info.name, "rename_file")
+        self.assertEqual(tools["move_file"].info.name, "move_file")
+
+    def test_file_tool_returns_awaitable_result_for_livekit(self):
+        tool = self.make_tools()["list_files"]
+
+        result = tool()
+
+        self.assertTrue(hasattr(result, "__await__"))
+        self.assertTrue(asyncio.run(result)["ok"])
+
+    def test_live_tools_use_to_thread_for_files_capability(self):
+        calls = []
+
+        async def fake_to_thread(func, *args):
+            calls.append((func.__name__, args))
+            return func(*args)
+
+        with patch("jarvis.live.registry.asyncio.to_thread", fake_to_thread):
+            tool = self.make_tools()["move_file"]
+            result = asyncio.run(tool("/Users/test/a.txt", "/Users/test/b.txt"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            calls,
+            [("move_file", ("/Users/test/a.txt", "/Users/test/b.txt"))],
+        )
+
+    def test_existing_capability_tools_remain_exposed_with_files(self):
+        tools = self.make_tools()
+
+        self.assertIn("get_volume", tools)
+        self.assertIn("open_app", tools)
+        self.assertIn("play_pause", tools)
+        self.assertIn("get_battery_status", tools)
+        self.assertIn("get_active_window", tools)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,10 @@ Si lock_screen retourne state_confirmed=false ou locked=null, ne dis jamais que 
 Pour contrôler les fenêtres, utilise get_active_window, focus_window, minimize_window, maximize_window ou move_window selon la demande. maximize_window agrandit la fenêtre sans plein écran macOS ; move_window avec position=fullscreen active le plein écran.
 Si un tool de fenêtre retourne state_confirmed=false, ne dis jamais que l'action fenêtre a réussi avec certitude ; dis seulement que la commande a été envoyée mais que l'état n'a pas pu être confirmé.
 Ne dis jamais "je vois", "visuellement" ou "je confirme visuellement" pour l'état d'une fenêtre si aucun tool de vision ou de capture d'écran n'a été utilisé ; dis plutôt "d'après l'état de la fenêtre" ou "l'état système indique".
+Pour les fichiers et dossiers, utilise list_files, find_files, get_file_info, open_file, open_folder, create_folder, rename_file ou move_file selon la demande.
+Pour toute question sur l'état actuel du filesystem, l'existence d'un fichier, le contenu d'un dossier, l'emplacement, la taille ou la date de modification, utilise obligatoirement le tool Files approprie au lieu de deduire depuis l'historique.
+Utilise toujours les chemins absolus retournes par les tools Files pour les references comme "ouvre-le" ou "ce dossier". Si le chemin est ambigu ou absent, demande une clarification au lieu d'inventer.
+Si un tool Files retourne ambiguous_path, presente les candidats et demande lequel utiliser. Si un tool Files retourne state_confirmed=false, ne dis jamais que l'action fichier a reussi avec certitude.
 Si le tool échoue, informe l'utilisateur de l'échec.
 """.strip()
 

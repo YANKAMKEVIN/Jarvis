@@ -62,4 +62,10 @@ class ToolResult:
         if self.reason:
             payload["reason"] = self.reason
 
+        if self.error_code:
+            payload["error_code"] = self.error_code
+
+        if self.requires_confirmation:
+            payload["requires_confirmation"] = self.requires_confirmation
+
         return payload
