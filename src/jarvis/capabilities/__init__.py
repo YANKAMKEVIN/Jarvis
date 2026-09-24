@@ -7,6 +7,7 @@ from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.mouse import MouseCapability
 from jarvis.capabilities.results import CapabilityError, ToolResult
 from jarvis.capabilities.system import SystemCapability
+from jarvis.capabilities.ui_accessibility import UIAccessibilityCapability
 from jarvis.capabilities.windows import WindowCapability
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "MouseCapability",
     "SystemCapability",
     "ToolResult",
+    "UIAccessibilityCapability",
     "WindowCapability",
 ]

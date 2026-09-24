@@ -31,12 +31,15 @@ from jarvis.voice_mode import VoiceMode
 
 
 EXPECTED_LIVE_TOOL_NAMES = [
+    "activate_ui_element",
     "clear_clipboard",
     "click",
     "close_app",
     "create_folder",
     "double_click",
     "find_files",
+    "find_ui_elements",
+    "focus_ui_element",
     "focus_window",
     "get_active_window",
     "get_battery_status",
@@ -48,6 +51,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "get_system_info",
     "get_volume",
     "hotkey",
+    "inspect_ui",
     "is_app_running",
     "list_files",
     "lock_screen",
@@ -660,6 +664,74 @@ class RecordingLiveMouseCapability:
         )
 
 
+class RecordingLiveUIAccessibilityCapability:
+    def __init__(self, error_result=None):
+        self.error_result = error_result
+        self.calls = []
+
+    def inspect_ui(self, max_depth=4, max_elements=80):
+        self.calls.append(("inspect_ui", max_depth, max_elements))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="inspect_ui",
+            message="1 element Accessibility exploitable a ete trouve.",
+            elements=[{"role": "AXButton", "title": "Continuer"}],
+            count=1,
+            truncated=False,
+            max_depth=max_depth,
+            max_elements=max_elements,
+        )
+
+    def find_ui_elements(self, query, role=None):
+        self.calls.append(("find_ui_elements", query, role))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="find_ui_elements",
+            message="Un element Accessibility correspond a cette recherche.",
+            query_length=len(query),
+            role=role,
+            candidates=[{"role": role or "AXButton", "title": "Continuer"}],
+            candidate_count=1,
+            truncated=False,
+        )
+
+    def focus_ui_element(self, query, role=None):
+        self.calls.append(("focus_ui_element", query, role))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="focus_ui_element",
+            message="Le focus Accessibility a ete confirme.",
+            command_executed=True,
+            state_confirmed=True,
+            candidate={"role": role or "AXTextField"},
+            element={"role": role or "AXTextField", "focused": True},
+        )
+
+    def activate_ui_element(self, query, role=None):
+        self.calls.append(("activate_ui_element", query, role))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="activate_ui_element",
+            message="La commande Accessibility a ete envoyee.",
+            command_executed=True,
+            state_confirmed=False,
+            candidate={"role": role or "AXButton"},
+            element={"role": role or "AXButton"},
+        )
+
+
 class LivePocConfigTest(unittest.TestCase):
     def test_pyproject_marks_repository_as_agent_project_for_livekit_cli(self):
         pyproject_path = pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml"
@@ -930,6 +1002,19 @@ class LivePocAgentTest(unittest.TestCase):
         self.assertIn("necessaire pour poursuivre une sequence dependante", LIVE_SYSTEM_PROMPT)
         self.assertIn("Pas de spam de clics", LIVE_SYSTEM_PROMPT)
         self.assertIn("pas de drag/drop en V1", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Pour comprendre l'interface macOS", LIVE_SYSTEM_PROMPT)
+        self.assertIn("inspect_ui", LIVE_SYSTEM_PROMPT)
+        self.assertIn("find_ui_elements", LIVE_SYSTEM_PROMPT)
+        self.assertIn("activate_ui_element", LIVE_SYSTEM_PROMPT)
+        self.assertIn("preferes a MouseCapability", LIVE_SYSTEM_PROMPT)
+        self.assertIn("ne dis jamais \"je vois\"", LIVE_SYSTEM_PROMPT)
+        self.assertIn("\"je vois que\"", LIVE_SYSTEM_PROMPT)
+        self.assertIn("d'apres l'interface accessible", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Ne reutilise jamais un ancien resultat Accessibility", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Si plusieurs elements correspondent", LIVE_SYSTEM_PROMPT)
+        self.assertIn("N'invente jamais un bouton absent", LIVE_SYSTEM_PROMPT)
+        self.assertIn("AXPress reussi signifie seulement", LIVE_SYSTEM_PROMPT)
+        self.assertIn("Ne repete jamais automatiquement AXPress", LIVE_SYSTEM_PROMPT)
 
     def test_live_agent_exposes_module_level_server_for_livekit_cli(self):
         self.assertTrue(hasattr(agent, "build_live_server"))
@@ -2472,6 +2557,137 @@ class LiveMouseToolTest(unittest.TestCase):
         self.assertIn("open_app", tools)
         self.assertIn("get_active_window", tools)
         self.assertIn("type_text", tools)
+
+
+class LiveUIAccessibilityToolTest(unittest.TestCase):
+    def make_tools(self, ui_accessibility_capability=None):
+        tools = create_live_tools(
+            security=RecordingLiveSecurity(),
+            ui_accessibility_capability=(
+                ui_accessibility_capability
+                or RecordingLiveUIAccessibilityCapability()
+            ),
+        )
+        return {
+            tool.info.name: tool
+            for tool in tools
+        }
+
+    def test_ui_accessibility_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        self.assertEqual(tools["inspect_ui"].info.name, "inspect_ui")
+        self.assertEqual(tools["find_ui_elements"].info.name, "find_ui_elements")
+        self.assertEqual(tools["focus_ui_element"].info.name, "focus_ui_element")
+        self.assertEqual(tools["activate_ui_element"].info.name, "activate_ui_element")
+        self.assertIn("Accessibility", tools["inspect_ui"].info.description)
+        self.assertIn("AXPress", tools["activate_ui_element"].info.description)
+
+    def test_inspect_ui_success_returns_structured_result(self):
+        capability = RecordingLiveUIAccessibilityCapability()
+        tool = self.make_tools(ui_accessibility_capability=capability)["inspect_ui"]
+
+        result = asyncio.run(tool(3, 20))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "inspect_ui")
+        self.assertEqual(result["count"], 1)
+        self.assertFalse(result["truncated"])
+        self.assertEqual(capability.calls, [("inspect_ui", 3, 20)])
+
+    def test_find_ui_elements_uses_query_but_debug_uses_length(self):
+        capability = RecordingLiveUIAccessibilityCapability()
+        tool = self.make_tools(ui_accessibility_capability=capability)["find_ui_elements"]
+
+        result = asyncio.run(tool("Secret label", "AXButton"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["query_length"], len("Secret label"))
+        self.assertEqual(
+            capability.calls,
+            [("find_ui_elements", "Secret label", "AXButton")],
+        )
+
+    def test_focus_and_activate_return_command_state(self):
+        capability = RecordingLiveUIAccessibilityCapability()
+        tools = self.make_tools(ui_accessibility_capability=capability)
+
+        focus = asyncio.run(tools["focus_ui_element"]("Recherche", "AXTextField"))
+        activate = asyncio.run(tools["activate_ui_element"]("Continuer", "AXButton"))
+
+        self.assertTrue(focus["state_confirmed"])
+        self.assertTrue(activate["command_executed"])
+        self.assertFalse(activate["state_confirmed"])
+        self.assertEqual(
+            capability.calls,
+            [
+                ("focus_ui_element", "Recherche", "AXTextField"),
+                ("activate_ui_element", "Continuer", "AXButton"),
+            ],
+        )
+
+    def test_ui_accessibility_tools_return_awaitable_result_for_livekit(self):
+        tool = self.make_tools()["inspect_ui"]
+
+        result = tool()
+
+        self.assertTrue(hasattr(result, "__await__"))
+        self.assertTrue(asyncio.run(result)["ok"])
+
+    def test_live_tools_use_to_thread_for_ui_accessibility_capability(self):
+        calls = []
+
+        async def fake_to_thread(func, *args):
+            calls.append((func.__name__, args))
+            return func(*args)
+
+        with patch("jarvis.live.registry.asyncio.to_thread", fake_to_thread):
+            tool = self.make_tools()["activate_ui_element"]
+            result = asyncio.run(tool("Continuer", "AXButton"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(calls, [("activate_ui_element", ("Continuer", "AXButton"))])
+
+    def test_ui_tools_share_a_lock_without_affecting_existing_locks(self):
+        registry = ToolRegistry(
+            ui_accessibility_capability=object(),
+            mouse_capability=object(),
+            keyboard_capability=object(),
+            media_capability=object(),
+            clipboard_capability=object(),
+        )
+
+        self.assertIsNot(registry.ui_lock, registry.mouse_lock)
+        self.assertIsNot(registry.ui_lock, registry.keyboard_lock)
+        self.assertIsNot(registry.ui_lock, registry.media_lock)
+        self.assertIsNot(registry.ui_lock, registry.clipboard_lock)
+        self.assertTrue(hasattr(registry.ui_lock, "acquire"))
+
+    def test_ui_debug_does_not_log_raw_query_or_labels(self):
+        secret = "JARVIS_UI_SECRET_LABEL_8d13"
+        capability = RecordingLiveUIAccessibilityCapability()
+        tools = self.make_tools(ui_accessibility_capability=capability)
+
+        with patch.dict(os.environ, {"JARVIS_DEBUG_LIVE": "1"}, clear=True):
+            output = StringIO()
+
+            with redirect_stdout(output):
+                asyncio.run(tools["find_ui_elements"](secret, "AXButton"))
+
+        debug_output = output.getvalue()
+
+        self.assertNotIn(secret, debug_output)
+        self.assertIn("find_ui_elements", debug_output)
+        self.assertIn(f"query_length: {len(secret)}", debug_output)
+
+    def test_existing_capability_tools_remain_exposed_with_ui_accessibility(self):
+        tools = self.make_tools()
+
+        self.assertIn("get_volume", tools)
+        self.assertIn("open_app", tools)
+        self.assertIn("get_active_window", tools)
+        self.assertIn("type_text", tools)
+        self.assertIn("click", tools)
 
 
 if __name__ == "__main__":

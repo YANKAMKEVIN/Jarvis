@@ -49,6 +49,10 @@ ALLOWED_ACTIONS = {
     "double_click": RiskLevel.SAFE,
     "right_click": RiskLevel.SAFE,
     "scroll": RiskLevel.SAFE,
+    "focus_ui_element": RiskLevel.SAFE,
+    # V1 allows the primitive AXPress action for test and assisted use. This
+    # does not mean every business consequence of a pressed UI button is safe.
+    "activate_ui_element": RiskLevel.SAFE,
     "conversation": RiskLevel.SAFE,
 }
 

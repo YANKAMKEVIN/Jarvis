@@ -11,6 +11,7 @@ from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.mouse import MouseCapability
 from jarvis.capabilities.system import SystemCapability
+from jarvis.capabilities.ui_accessibility import UIAccessibilityCapability
 from jarvis.capabilities.windows import WindowCapability
 from jarvis.live.config import debug_live
 
@@ -27,6 +28,7 @@ class ToolRegistry:
         clipboard_capability=None,
         keyboard_capability=None,
         mouse_capability=None,
+        ui_accessibility_capability=None,
     ):
         self.audio = (
             audio_capability
@@ -73,10 +75,16 @@ class ToolRegistry:
             if mouse_capability is not None
             else MouseCapability()
         )
+        self.ui_accessibility = (
+            ui_accessibility_capability
+            if ui_accessibility_capability is not None
+            else UIAccessibilityCapability()
+        )
         self.media_lock = asyncio.Lock()
         self.clipboard_lock = asyncio.Lock()
         self.keyboard_lock = asyncio.Lock()
         self.mouse_lock = asyncio.Lock()
+        self.ui_lock = asyncio.Lock()
 
     def livekit_tools(self) -> list[Any]:
         @function_tool(
@@ -779,6 +787,102 @@ class ToolRegistry:
             self._debug_mouse_result("scroll", result)
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="inspect_ui",
+            description=(
+                "Inspecte les elements Accessibility utiles dans la fenetre "
+                "macOS actuelle, avec une profondeur et un nombre d'elements bornes."
+            ),
+        )
+        async def inspect_ui(max_depth: int = 4, max_elements: int = 80) -> dict:
+            """Inspect the current macOS Accessibility UI tree."""
+            debug_live(
+                "tool_call",
+                tool="inspect_ui",
+                max_depth=max_depth,
+                max_elements=max_elements,
+            )
+            async with self.ui_lock:
+                result = await asyncio.to_thread(
+                    self.ui_accessibility.inspect_ui,
+                    max_depth,
+                    max_elements,
+                )
+            self._debug_ui_result("inspect_ui", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="find_ui_elements",
+            description=(
+                "Recherche des elements Accessibility par nom ou label humain. "
+                "role est optionnel et ne doit etre fourni que s'il est utile."
+            ),
+        )
+        async def find_ui_elements(query: str, role: str | None = None) -> dict:
+            """Find current macOS Accessibility UI elements by human label."""
+            debug_live(
+                "tool_call",
+                tool="find_ui_elements",
+                query_length=len(query) if isinstance(query, str) else None,
+                role=role,
+            )
+            async with self.ui_lock:
+                result = await asyncio.to_thread(
+                    self.ui_accessibility.find_ui_elements,
+                    query,
+                    role,
+                )
+            self._debug_ui_result("find_ui_elements", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="focus_ui_element",
+            description=(
+                "Met le focus Accessibility sur un element nomme de "
+                "l'interface actuelle. L'element est re-resolu juste avant l'action."
+            ),
+        )
+        async def focus_ui_element(query: str, role: str | None = None) -> dict:
+            """Focus one current macOS Accessibility UI element."""
+            debug_live(
+                "tool_call",
+                tool="focus_ui_element",
+                query_length=len(query) if isinstance(query, str) else None,
+                role=role,
+            )
+            async with self.ui_lock:
+                result = await asyncio.to_thread(
+                    self.ui_accessibility.focus_ui_element,
+                    query,
+                    role,
+                )
+            self._debug_ui_result("focus_ui_element", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="activate_ui_element",
+            description=(
+                "Active un element Accessibility nomme avec AXPress lorsque "
+                "l'element expose cette action. Aucun fallback souris automatique."
+            ),
+        )
+        async def activate_ui_element(query: str, role: str | None = None) -> dict:
+            """Activate one current macOS Accessibility UI element with AXPress."""
+            debug_live(
+                "tool_call",
+                tool="activate_ui_element",
+                query_length=len(query) if isinstance(query, str) else None,
+                role=role,
+            )
+            async with self.ui_lock:
+                result = await asyncio.to_thread(
+                    self.ui_accessibility.activate_ui_element,
+                    query,
+                    role,
+                )
+            self._debug_ui_result("activate_ui_element", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
@@ -819,6 +923,10 @@ class ToolRegistry:
             double_click,
             right_click,
             scroll,
+            inspect_ui,
+            find_ui_elements,
+            focus_ui_element,
+            activate_ui_element,
         ]
 
     @staticmethod
@@ -904,6 +1012,28 @@ class ToolRegistry:
                 error=result.error_code,
             )
 
+    @staticmethod
+    def _debug_ui_result(tool_name: str, result) -> None:
+        fields = {
+            "tool": tool_name,
+            "count": result.data.get("count"),
+            "truncated": result.data.get("truncated"),
+            "role": result.data.get("role"),
+            "query_length": result.data.get("query_length"),
+            "candidate_count": result.data.get("candidate_count"),
+            "command_executed": result.data.get("command_executed"),
+            "state_confirmed": result.data.get("state_confirmed"),
+        }
+
+        if result.ok:
+            debug_live("tool_succeeded", **fields)
+        else:
+            debug_live(
+                "tool_failed",
+                tool=tool_name,
+                error=result.error_code,
+            )
+
 
 def create_live_tools(
     security=None,
@@ -912,6 +1042,7 @@ def create_live_tools(
     clipboard_tools=None,
     keyboard_tools=None,
     mouse_tools=None,
+    accessibility_tools=None,
     audio_capability=None,
     app_capability=None,
     media_capability=None,
@@ -921,6 +1052,7 @@ def create_live_tools(
     clipboard_capability=None,
     keyboard_capability=None,
     mouse_capability=None,
+    ui_accessibility_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -976,6 +1108,12 @@ def create_live_tools(
             mouse_tools=mouse_tools,
         )
 
+    if ui_accessibility_capability is None:
+        ui_accessibility_capability = UIAccessibilityCapability(
+            security=security,
+            accessibility_tools=accessibility_tools,
+        )
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
@@ -986,4 +1124,5 @@ def create_live_tools(
         clipboard_capability=clipboard_capability,
         keyboard_capability=keyboard_capability,
         mouse_capability=mouse_capability,
+        ui_accessibility_capability=ui_accessibility_capability,
     ).livekit_tools()
