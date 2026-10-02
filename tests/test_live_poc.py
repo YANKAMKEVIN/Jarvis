@@ -37,6 +37,9 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "browse_list_tabs",
     "browse_open_url",
     "browse_search_web",
+    "capture_region",
+    "capture_screen",
+    "capture_window",
     "clear_clipboard",
     "click",
     "close_app",
@@ -3116,6 +3119,125 @@ class LiveBrowserToolTest(unittest.TestCase):
 
         self.assertIsNot(registry.browser_lock, registry.interaction_lock)
         self.assertTrue(hasattr(registry.browser_lock, "acquire"))
+
+
+class RecordingLiveScreenshotCapability:
+    def __init__(self):
+        self.calls = []
+
+    def capture_screen(self, path=None, display=None):
+        self.calls.append(("capture_screen", path, display))
+        return ToolResult.success(
+            action="capture_screen",
+            message="Capture enregistree.",
+            path="/Users/someone/Pictures/Jarvis/jarvis-screenshot-x.png",
+            bytes=4096,
+            width=1440,
+            height=900,
+            command_executed=True,
+            state_confirmed=True,
+        )
+
+    def capture_region(self, x, y, width, height, path=None):
+        self.calls.append(("capture_region", x, y, width, height, path))
+        return ToolResult.success(
+            action="capture_region",
+            message="Capture enregistree.",
+            path="/Users/someone/Pictures/Jarvis/region.png",
+            bytes=1024,
+            width=width,
+            height=height,
+            region={"x": x, "y": y, "width": width, "height": height},
+            command_executed=True,
+            state_confirmed=True,
+        )
+
+    def capture_window(self, app_name=None, path=None):
+        self.calls.append(("capture_window", app_name, path))
+        return ToolResult.success(
+            action="capture_window",
+            message="Capture enregistree.",
+            path="/Users/someone/Pictures/Jarvis/window.png",
+            bytes=2048,
+            target_app=app_name or "Safari",
+            command_executed=True,
+            state_confirmed=True,
+        )
+
+
+class LiveScreenshotToolTest(unittest.TestCase):
+    def make_tools(self, screenshot_capability=None):
+        tools = create_live_tools(
+            security=RecordingLiveSecurity(),
+            screenshot_capability=(
+                screenshot_capability or RecordingLiveScreenshotCapability()
+            ),
+        )
+        return {tool.info.name: tool for tool in tools}
+
+    def test_screenshot_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        for name in ("capture_screen", "capture_region", "capture_window"):
+            self.assertEqual(tools[name].info.name, name)
+
+        self.assertIn("ne contient pas l'image", tools["capture_screen"].info.description)
+        self.assertIn("coordonnees", tools["capture_region"].info.description)
+
+    def test_capture_screen_routes_to_capability(self):
+        capability = RecordingLiveScreenshotCapability()
+        tool = self.make_tools(capability)["capture_screen"]
+
+        result = asyncio.run(tool(None, 1))
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["state_confirmed"])
+        self.assertEqual(capability.calls, [("capture_screen", None, 1)])
+
+    def test_capture_region_routes_to_capability(self):
+        capability = RecordingLiveScreenshotCapability()
+        tool = self.make_tools(capability)["capture_region"]
+
+        result = asyncio.run(tool(10, 20, 30, 40, None))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            capability.calls,
+            [("capture_region", 10, 20, 30, 40, None)],
+        )
+
+    def test_capture_window_routes_to_capability(self):
+        capability = RecordingLiveScreenshotCapability()
+        tool = self.make_tools(capability)["capture_window"]
+
+        result = asyncio.run(tool("Notes", None))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(capability.calls, [("capture_window", "Notes", None)])
+
+    def test_screenshot_debug_logs_basename_not_full_path(self):
+        capability = RecordingLiveScreenshotCapability()
+        tools = self.make_tools(capability)
+
+        with patch.dict(os.environ, {"JARVIS_DEBUG_LIVE": "1"}, clear=True):
+            output = StringIO()
+
+            with redirect_stdout(output):
+                asyncio.run(tools["capture_screen"](None, None))
+
+        debug_output = output.getvalue()
+
+        self.assertNotIn("/Users/someone/Pictures/Jarvis", debug_output)
+        self.assertIn("jarvis-screenshot-x.png", debug_output)
+
+    def test_screenshot_has_its_own_lock(self):
+        registry = ToolRegistry(
+            screenshot_capability=object(),
+            browser_capability=object(),
+        )
+
+        self.assertIsNot(registry.screenshot_lock, registry.browser_lock)
+        self.assertTrue(hasattr(registry.screenshot_lock, "acquire"))
 
 
 if __name__ == "__main__":

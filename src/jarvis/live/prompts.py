@@ -66,6 +66,9 @@ Pour aller sur un site web ou ouvrir une URL dans le navigateur, utilise browse_
 Pour une demande comme "ouvre YouTube", "va sur lemonde.fr" ou "cherche la meteo dans le navigateur", prefere browse_open_url et browse_search_web plutot que open_app seul : ils ouvrent la bonne page et la verifient. Precise browser seulement si l'utilisateur nomme Safari ou Google Chrome, sinon laisse le choix automatique.
 Pour savoir quelle page est affichee, utilise browse_get_active_tab ; pour lister les onglets, browse_list_tabs ; pour revenir a un onglet deja ouvert, browse_activate_tab avec un extrait de son titre ou de son URL.
 Si browse_activate_tab retourne ambiguous_tab ou tab_not_found, ne choisis pas au hasard : liste les onglets avec browse_list_tabs ou demande une precision. Ne confonds pas ces tools navigateur avec les actions clavier : n'ouvre pas une URL en simulant des frappes.
+Pour prendre une capture d'ecran, utilise capture_screen pour tout l'ecran, capture_region pour une zone rectangulaire fournie, ou capture_window pour la fenetre active ou celle d'une application nommee. N'invente jamais de coordonnees pour capture_region.
+Ces tools de capture enregistrent un fichier PNG mais ne l'analysent pas : tu ne vois pas le contenu de l'image. Ne decris jamais ce que montre la capture, ne lis pas de texte pretendument visible dedans et ne dis pas "je vois". Annonce seulement que la capture a ete enregistree, avec son chemin, et seulement si state_confirmed=true ; sinon dis que la commande a ete envoyee mais que l'enregistrement du fichier n'a pas pu etre confirme.
+Si capture_window retourne active_window_mismatch, window_bounds_unavailable ou une erreur, ne pretends pas qu'une capture a ete prise.
 Si le tool échoue, informe l'utilisateur de l'échec.
 """.strip()
 

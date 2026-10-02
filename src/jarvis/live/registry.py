@@ -12,6 +12,7 @@ from jarvis.capabilities.interaction import InteractionCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.mouse import MouseCapability
+from jarvis.capabilities.screenshot import ScreenshotCapability
 from jarvis.capabilities.system import SystemCapability
 from jarvis.capabilities.ui_accessibility import UIAccessibilityCapability
 from jarvis.capabilities.windows import WindowCapability
@@ -33,6 +34,7 @@ class ToolRegistry:
         ui_accessibility_capability=None,
         interaction_capability=None,
         browser_capability=None,
+        screenshot_capability=None,
     ):
         self.audio = (
             audio_capability
@@ -100,6 +102,11 @@ class ToolRegistry:
             if browser_capability is not None
             else BrowserCapability()
         )
+        self.screenshot = (
+            screenshot_capability
+            if screenshot_capability is not None
+            else ScreenshotCapability()
+        )
         self.media_lock = asyncio.Lock()
         self.clipboard_lock = asyncio.Lock()
         self.keyboard_lock = asyncio.Lock()
@@ -107,6 +114,7 @@ class ToolRegistry:
         self.ui_lock = asyncio.Lock()
         self.interaction_lock = asyncio.Lock()
         self.browser_lock = asyncio.Lock()
+        self.screenshot_lock = asyncio.Lock()
 
     def livekit_tools(self) -> list[Any]:
         @function_tool(
@@ -1134,6 +1142,97 @@ class ToolRegistry:
             self._debug_browser_result("browse_activate_tab", result)
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="capture_screen",
+            description=(
+                "Prend une capture d'ecran complete et l'enregistre dans un "
+                "fichier PNG, puis relit le fichier pour confirmer "
+                "l'enregistrement. Utilise ce tool quand l'utilisateur demande "
+                "une capture d'ecran. path=None genere un nom horodate dans le "
+                "dossier des captures ; display cible un ecran precis (1 par "
+                "defaut). state_confirmed=true seulement si le fichier existe et "
+                "n'est pas vide. Le resultat ne contient pas l'image, seulement "
+                "son chemin et sa taille."
+            ),
+        )
+        async def capture_screen(
+            path: str | None = None,
+            display: int | None = None,
+        ) -> dict:
+            """Capture the full screen to a PNG file and verify it."""
+            debug_live("tool_call", tool="capture_screen", display=display)
+            async with self.screenshot_lock:
+                result = await asyncio.to_thread(
+                    self.screenshot.capture_screen,
+                    path,
+                    display,
+                )
+            self._debug_screenshot_result("capture_screen", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="capture_region",
+            description=(
+                "Prend une capture d'une region rectangulaire de l'ecran "
+                "(x, y, largeur, hauteur en points, origine en haut a gauche) et "
+                "l'enregistre en PNG, puis verifie le fichier. N'invente jamais "
+                "de coordonnees : utilise ce tool uniquement avec une region "
+                "fournie par l'utilisateur ou par un tool fiable. state_confirmed "
+                "=true seulement si le fichier a bien ete ecrit."
+            ),
+        )
+        async def capture_region(
+            x: int,
+            y: int,
+            width: int,
+            height: int,
+            path: str | None = None,
+        ) -> dict:
+            """Capture a rectangular region to a PNG file and verify it."""
+            debug_live(
+                "tool_call",
+                tool="capture_region",
+                width=width,
+                height=height,
+            )
+            async with self.screenshot_lock:
+                result = await asyncio.to_thread(
+                    self.screenshot.capture_region,
+                    x,
+                    y,
+                    width,
+                    height,
+                    path,
+                )
+            self._debug_screenshot_result("capture_region", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="capture_window",
+            description=(
+                "Prend une capture de la fenetre active, ou de la fenetre d'une "
+                "application nommee (elle est d'abord mise au premier plan et "
+                "verifiee), puis enregistre un PNG et relit le fichier. Utilise ce "
+                "tool pour capturer une fenetre precise. Si la fenetre active ne "
+                "correspond pas a l'application demandee, la capture est arretee "
+                "(active_window_mismatch)."
+            ),
+        )
+        async def capture_window(
+            app_name: str | None = None,
+            path: str | None = None,
+        ) -> dict:
+            """Capture the active or a named window to a PNG file and verify it."""
+            debug_live("tool_call", tool="capture_window", app_name=app_name)
+            async with self.screenshot_lock:
+                result = await asyncio.to_thread(
+                    self.screenshot.capture_window,
+                    app_name,
+                    path,
+                )
+            self._debug_screenshot_result("capture_window", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
@@ -1186,6 +1285,9 @@ class ToolRegistry:
             browse_get_active_tab,
             browse_list_tabs,
             browse_activate_tab,
+            capture_screen,
+            capture_region,
+            capture_window,
         ]
 
     @staticmethod
@@ -1350,6 +1452,28 @@ class ToolRegistry:
 
         return urlparse(url).netloc or None
 
+    @staticmethod
+    def _debug_screenshot_result(tool_name: str, result) -> None:
+        # Log the file basename and metadata only, never the full path.
+        import os as _os
+
+        path = result.data.get("path")
+        fields = {
+            "tool": tool_name,
+            "file": _os.path.basename(path) if isinstance(path, str) else None,
+            "bytes": result.data.get("bytes"),
+            "width": result.data.get("width"),
+            "height": result.data.get("height"),
+            "target_app": result.data.get("target_app"),
+            "command_executed": result.data.get("command_executed"),
+            "state_confirmed": result.data.get("state_confirmed"),
+        }
+
+        if result.ok:
+            debug_live("tool_succeeded", **fields)
+        else:
+            debug_live("tool_failed", tool=tool_name, error=result.error_code)
+
 
 def create_live_tools(
     security=None,
@@ -1371,6 +1495,7 @@ def create_live_tools(
     ui_accessibility_capability=None,
     interaction_capability=None,
     browser_capability=None,
+    screenshot_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -1444,6 +1569,9 @@ def create_live_tools(
     if browser_capability is None:
         browser_capability = BrowserCapability()
 
+    if screenshot_capability is None:
+        screenshot_capability = ScreenshotCapability(windows=window_capability)
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
@@ -1457,4 +1585,5 @@ def create_live_tools(
         ui_accessibility_capability=ui_accessibility_capability,
         interaction_capability=interaction_capability,
         browser_capability=browser_capability,
+        screenshot_capability=screenshot_capability,
     ).livekit_tools()

@@ -68,6 +68,7 @@ Deux niveaux séparent clairement l'intention et l'exécution :
 | `MouseCapability` | Déplacer le curseur, cliquer, scroller |
 | `ClipboardCapability` | Lire / écrire le presse-papiers |
 | `FilesCapability` | Fichiers et Finder |
+| `ScreenshotCapability` | Capturer l'écran, une région ou une fenêtre en PNG, **vérifié** |
 | `MediaCapability` | Lecture / pause / piste suivante, état de lecture |
 | `AudioCapability` | Volume |
 | `SystemCapability` | Batterie, luminosité, infos système, verrouillage |
@@ -105,6 +106,23 @@ Le navigateur est choisi automatiquement (préfère l'unique navigateur ouvert,
 sinon Safari) ou explicitement. En mode Live, ces flux sont exposés comme les
 tools `browse_open_url`, `browse_search_web`, `browse_get_active_tab`,
 `browse_list_tabs`, `browse_activate_tab`.
+
+### ScreenshotCapability
+
+Capture d'écran **vérifiée** (via `screencapture`). Chaque capture relit le
+fichier écrit (existence + taille) : `state_confirmed` n'est vrai que si le PNG
+a bien été enregistré. Le résultat ne contient que le chemin et les métadonnées,
+jamais l'image — le fichier n'est pas analysé.
+
+- **`capture_screen`** — écran complet (option `display`).
+- **`capture_region`** — zone rectangulaire fournie (x, y, largeur, hauteur).
+- **`capture_window`** — fenêtre active, ou fenêtre d'une app nommée (mise au
+  premier plan et vérifiée avant capture ; refus si l'app active ne correspond
+  pas).
+
+Par défaut, les captures sont enregistrées dans `~/Pictures/Jarvis/` avec un nom
+horodaté. En mode Live : tools `capture_screen`, `capture_region`,
+`capture_window`.
 
 ## Les trois modes d'exécution
 
