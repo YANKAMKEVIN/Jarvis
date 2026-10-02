@@ -39,6 +39,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "double_click",
     "find_files",
     "find_ui_elements",
+    "focus_app_ui_and_type",
     "focus_ui_element",
     "focus_window",
     "get_active_window",
@@ -62,6 +63,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "move_window",
     "next_track",
     "open_app",
+    "open_app_and_focus_ui",
     "open_file",
     "open_folder",
     "play_pause",
@@ -70,6 +72,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "rename_file",
     "right_click",
     "scroll",
+    "select_all_and_copy",
     "set_brightness",
     "set_clipboard_text",
     "set_volume",
@@ -732,6 +735,87 @@ class RecordingLiveUIAccessibilityCapability:
         )
 
 
+class RecordingLiveInteractionCapability:
+    def __init__(self, error_result=None):
+        self.error_result = error_result
+        self.calls = []
+
+    def select_all_and_copy(self):
+        self.calls.append(("select_all_and_copy",))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="select_all_and_copy",
+            message="Les commandes ont ete envoyees dans l'ordre.",
+            command_executed=True,
+            state_confirmed=False,
+            steps=[
+                {"name": "hotkey_command_a", "ok": True},
+                {"name": "hotkey_command_c", "ok": True},
+            ],
+        )
+
+    def focus_app_ui_and_type(
+        self,
+        app_name,
+        text,
+        query=None,
+        role=None,
+        press_enter=False,
+    ):
+        self.calls.append((
+            "focus_app_ui_and_type",
+            app_name,
+            text,
+            query,
+            role,
+            press_enter,
+        ))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="focus_app_ui_and_type",
+            message="La cible a ete verifiee et la saisie envoyee.",
+            command_executed=True,
+            state_confirmed=False,
+            target_app=app_name,
+            query_length=len(query) if isinstance(query, str) else None,
+            text_length=len(text) if isinstance(text, str) else None,
+            role=role,
+            press_enter=press_enter,
+            steps=[
+                {"name": "open_app", "ok": True},
+                {"name": "focus_window", "ok": True, "state_confirmed": True},
+                {"name": "type_text", "ok": True, "command_executed": True},
+            ],
+        )
+
+    def open_app_and_focus_ui(self, app_name, query, role=None):
+        self.calls.append(("open_app_and_focus_ui", app_name, query, role))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="open_app_and_focus_ui",
+            message="La cible Accessibility a ete focalisee.",
+            command_executed=True,
+            state_confirmed=True,
+            target_app=app_name,
+            query_length=len(query),
+            role=role,
+            steps=[
+                {"name": "open_app", "ok": True},
+                {"name": "focus_window", "ok": True, "state_confirmed": True},
+                {"name": "focus_ui_element", "ok": True, "state_confirmed": True},
+            ],
+        )
+
+
 class LivePocConfigTest(unittest.TestCase):
     def test_pyproject_marks_repository_as_agent_project_for_livekit_cli(self):
         pyproject_path = pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml"
@@ -1015,6 +1099,60 @@ class LivePocAgentTest(unittest.TestCase):
         self.assertIn("N'invente jamais un bouton absent", LIVE_SYSTEM_PROMPT)
         self.assertIn("AXPress reussi signifie seulement", LIVE_SYSTEM_PROMPT)
         self.assertIn("Ne repete jamais automatiquement AXPress", LIVE_SYSTEM_PROMPT)
+
+    def test_live_prompt_defines_multi_step_orchestration_rules(self):
+        prompt = LIVE_SYSTEM_PROMPT
+
+        self.assertIn("fournis obligatoirement query", prompt)
+        self.assertIn('query="recherche"', prompt)
+        self.assertIn('query="Nom"', prompt)
+        self.assertIn("editable_target_not_verified", prompt)
+        self.assertIn("sans contourner le controle par type_text directement", prompt)
+
+        self.assertIn("demandes naturelles multi-etapes", prompt)
+        self.assertIn("strictement sequentielle", prompt)
+        self.assertIn("Attends toujours le resultat d'une etape", prompt)
+        self.assertIn("utilise select_all_and_copy", prompt)
+        self.assertIn("au lieu de lancer separement les hotkeys", prompt)
+        self.assertIn("utilise focus_app_ui_and_type", prompt)
+        self.assertIn("utilise open_app_and_focus_ui", prompt)
+
+        dependent_sequences = [
+            "open_app -> focus_window/get_active_window",
+            "focus_window -> inspect_ui/find_ui_elements",
+            "focus_ui_element -> type_text",
+            "move_mouse -> click",
+            "hotkey command+a -> hotkey command+c",
+        ]
+
+        for sequence in dependent_sequences:
+            with self.subTest(sequence=sequence):
+                self.assertIn(sequence, prompt)
+
+        self.assertIn("operations dependantes cross-capability", prompt)
+        self.assertIn("Si une etape retourne ok=false", prompt)
+        self.assertIn("arrete toutes les etapes qui dependent", prompt)
+        self.assertIn("ne substitue pas automatiquement une autre methode", prompt)
+        self.assertIn("state_confirmed=false et que l'etape suivante depend", prompt)
+        self.assertIn("n'annonce pas de succes applicatif", prompt)
+        self.assertIn("n'interdit pas toute action suivante", prompt)
+        self.assertIn("Apres open_app, ne suppose pas", prompt)
+        self.assertIn("les anciens resultats inspect_ui et find_ui_elements sont obsoletes", prompt)
+        self.assertIn("Avant type_text", prompt)
+        self.assertIn("verifie ou focalise la bonne cible", prompt)
+        self.assertIn("fenetre simplement supposee active", prompt)
+        self.assertIn("Pour une cible semantique", prompt)
+        self.assertIn("prefere Accessibility", prompt)
+        self.assertIn("n'ajoute aucun fallback souris automatique", prompt)
+        self.assertIn("ambiguous_ui_element", prompt)
+        self.assertIn("ne choisis jamais silencieusement", prompt)
+        self.assertIn("Apres une reconnexion", prompt)
+        self.assertIn("ne repete jamais automatiquement une mutation", prompt)
+        self.assertIn("command_executed=false", prompt)
+        self.assertIn("ancien tool call ne prouve pas l'etat actuel", prompt)
+        self.assertIn("Ces regles sont internes", prompt)
+        self.assertIn("reponds naturellement", prompt)
+        self.assertIn("parametres techniques", prompt)
 
     def test_live_agent_exposes_module_level_server_for_livekit_cli(self):
         self.assertTrue(hasattr(agent, "build_live_server"))
@@ -2688,6 +2826,143 @@ class LiveUIAccessibilityToolTest(unittest.TestCase):
         self.assertIn("get_active_window", tools)
         self.assertIn("type_text", tools)
         self.assertIn("click", tools)
+
+
+class LiveInteractionToolTest(unittest.TestCase):
+    def make_tools(self, interaction_capability=None):
+        tools = create_live_tools(
+            security=RecordingLiveSecurity(),
+            interaction_capability=(
+                interaction_capability
+                or RecordingLiveInteractionCapability()
+            ),
+        )
+        return {
+            tool.info.name: tool
+            for tool in tools
+        }
+
+    def test_interaction_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        self.assertEqual(
+            tools["select_all_and_copy"].info.name,
+            "select_all_and_copy",
+        )
+        self.assertEqual(
+            tools["focus_app_ui_and_type"].info.name,
+            "focus_app_ui_and_type",
+        )
+        self.assertEqual(
+            tools["open_app_and_focus_ui"].info.name,
+            "open_app_and_focus_ui",
+        )
+        self.assertIn("command+a", tools["select_all_and_copy"].info.description)
+        self.assertIn("saisit du texte", tools["focus_app_ui_and_type"].info.description)
+        description = tools["focus_app_ui_and_type"].info.description
+        self.assertIn("obligatoirement query", description)
+        self.assertIn("query=None", description)
+        self.assertIn("editable_target_not_verified", description)
+        self.assertIn("aucune saisie ni Enter", description)
+        self.assertIn("sans taper", tools["open_app_and_focus_ui"].info.description)
+
+    def test_select_all_and_copy_success_returns_structured_steps(self):
+        capability = RecordingLiveInteractionCapability()
+        tool = self.make_tools(interaction_capability=capability)["select_all_and_copy"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "select_all_and_copy")
+        self.assertTrue(result["command_executed"])
+        self.assertFalse(result["state_confirmed"])
+        self.assertEqual(len(result["steps"]), 2)
+        self.assertEqual(capability.calls, [("select_all_and_copy",)])
+
+    def test_focus_app_ui_and_type_uses_text_but_debug_uses_length(self):
+        secret_text = "JARVIS_INTERACTION_SECRET_TEXT"
+        secret_query = "JARVIS_INTERACTION_SECRET_QUERY"
+        capability = RecordingLiveInteractionCapability()
+        tools = self.make_tools(interaction_capability=capability)
+
+        with patch.dict(os.environ, {"JARVIS_DEBUG_LIVE": "1"}, clear=True):
+            output = StringIO()
+
+            with redirect_stdout(output):
+                result = asyncio.run(
+                    tools["focus_app_ui_and_type"](
+                        "Safari",
+                        secret_text,
+                        secret_query,
+                        "AXTextField",
+                        True,
+                    )
+                )
+
+        debug_output = output.getvalue()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["text_length"], len(secret_text))
+        self.assertEqual(result["query_length"], len(secret_query))
+        self.assertEqual(
+            capability.calls,
+            [(
+                "focus_app_ui_and_type",
+                "Safari",
+                secret_text,
+                secret_query,
+                "AXTextField",
+                True,
+            )],
+        )
+        self.assertNotIn(secret_text, debug_output)
+        self.assertNotIn(secret_query, debug_output)
+        self.assertIn(f"text_length: {len(secret_text)}", debug_output)
+        self.assertIn(f"query_length: {len(secret_query)}", debug_output)
+
+    def test_open_app_and_focus_ui_returns_confirmed_state(self):
+        capability = RecordingLiveInteractionCapability()
+        tool = self.make_tools(interaction_capability=capability)["open_app_and_focus_ui"]
+
+        result = asyncio.run(tool("Safari", "barre de recherche", "AXTextField"))
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["state_confirmed"])
+        self.assertEqual(result["query_length"], len("barre de recherche"))
+        self.assertEqual(
+            capability.calls,
+            [("open_app_and_focus_ui", "Safari", "barre de recherche", "AXTextField")],
+        )
+
+    def test_live_tools_use_to_thread_for_interaction_capability(self):
+        calls = []
+
+        async def fake_to_thread(func, *args):
+            calls.append((func.__name__, args))
+            return func(*args)
+
+        with patch("jarvis.live.registry.asyncio.to_thread", fake_to_thread):
+            tool = self.make_tools()["select_all_and_copy"]
+            result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(calls, [("select_all_and_copy", ())])
+
+    def test_interaction_tools_share_a_lock_without_affecting_existing_locks(self):
+        registry = ToolRegistry(
+            interaction_capability=object(),
+            ui_accessibility_capability=object(),
+            mouse_capability=object(),
+            keyboard_capability=object(),
+            media_capability=object(),
+            clipboard_capability=object(),
+        )
+
+        self.assertIsNot(registry.interaction_lock, registry.ui_lock)
+        self.assertIsNot(registry.interaction_lock, registry.mouse_lock)
+        self.assertIsNot(registry.interaction_lock, registry.keyboard_lock)
+        self.assertIsNot(registry.interaction_lock, registry.clipboard_lock)
+        self.assertTrue(hasattr(registry.interaction_lock, "acquire"))
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from jarvis.capabilities.apps import AppCapability
 from jarvis.capabilities.audio import AudioCapability
 from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.files import FilesCapability
+from jarvis.capabilities.interaction import InteractionCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.mouse import MouseCapability
@@ -29,6 +30,7 @@ class ToolRegistry:
         keyboard_capability=None,
         mouse_capability=None,
         ui_accessibility_capability=None,
+        interaction_capability=None,
     ):
         self.audio = (
             audio_capability
@@ -80,11 +82,23 @@ class ToolRegistry:
             if ui_accessibility_capability is not None
             else UIAccessibilityCapability()
         )
+        self.interaction = (
+            interaction_capability
+            if interaction_capability is not None
+            else InteractionCapability(
+                apps=self.apps,
+                windows=self.windows,
+                ui_accessibility=self.ui_accessibility,
+                keyboard=self.keyboard,
+                clipboard=self.clipboard,
+            )
+        )
         self.media_lock = asyncio.Lock()
         self.clipboard_lock = asyncio.Lock()
         self.keyboard_lock = asyncio.Lock()
         self.mouse_lock = asyncio.Lock()
         self.ui_lock = asyncio.Lock()
+        self.interaction_lock = asyncio.Lock()
 
     def livekit_tools(self) -> list[Any]:
         @function_tool(
@@ -883,6 +897,100 @@ class ToolRegistry:
             self._debug_ui_result("activate_ui_element", result)
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="select_all_and_copy",
+            description=(
+                "Selectionne tout puis copie dans la fenetre active avec une "
+                "sequence mecanique command+a puis command+c. Utilise ce tool "
+                "pour les demandes naturelles comme selectionne tout et copie."
+            ),
+        )
+        async def select_all_and_copy() -> dict:
+            """Run command+a then command+c as one ordered interaction."""
+            debug_live("tool_call", tool="select_all_and_copy")
+            async with self.interaction_lock:
+                result = await asyncio.to_thread(
+                    self.interaction.select_all_and_copy,
+                )
+            self._debug_interaction_result("select_all_and_copy", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="focus_app_ui_and_type",
+            description=(
+                "Ouvre ou focalise une application, focalise "
+                "une cible Accessibility nommee, puis saisit du texte seulement "
+                "si la cible est verifiee. Utilise ce tool pour ouvrir une app "
+                "et ecrire dans une cible naturelle comme une barre de recherche. "
+                "Fournis obligatoirement query pour toute cible semantique nommee ou "
+                "impliquee, meme si l'application est connue : recherche/navigation "
+                "=> query='recherche', champ Nom => query='Nom'. query=None accepte "
+                "uniquement un champ editable actuellement focalise et verifie via "
+                "Accessibility ; sinon editable_target_not_verified, aucune saisie ni Enter. "
+                "press_enter suit uniquement une saisie executee apres validation. "
+                "command_executed ne prouve pas le succes de la recherche/navigation."
+            ),
+        )
+        async def focus_app_ui_and_type(
+            app_name: str,
+            text: str,
+            query: str | None = None,
+            role: str | None = None,
+            press_enter: bool = False,
+        ) -> dict:
+            """Focus an app/UI target, then type text in a verified sequence."""
+            debug_live(
+                "tool_call",
+                tool="focus_app_ui_and_type",
+                app_name=app_name,
+                text_length=len(text) if isinstance(text, str) else None,
+                query_length=len(query) if isinstance(query, str) else None,
+                role=role,
+                press_enter=press_enter,
+            )
+            async with self.interaction_lock:
+                result = await asyncio.to_thread(
+                    self.interaction.focus_app_ui_and_type,
+                    app_name,
+                    text,
+                    query,
+                    role,
+                    press_enter,
+                )
+            self._debug_interaction_result("focus_app_ui_and_type", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="open_app_and_focus_ui",
+            description=(
+                "Ouvre ou focalise une application puis focalise une cible "
+                "Accessibility nommee, sans taper de texte. Utilise ce tool "
+                "pour ouvrir une app et mettre le curseur dans un champ nomme."
+            ),
+        )
+        async def open_app_and_focus_ui(
+            app_name: str,
+            query: str,
+            role: str | None = None,
+        ) -> dict:
+            """Open/focus an app and focus one named UI element."""
+            debug_live(
+                "tool_call",
+                tool="open_app_and_focus_ui",
+                app_name=app_name,
+                query_length=len(query) if isinstance(query, str) else None,
+                role=role,
+            )
+            async with self.interaction_lock:
+                result = await asyncio.to_thread(
+                    self.interaction.open_app_and_focus_ui,
+                    app_name,
+                    query,
+                    role,
+                )
+            self._debug_interaction_result("open_app_and_focus_ui", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
@@ -927,6 +1035,9 @@ class ToolRegistry:
             find_ui_elements,
             focus_ui_element,
             activate_ui_element,
+            select_all_and_copy,
+            focus_app_ui_and_type,
+            open_app_and_focus_ui,
         ]
 
     @staticmethod
@@ -1034,6 +1145,30 @@ class ToolRegistry:
                 error=result.error_code,
             )
 
+    @staticmethod
+    def _debug_interaction_result(tool_name: str, result) -> None:
+        fields = {
+            "tool": tool_name,
+            "target_app": result.data.get("target_app"),
+            "query_length": result.data.get("query_length"),
+            "text_length": result.data.get("text_length"),
+            "press_enter": result.data.get("press_enter"),
+            "failed_step": result.data.get("failed_step"),
+            "command_executed": result.data.get("command_executed"),
+            "state_confirmed": result.data.get("state_confirmed"),
+            "step_count": len(result.data.get("steps", [])),
+        }
+
+        if result.ok:
+            debug_live("tool_succeeded", **fields)
+        else:
+            debug_live(
+                "tool_failed",
+                tool=tool_name,
+                error=result.error_code,
+                failed_step=result.data.get("failed_step"),
+            )
+
 
 def create_live_tools(
     security=None,
@@ -1053,6 +1188,7 @@ def create_live_tools(
     keyboard_capability=None,
     mouse_capability=None,
     ui_accessibility_capability=None,
+    interaction_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -1114,6 +1250,15 @@ def create_live_tools(
             accessibility_tools=accessibility_tools,
         )
 
+    if interaction_capability is None:
+        interaction_capability = InteractionCapability(
+            apps=app_capability,
+            windows=window_capability,
+            ui_accessibility=ui_accessibility_capability,
+            keyboard=keyboard_capability,
+            clipboard=clipboard_capability,
+        )
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
@@ -1125,4 +1270,5 @@ def create_live_tools(
         keyboard_capability=keyboard_capability,
         mouse_capability=mouse_capability,
         ui_accessibility_capability=ui_accessibility_capability,
+        interaction_capability=interaction_capability,
     ).livekit_tools()

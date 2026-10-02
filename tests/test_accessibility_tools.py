@@ -1,4 +1,6 @@
 import unittest
+import ctypes
+from unittest.mock import Mock
 
 from jarvis.tools.accessibility import (
     AccessibilityError,
@@ -153,6 +155,23 @@ def node(role, **kwargs):
 
 
 class AccessibilityToolsTest(unittest.TestCase):
+    def test_editability_checks_settable_attribute_without_reading_value(self):
+        for status, flag, expected in ((0, True, True), (0, False, False), (-25205, True, False)):
+            with self.subTest(status=status, flag=flag):
+                backend = object.__new__(ApplicationServicesAccessibilityBackend)
+                backend.cf_string = Mock(return_value=42)
+                backend.release = Mock()
+                backend.copy_attribute = Mock(side_effect=AssertionError("Must not read value"))
+                def check(element, attribute, output):
+                    ctypes.cast(output, ctypes.POINTER(ctypes.c_bool))[0] = flag
+                    return status
+                backend.app_services = Mock()
+                backend.app_services.AXUIElementIsAttributeSettable.side_effect = check
+                self.assertEqual(backend.value_is_settable(123), expected)
+                backend.cf_string.assert_called_once_with("AXValue")
+                backend.release.assert_called_once_with(42)
+                backend.copy_attribute.assert_not_called()
+
     def test_focused_window_falls_back_to_pid_when_system_path_cannot_complete(self):
         backend = FakeFrontmostBackend(
             candidates=[
@@ -247,6 +266,25 @@ class AccessibilityToolsTest(unittest.TestCase):
         self.assertEqual(result["max_elements"], 10)
         self.assertEqual(result["elements"][0]["title"], "Continuer")
 
+    def test_inspect_ui_includes_search_fields_without_actions(self):
+        backend = FakeAccessibilityBackend(tree=node("AXWindow", title="Main", children=[
+            node(
+                "AXSearchField",
+                description="Search or enter website name",
+                actions=[],
+            ),
+        ]))
+        tools = AccessibilityTools(backend=backend)
+
+        result = tools.inspect_ui(max_depth=2, max_elements=10)
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["elements"][0]["role"], "AXSearchField")
+        self.assertEqual(
+            result["elements"][0]["description"],
+            "Search or enter website name",
+        )
+
     def test_permission_refusal_is_structured(self):
         tools = AccessibilityTools(backend=FakeAccessibilityBackend(trusted=False))
 
@@ -254,6 +292,45 @@ class AccessibilityToolsTest(unittest.TestCase):
             tools.inspect_ui()
 
         self.assertEqual(context.exception.code, "accessibility_permission_error")
+
+    def test_focus_reaches_search_field_at_recovery_depth(self):
+        field = node("AXTextField", description="Search or enter website name")
+        tree = field
+        for _ in range(6):
+            tree = node("AXGroup", children=[tree])
+        backend = FakeAccessibilityBackend(tree=tree)
+        tools = AccessibilityTools(backend=backend)
+
+        self.assertEqual(tools.inspect_ui()["count"], 0)
+        self.assertEqual(tools.inspect_ui(6, 150)["count"], 1)
+        result = tools.focus_ui_element("Search or enter website name")
+
+        self.assertTrue(result["state_confirmed"])
+        self.assertEqual(len(backend.focus_calls), 1)
+
+    def test_focus_reaches_search_field_after_default_element_limit(self):
+        backend = FakeAccessibilityBackend(tree=node("AXWindow", children=[
+            *[node("AXButton", title=f"Button {i}") for i in range(80)],
+            node("AXTextField", title="Search"),
+        ]))
+        tools = AccessibilityTools(backend=backend)
+
+        self.assertTrue(tools.inspect_ui()["truncated"])
+        self.assertTrue(tools.focus_ui_element("Search")["state_confirmed"])
+
+    def test_focus_checks_ambiguity_beyond_default_depth(self):
+        deep = node("AXTextField", title="Search")
+        for _ in range(5):
+            deep = node("AXGroup", children=[deep])
+        backend = FakeAccessibilityBackend(tree=node("AXWindow", children=[
+            node("AXTextField", title="Search"), deep,
+        ]))
+
+        with self.assertRaises(AccessibilityError) as context:
+            AccessibilityTools(backend=backend).focus_ui_element("Search")
+
+        self.assertEqual(context.exception.code, "ambiguous_ui_element")
+        self.assertEqual(backend.focus_calls, [])
 
     def test_secure_text_field_does_not_expose_value(self):
         backend = FakeAccessibilityBackend(tree=node("AXWindow", children=[

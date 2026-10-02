@@ -35,6 +35,7 @@ INTERESTING_ROLES = {
     "AXTextField",
     "AXSecureTextField",
     "AXTextArea",
+    "AXSearchField",
     "AXCheckBox",
     "AXRadioButton",
     "AXPopUpButton",
@@ -44,7 +45,7 @@ INTERESTING_ROLES = {
     "AXStaticText",
 }
 
-TEXT_ROLES = {"AXTextField", "AXTextArea", "AXSecureTextField"}
+TEXT_ROLES = {"AXTextField", "AXTextArea", "AXSecureTextField", "AXSearchField"}
 SECURE_ROLES = {"AXSecureTextField"}
 
 AX_ERROR_CODES = {
@@ -168,6 +169,10 @@ class ApplicationServicesAccessibilityBackend:
             ctypes.c_void_p,
         ]
         ax.AXUIElementSetAttributeValue.restype = ctypes.c_int32
+        ax.AXUIElementIsAttributeSettable.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_bool),
+        ]
+        ax.AXUIElementIsAttributeSettable.restype = ctypes.c_int32
         ax.AXValueGetType.argtypes = [ctypes.c_void_p]
         ax.AXValueGetType.restype = ctypes.c_int32
         ax.AXValueGetValue.argtypes = [
@@ -422,8 +427,20 @@ class ApplicationServicesAccessibilityBackend:
             "actions": actions,
             "path": list(path),
             "secure": secure,
+            "editable": self.value_is_settable(element) if role in TEXT_ROLES else None,
             "value_summary": None,
         })
+
+    def value_is_settable(self, element) -> bool:
+        attribute = self.cf_string("AXValue")
+        settable = ctypes.c_bool(False)
+        try:
+            status = self.app_services.AXUIElementIsAttributeSettable(
+                element, attribute, ctypes.byref(settable),
+            )
+            return status == 0 and settable.value
+        finally:
+            self.release(attribute)
 
     def children(self, element) -> list[Any]:
         try:
@@ -764,7 +781,9 @@ class AccessibilityTools:
         }
 
     def focus_ui_element(self, query: str, role: str | None = None) -> dict[str, Any]:
-        element, candidate = self._resolve_one(query, role)
+        element, candidate = self._resolve_one(
+            query, role, max_depth=MAX_UI_DEPTH, max_elements=MAX_UI_ELEMENTS,
+        )
 
         try:
             if candidate.get("enabled") is False:
@@ -827,7 +846,13 @@ class AccessibilityTools:
         finally:
             self.backend.release(element)
 
-    def _resolve_one(self, query: str, role: str | None) -> tuple[Any, dict[str, Any]]:
+    def _resolve_one(
+        self,
+        query: str,
+        role: str | None,
+        max_depth: int = DEFAULT_UI_MAX_DEPTH,
+        max_elements: int = DEFAULT_UI_MAX_ELEMENTS,
+    ) -> tuple[Any, dict[str, Any]]:
         normalized_query = validate_query(query)
         normalized_role = normalize_text(role) if role else None
         root = self.backend.focused_window()
@@ -835,8 +860,8 @@ class AccessibilityTools:
         try:
             snapshot = self._snapshot_tree(
                 root,
-                DEFAULT_UI_MAX_DEPTH,
-                DEFAULT_UI_MAX_ELEMENTS,
+                max_depth,
+                max_elements,
                 retain_matches=True,
             )
             candidates = match_elements(

@@ -2,6 +2,7 @@ from jarvis.capabilities.apps import AppCapability
 from jarvis.capabilities.audio import AudioCapability
 from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.files import FilesCapability
+from jarvis.capabilities.interaction import InteractionCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.mouse import MouseCapability
@@ -16,6 +17,7 @@ __all__ = [
     "CapabilityError",
     "ClipboardCapability",
     "FilesCapability",
+    "InteractionCapability",
     "KeyboardCapability",
     "MediaCapability",
     "MouseCapability",
