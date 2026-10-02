@@ -61,6 +61,7 @@ Deux niveaux séparent clairement l'intention et l'exécution :
 | Capability | Rôle |
 |---|---|
 | `AppCapability` | Ouvrir / activer des applications, tester si une app tourne |
+| `BrowserCapability` | Ouvrir une URL / recherche, lire & lister les onglets, activer un onglet (Safari / Chrome), **vérifié** |
 | `WindowCapability` | Focaliser une fenêtre, lire la fenêtre active |
 | `UIAccessibilityCapability` | Inspecter l'UI, trouver / focaliser / activer un élément via Accessibility |
 | `KeyboardCapability` | Saisie texte, raccourcis, touches |
@@ -86,6 +87,24 @@ dépendante lancée sur un état non vérifié.
 - **`focus_app_ui_and_type`** — ouvre/focalise une app, **vérifie** la
   destination éditable (nommée via `query`, ou l'unique champ éditable
   focalisé), puis saisit le texte et, en option, presse Entrée.
+
+### BrowserCapability
+
+Contrôle **tab-aware et vérifié** de Safari / Google Chrome (via AppleScript).
+Chaque action de navigation relit l'onglet actif : `state_confirmed` n'est vrai
+que si l'onglet observé correspond réellement.
+
+- **`open_url`** / **`search_web`** — ouvrir une URL ou une recherche
+  (Google / DuckDuckGo / Bing), puis confirmer le domaine chargé.
+- **`get_active_tab`** / **`list_tabs`** — lecture seule de la page affichée et
+  des onglets de la fenêtre active.
+- **`activate_tab`** — focaliser l'unique onglet dont l'URL/titre correspond à
+  une requête ; refuse les correspondances ambiguës au lieu de deviner.
+
+Le navigateur est choisi automatiquement (préfère l'unique navigateur ouvert,
+sinon Safari) ou explicitement. En mode Live, ces flux sont exposés comme les
+tools `browse_open_url`, `browse_search_web`, `browse_get_active_tab`,
+`browse_list_tabs`, `browse_activate_tab`.
 
 ## Les trois modes d'exécution
 
