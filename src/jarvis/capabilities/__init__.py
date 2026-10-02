@@ -1,5 +1,6 @@
 from jarvis.capabilities.apps import AppCapability
 from jarvis.capabilities.audio import AudioCapability
+from jarvis.capabilities.browser import BrowserCapability
 from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
@@ -14,6 +15,7 @@ from jarvis.capabilities.windows import WindowCapability
 __all__ = [
     "AppCapability",
     "AudioCapability",
+    "BrowserCapability",
     "CapabilityError",
     "ClipboardCapability",
     "FilesCapability",

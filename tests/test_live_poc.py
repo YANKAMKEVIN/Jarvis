@@ -32,6 +32,11 @@ from jarvis.voice_mode import VoiceMode
 
 EXPECTED_LIVE_TOOL_NAMES = [
     "activate_ui_element",
+    "browse_activate_tab",
+    "browse_get_active_tab",
+    "browse_list_tabs",
+    "browse_open_url",
+    "browse_search_web",
     "clear_clipboard",
     "click",
     "close_app",
@@ -2963,6 +2968,154 @@ class LiveInteractionToolTest(unittest.TestCase):
         self.assertIsNot(registry.interaction_lock, registry.keyboard_lock)
         self.assertIsNot(registry.interaction_lock, registry.clipboard_lock)
         self.assertTrue(hasattr(registry.interaction_lock, "acquire"))
+
+
+class RecordingLiveBrowserCapability:
+    def __init__(self):
+        self.calls = []
+
+    def open_url(self, url, browser=None, new_tab=True):
+        self.calls.append(("open_url", url, browser, new_tab))
+        return ToolResult.success(
+            action="open_url",
+            message="La page est affichee.",
+            browser=browser or "Safari",
+            requested_url=url,
+            active_url="https://example.com/",
+            active_title="Example",
+            new_tab=new_tab,
+            command_executed=True,
+            state_confirmed=True,
+        )
+
+    def search_web(self, query, browser=None, engine=None):
+        self.calls.append(("search_web", query, browser, engine))
+        return ToolResult.success(
+            action="search_web",
+            message="Recherche lancee.",
+            browser=browser or "Safari",
+            active_url="https://www.google.com/search?q=x",
+            query_length=len(query) if isinstance(query, str) else None,
+            engine=engine or "google",
+            command_executed=True,
+            state_confirmed=True,
+        )
+
+    def get_active_tab(self, browser=None):
+        self.calls.append(("get_active_tab", browser))
+        return ToolResult.success(
+            action="get_active_tab",
+            message="Onglet lu.",
+            browser=browser or "Safari",
+            has_window=True,
+            url="https://example.com/",
+            title="Example",
+        )
+
+    def list_tabs(self, browser=None):
+        self.calls.append(("list_tabs", browser))
+        return ToolResult.success(
+            action="list_tabs",
+            message="2 onglets.",
+            browser=browser or "Safari",
+            active_index=1,
+            tabs=[],
+            count=2,
+        )
+
+    def activate_tab(self, query, browser=None):
+        self.calls.append(("activate_tab", query, browser))
+        return ToolResult.success(
+            action="activate_tab",
+            message="Onglet active.",
+            browser=browser or "Safari",
+            query_length=len(query) if isinstance(query, str) else None,
+            command_executed=True,
+            state_confirmed=True,
+        )
+
+
+class LiveBrowserToolTest(unittest.TestCase):
+    def make_tools(self, browser_capability=None):
+        tools = create_live_tools(
+            security=RecordingLiveSecurity(),
+            browser_capability=browser_capability or RecordingLiveBrowserCapability(),
+        )
+        return {tool.info.name: tool for tool in tools}
+
+    def test_browser_tools_are_named_for_gemini(self):
+        tools = self.make_tools()
+
+        for name in (
+            "browse_open_url",
+            "browse_search_web",
+            "browse_get_active_tab",
+            "browse_list_tabs",
+            "browse_activate_tab",
+        ):
+            self.assertEqual(tools[name].info.name, name)
+
+        self.assertIn("state_confirmed", tools["browse_open_url"].info.description)
+        self.assertIn("ambiguous_tab", tools["browse_activate_tab"].info.description)
+
+    def test_browse_open_url_routes_to_capability(self):
+        capability = RecordingLiveBrowserCapability()
+        tool = self.make_tools(capability)["browse_open_url"]
+
+        result = asyncio.run(tool("youtube.com", "Safari", True))
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["state_confirmed"])
+        self.assertEqual(
+            capability.calls,
+            [("open_url", "youtube.com", "Safari", True)],
+        )
+
+    def test_browse_search_web_routes_to_capability(self):
+        capability = RecordingLiveBrowserCapability()
+        tool = self.make_tools(capability)["browse_search_web"]
+
+        result = asyncio.run(tool("meteo paris", None, "duckduckgo"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            capability.calls,
+            [("search_web", "meteo paris", None, "duckduckgo")],
+        )
+
+    def test_browse_activate_tab_routes_to_capability(self):
+        capability = RecordingLiveBrowserCapability()
+        tool = self.make_tools(capability)["browse_activate_tab"]
+
+        result = asyncio.run(tool("github", None))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(capability.calls, [("activate_tab", "github", None)])
+
+    def test_browser_debug_logs_host_not_full_url_or_query(self):
+        capability = RecordingLiveBrowserCapability()
+        tools = self.make_tools(capability)
+
+        with patch.dict(os.environ, {"JARVIS_DEBUG_LIVE": "1"}, clear=True):
+            output = StringIO()
+
+            with redirect_stdout(output):
+                asyncio.run(tools["browse_search_web"]("SECRET_QUERY_TEXT", None, None))
+
+        debug_output = output.getvalue()
+
+        self.assertNotIn("SECRET_QUERY_TEXT", debug_output)
+        self.assertNotIn("https://www.google.com/search", debug_output)
+        self.assertIn("active_host", debug_output)
+
+    def test_browser_has_its_own_lock(self):
+        registry = ToolRegistry(
+            browser_capability=object(),
+            interaction_capability=object(),
+        )
+
+        self.assertIsNot(registry.browser_lock, registry.interaction_lock)
+        self.assertTrue(hasattr(registry.browser_lock, "acquire"))
 
 
 if __name__ == "__main__":

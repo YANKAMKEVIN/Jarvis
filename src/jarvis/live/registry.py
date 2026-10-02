@@ -5,6 +5,7 @@ from livekit.agents import function_tool
 
 from jarvis.capabilities.apps import AppCapability
 from jarvis.capabilities.audio import AudioCapability
+from jarvis.capabilities.browser import BrowserCapability
 from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
@@ -31,6 +32,7 @@ class ToolRegistry:
         mouse_capability=None,
         ui_accessibility_capability=None,
         interaction_capability=None,
+        browser_capability=None,
     ):
         self.audio = (
             audio_capability
@@ -93,12 +95,18 @@ class ToolRegistry:
                 clipboard=self.clipboard,
             )
         )
+        self.browser = (
+            browser_capability
+            if browser_capability is not None
+            else BrowserCapability()
+        )
         self.media_lock = asyncio.Lock()
         self.clipboard_lock = asyncio.Lock()
         self.keyboard_lock = asyncio.Lock()
         self.mouse_lock = asyncio.Lock()
         self.ui_lock = asyncio.Lock()
         self.interaction_lock = asyncio.Lock()
+        self.browser_lock = asyncio.Lock()
 
     def livekit_tools(self) -> list[Any]:
         @function_tool(
@@ -991,6 +999,141 @@ class ToolRegistry:
             self._debug_interaction_result("open_app_and_focus_ui", result)
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="browse_open_url",
+            description=(
+                "Ouvre une URL dans Safari ou Google Chrome, active la fenetre "
+                "puis relit l'onglet actif pour verifier le chargement. Utilise "
+                "ce tool pour aller sur un site. browser=None choisit "
+                "automatiquement le navigateur ouvert (Safari par defaut). "
+                "new_tab=true ouvre un nouvel onglet, false reutilise l'onglet "
+                "actif. state_confirmed=true seulement si l'onglet actif pointe "
+                "bien vers le domaine demande."
+            ),
+        )
+        async def browse_open_url(
+            url: str,
+            browser: str | None = None,
+            new_tab: bool = True,
+        ) -> dict:
+            """Open a URL in a browser and verify the active tab."""
+            debug_live(
+                "tool_call",
+                tool="browse_open_url",
+                browser=browser,
+                new_tab=new_tab,
+            )
+            async with self.browser_lock:
+                result = await asyncio.to_thread(
+                    self.browser.open_url,
+                    url,
+                    browser,
+                    new_tab,
+                )
+            self._debug_browser_result("browse_open_url", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="browse_search_web",
+            description=(
+                "Lance une recherche web dans Safari ou Google Chrome puis relit "
+                "l'onglet actif pour verifier. Utilise ce tool pour une demande "
+                "comme cherche la meteo. engine accepte google, duckduckgo ou "
+                "bing (google par defaut). command_executed ne prouve pas que les "
+                "resultats sont charges ; state_confirmed le fait."
+            ),
+        )
+        async def browse_search_web(
+            query: str,
+            browser: str | None = None,
+            engine: str | None = None,
+        ) -> dict:
+            """Run a web search in a browser and verify the active tab."""
+            debug_live(
+                "tool_call",
+                tool="browse_search_web",
+                browser=browser,
+                engine=engine,
+                query_length=len(query) if isinstance(query, str) else None,
+            )
+            async with self.browser_lock:
+                result = await asyncio.to_thread(
+                    self.browser.search_web,
+                    query,
+                    browser,
+                    engine,
+                )
+            self._debug_browser_result("browse_search_web", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="browse_get_active_tab",
+            description=(
+                "Lit l'onglet actif (URL et titre) de Safari ou Google Chrome. "
+                "Utilise ce tool pour savoir quelle page est affichee au lieu de "
+                "le deduire. browser=None choisit automatiquement le navigateur."
+            ),
+        )
+        async def browse_get_active_tab(browser: str | None = None) -> dict:
+            """Read the active tab of a browser."""
+            debug_live("tool_call", tool="browse_get_active_tab", browser=browser)
+            async with self.browser_lock:
+                result = await asyncio.to_thread(
+                    self.browser.get_active_tab,
+                    browser,
+                )
+            self._debug_browser_result("browse_get_active_tab", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="browse_list_tabs",
+            description=(
+                "Liste les onglets ouverts (index, URL, titre) de la fenetre "
+                "active de Safari ou Google Chrome. Utile avant d'activer un "
+                "onglet precis. browser=None choisit automatiquement."
+            ),
+        )
+        async def browse_list_tabs(browser: str | None = None) -> dict:
+            """List the tabs of a browser's front window."""
+            debug_live("tool_call", tool="browse_list_tabs", browser=browser)
+            async with self.browser_lock:
+                result = await asyncio.to_thread(
+                    self.browser.list_tabs,
+                    browser,
+                )
+            self._debug_browser_result("browse_list_tabs", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="browse_activate_tab",
+            description=(
+                "Active l'onglet dont l'URL ou le titre contient query, dans "
+                "Safari ou Google Chrome, puis verifie qu'il est au premier plan. "
+                "Si plusieurs onglets correspondent, retourne ambiguous_tab sans "
+                "choisir : demande une precision. browser=None choisit "
+                "automatiquement."
+            ),
+        )
+        async def browse_activate_tab(
+            query: str,
+            browser: str | None = None,
+        ) -> dict:
+            """Activate the single tab matching query, then verify it."""
+            debug_live(
+                "tool_call",
+                tool="browse_activate_tab",
+                browser=browser,
+                query_length=len(query) if isinstance(query, str) else None,
+            )
+            async with self.browser_lock:
+                result = await asyncio.to_thread(
+                    self.browser.activate_tab,
+                    query,
+                    browser,
+                )
+            self._debug_browser_result("browse_activate_tab", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
@@ -1038,6 +1181,11 @@ class ToolRegistry:
             select_all_and_copy,
             focus_app_ui_and_type,
             open_app_and_focus_ui,
+            browse_open_url,
+            browse_search_web,
+            browse_get_active_tab,
+            browse_list_tabs,
+            browse_activate_tab,
         ]
 
     @staticmethod
@@ -1169,6 +1317,39 @@ class ToolRegistry:
                 failed_step=result.data.get("failed_step"),
             )
 
+    @staticmethod
+    def _debug_browser_result(tool_name: str, result) -> None:
+        # Log host and counts only; never the full URL or page title.
+        fields = {
+            "tool": tool_name,
+            "browser": result.data.get("browser"),
+            "active_host": ToolRegistry._debug_host(result.data.get("active_url")),
+            "has_window": result.data.get("has_window"),
+            "tab_count": result.data.get("count"),
+            "new_tab": result.data.get("new_tab"),
+            "command_executed": result.data.get("command_executed"),
+            "state_confirmed": result.data.get("state_confirmed"),
+        }
+
+        if result.ok:
+            debug_live("tool_succeeded", **fields)
+        else:
+            debug_live(
+                "tool_failed",
+                tool=tool_name,
+                browser=result.data.get("browser"),
+                error=result.error_code,
+            )
+
+    @staticmethod
+    def _debug_host(url) -> str | None:
+        if not isinstance(url, str) or not url:
+            return None
+
+        from urllib.parse import urlparse
+
+        return urlparse(url).netloc or None
+
 
 def create_live_tools(
     security=None,
@@ -1189,6 +1370,7 @@ def create_live_tools(
     mouse_capability=None,
     ui_accessibility_capability=None,
     interaction_capability=None,
+    browser_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -1259,6 +1441,9 @@ def create_live_tools(
             clipboard=clipboard_capability,
         )
 
+    if browser_capability is None:
+        browser_capability = BrowserCapability()
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
@@ -1271,4 +1456,5 @@ def create_live_tools(
         mouse_capability=mouse_capability,
         ui_accessibility_capability=ui_accessibility_capability,
         interaction_capability=interaction_capability,
+        browser_capability=browser_capability,
     ).livekit_tools()
