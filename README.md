@@ -1,0 +1,190 @@
+# Jarvis
+
+Assistant personnel **local** pour macOS. Jarvis comprend des demandes en
+langage naturel et les traduit en actions réelles sur la machine (applications,
+fenêtres, fichiers, clavier, souris, presse-papiers, son, média…), via une
+couche d'accessibilité native et un ensemble de *capabilities* composables.
+
+Il inclut un POC temps réel **Gemini Live + LiveKit**, isolé du mode texte et du
+mode vocal, qui expose ces mêmes capacités comme *tools* à un modèle conversant.
+
+- **Langage** : Python ≥ 3.13
+- **Plateforme** : macOS (API Accessibility / ApplicationServices)
+- **État** : 0.9.0 — en développement actif
+
+---
+
+## Sommaire
+
+- [Architecture](#architecture)
+- [Capacités](#capacités)
+- [Les trois modes d'exécution](#les-trois-modes-dexécution)
+- [Installation](#installation)
+- [Lancer Jarvis](#lancer-jarvis)
+- [Le POC Gemini Live](#le-poc-gemini-live)
+- [Tests](#tests)
+- [Diagnostic Accessibility](#diagnostic-accessibility)
+- [Principes de conception](#principes-de-conception)
+
+---
+
+## Architecture
+
+```
+src/jarvis/
+├── main.py            # Mode texte (REPL)
+├── voice_mode.py      # Mode vocal (wake word + parole)
+├── wakeword.py        # Détection du mot d'activation
+├── speech.py / voice.py
+├── executor.py        # Orchestration : routing → intent → sécurité → tools
+├── routing.py         # Classe une demande : ACTION / KNOWLEDGE / CONVERSATION
+├── intents.py
+├── brain.py
+├── security.py        # Confirmation des actions sensibles
+├── config.py
+├── capabilities/      # Briques d'action de haut niveau (composables)
+├── tools/             # Implémentations macOS bas niveau
+├── knowledge/         # Recherche externe (SearXNG) + benchmark
+└── live/              # POC Gemini Live + LiveKit (isolé)
+```
+
+Deux niveaux séparent clairement l'intention et l'exécution :
+
+- **`tools/`** — primitives macOS (accessibility, keyboard, mouse, clipboard,
+  filesystem, macos). Elles parlent directement aux API système.
+- **`capabilities/`** — couche métier qui enveloppe les primitives, renvoie un
+  `ToolResult` structuré (`ok`, `command_executed`, `state_confirmed`,
+  `error_code`, `steps`…) et gère la vérification d'état.
+
+## Capacités
+
+| Capability | Rôle |
+|---|---|
+| `AppCapability` | Ouvrir / activer des applications, tester si une app tourne |
+| `WindowCapability` | Focaliser une fenêtre, lire la fenêtre active |
+| `UIAccessibilityCapability` | Inspecter l'UI, trouver / focaliser / activer un élément via Accessibility |
+| `KeyboardCapability` | Saisie texte, raccourcis, touches |
+| `MouseCapability` | Déplacer le curseur, cliquer, scroller |
+| `ClipboardCapability` | Lire / écrire le presse-papiers |
+| `FilesCapability` | Fichiers et Finder |
+| `MediaCapability` | Lecture / pause / piste suivante, état de lecture |
+| `AudioCapability` | Volume |
+| `SystemCapability` | Batterie, luminosité, infos système, verrouillage |
+| `InteractionCapability` | **Flux composites** multi-étapes vérifiés (voir ci-dessous) |
+
+### InteractionCapability
+
+Couche de haut niveau qui compose plusieurs capacités en séquences **strictement
+ordonnées et vérifiées**. Chaque étape s'arrête dès qu'elle échoue, n'a pas
+exécuté sa commande, ou n'a pas confirmé son état final — jamais d'étape
+dépendante lancée sur un état non vérifié.
+
+- **`select_all_and_copy`** — `⌘A` puis `⌘C`, avec relecture du presse-papiers
+  avant/après pour prouver qu'une nouvelle copie a bien eu lieu.
+- **`open_app_and_focus_ui`** — ouvre/focalise une app puis focalise une cible
+  Accessibility nommée (sans saisie).
+- **`focus_app_ui_and_type`** — ouvre/focalise une app, **vérifie** la
+  destination éditable (nommée via `query`, ou l'unique champ éditable
+  focalisé), puis saisit le texte et, en option, presse Entrée.
+
+## Les trois modes d'exécution
+
+1. **Texte** (`main.py`) — un REPL : vous tapez, Jarvis route la demande
+   (action / connaissance / conversation), demande confirmation pour les actions
+   sensibles, et exécute.
+2. **Vocal** (`voice_mode.py`) — écoute un mot d'activation puis traite la
+   commande parlée.
+3. **Live** (`live/`) — POC Gemini Live + LiveKit : un modèle temps réel
+   converse et appelle les capacités exposées comme *tools*.
+
+## Installation
+
+Python 3.13+ requis.
+
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-live.txt   # uniquement pour le POC Live
+```
+
+> Le paquet n'est pas installé en editable ; les commandes ci-dessous utilisent
+> `PYTHONPATH=src`. Vous pouvez aussi `pip install -e .`.
+
+**Autorisation macOS** : accordez l'accès **Accessibilité** au terminal (ou à
+l'app qui lance Jarvis) dans *Réglages Système → Confidentialité et sécurité →
+Accessibilité*, sans quoi l'inspection/pilotage de l'UI échoue.
+
+## Lancer Jarvis
+
+Mode texte :
+
+```bash
+PYTHONPATH=src .venv/bin/python -m jarvis.main
+```
+
+Mode vocal :
+
+```bash
+PYTHONPATH=src .venv/bin/python -m jarvis.voice_mode
+```
+
+## Le POC Gemini Live
+
+Variables d'environnement requises :
+
+```bash
+export GOOGLE_API_KEY=...
+export LIVEKIT_URL=...
+export LIVEKIT_API_KEY=...
+export LIVEKIT_API_SECRET=...
+```
+
+Options (valeurs par défaut) :
+
+| Variable | Défaut |
+|---|---|
+| `JARVIS_GEMINI_LIVE_MODEL` | `gemini-3.1-flash-live-preview` |
+| `JARVIS_GEMINI_LIVE_VOICE` | `Puck` |
+| `JARVIS_GEMINI_LIVE_TEMPERATURE` | `0.8` |
+| `JARVIS_LIVE_AGENT_NAME` | `jarvis-live-poc` |
+| `JARVIS_DEBUG_LIVE` | `0` (mettre `1` pour les logs de debug) |
+
+Lancement (via la CLI LiveKit) :
+
+```bash
+PYTHONPATH=src .venv/bin/python -m jarvis.live.agent
+```
+
+Les logs appliquent un filtre PII et l'enregistrement LiveKit est configuré avec
+rédaction.
+
+## Tests
+
+```bash
+PYTHONPATH=src .venv/bin/python -m pytest -q
+```
+
+## Diagnostic Accessibility
+
+Outil local **en lecture seule** pour découvrir les cibles (`query` / `role`) à
+utiliser avec `InteractionCapability`. Il n'active pas l'app, ne lit aucune
+valeur de champ ni texte sélectionné, et n'imprime les métadonnées que sur
+stdout (jamais dans les logs) :
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/diagnose_accessibility.py --app Safari
+```
+
+## Principes de conception
+
+- **Vérifier, ne pas supposer.** Les capacités renvoient `command_executed` et
+  `state_confirmed` ; on ne déclare un succès applicatif que lorsque l'effet réel
+  est confirmé. Après un changement d'app/fenêtre, les anciennes inspections UI
+  sont considérées obsolètes.
+- **Séquentiel et dépendant.** Les étapes dépendantes ne sont jamais lancées en
+  parallèle ni sur un état non confirmé ; un échec interrompt la chaîne.
+- **Accessibility d'abord.** Les cibles sémantiques (« barre de recherche »,
+  « champ Nom », « Continuer ») passent par l'API Accessibility ; la souris reste
+  une primitive explicite, sans fallback automatique.
+- **Local et sobre en données.** Les valeurs de champs et le texte sélectionné
+  ne sont pas lus ; les logs filtrent les PII.
