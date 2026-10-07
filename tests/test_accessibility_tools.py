@@ -172,6 +172,26 @@ class AccessibilityToolsTest(unittest.TestCase):
                 backend.release.assert_called_once_with(42)
                 backend.copy_attribute.assert_not_called()
 
+    def test_optional_attribute_soft_errors_degrade_to_none(self):
+        for code in ("failure", "cannot_complete", "attribute_unsupported", "no_value"):
+            with self.subTest(code=code):
+                backend = object.__new__(ApplicationServicesAccessibilityBackend)
+                backend.copy_attribute = Mock(
+                    side_effect=AccessibilityError("unreadable", code)
+                )
+                self.assertIsNone(backend.copy_attribute_text(1, "AXTitle"))
+                self.assertIsNone(backend.copy_attribute_bool(1, "AXEnabled"))
+
+    def test_hard_attribute_errors_still_propagate(self):
+        backend = object.__new__(ApplicationServicesAccessibilityBackend)
+        backend.copy_attribute = Mock(
+            side_effect=AccessibilityError("bad handle", "invalid_ui_element")
+        )
+        with self.assertRaises(AccessibilityError):
+            backend.copy_attribute_text(1, "AXTitle")
+        with self.assertRaises(AccessibilityError):
+            backend.copy_attribute_bool(1, "AXEnabled")
+
     def test_focused_window_falls_back_to_pid_when_system_path_cannot_complete(self):
         backend = FakeFrontmostBackend(
             candidates=[

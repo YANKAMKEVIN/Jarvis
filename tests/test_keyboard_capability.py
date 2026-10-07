@@ -1,7 +1,8 @@
 import unittest
 
 from jarvis.capabilities.keyboard import KeyboardCapability
-from jarvis.security import SecurityDecision
+from jarvis.intents import RiskLevel, create_intent
+from jarvis.security import SecurityDecision, SecurityManager
 from jarvis.tools.keyboard import KeyboardError, KeyboardTools
 
 
@@ -73,6 +74,17 @@ class RecordingKeyboardTools:
             "target_window": "Example",
         }
 
+    def delete_backward(self):
+        self.calls.append(("delete_backward",))
+        self._raise_if_needed()
+        return {
+            "command_executed": True,
+            "state_confirmed": False,
+            "key": "backspace",
+            "target_app": "Safari",
+            "target_window": "Example",
+        }
+
 
 class KeyboardCapabilityTest(unittest.TestCase):
     def test_type_text_uses_security_and_backend_without_returning_raw_text(self):
@@ -120,6 +132,53 @@ class KeyboardCapabilityTest(unittest.TestCase):
         self.assertEqual(security.intents[0].action, "hotkey")
         self.assertEqual(security.intents[0].target, "command+shift+z")
         self.assertEqual(tools.calls, [("hotkey", ["command", "shift", "z"])])
+
+    def test_delete_selection_uses_security_and_restricted_backend(self):
+        security = RecordingSecurity()
+        tools = RecordingKeyboardTools()
+        capability = KeyboardCapability(security=security, keyboard_tools=tools)
+
+        result = capability.delete_selection()
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.action, "delete_selection")
+        self.assertEqual(result.data["key"], "backspace")
+        self.assertFalse(result.data["state_confirmed"])
+        self.assertIn("ne peut pas confirmer", result.message)
+        self.assertEqual(security.intents[0].action, "delete_selection")
+        self.assertEqual(security.intents[0].target, "backspace")
+        self.assertEqual(tools.calls, [("delete_backward",)])
+
+    def test_delete_selection_security_refusal_prevents_backend(self):
+        security = RecordingSecurity(allowed=False)
+        tools = RecordingKeyboardTools()
+        capability = KeyboardCapability(security=security, keyboard_tools=tools)
+
+        result = capability.delete_selection()
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "security_denied")
+        self.assertEqual(tools.calls, [])
+
+    def test_delete_selection_confirmation_prevents_backend(self):
+        security = RecordingSecurity(requires_confirmation=True)
+        tools = RecordingKeyboardTools()
+        capability = KeyboardCapability(security=security, keyboard_tools=tools)
+
+        result = capability.delete_selection()
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "confirmation_required")
+        self.assertTrue(result.requires_confirmation)
+        self.assertEqual(tools.calls, [])
+
+    def test_delete_selection_intent_is_safe_and_usable_in_live(self):
+        # SAFE so the real SecurityManager allows it without a confirmation
+        # channel (CONFIRM would be unusable in Live).
+        self.assertEqual(create_intent("delete_selection").risk, RiskLevel.SAFE)
+        decision = SecurityManager().evaluate(create_intent("delete_selection"))
+        self.assertTrue(decision.allowed)
+        self.assertFalse(decision.requires_confirmation)
 
     def test_compact_hotkey_is_normalized_before_security_and_backend(self):
         security = RecordingSecurity()

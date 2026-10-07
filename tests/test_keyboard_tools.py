@@ -157,6 +157,18 @@ class KeyboardToolsTest(unittest.TestCase):
         self.assertEqual(context.exception.code, "unknown_key")
         self.assertEqual(tools.runner.calls, [])
 
+    def test_delete_backward_sends_backspace_key_code(self):
+        tools = self.make_tools(completed())
+
+        result = tools.delete_backward()
+
+        self.assertTrue(result["command_executed"])
+        self.assertFalse(result["state_confirmed"])
+        self.assertEqual(result["key"], "backspace")
+        script = tools.runner.calls[1][0][2]
+        self.assertIn("key code 51", script)
+        self.assert_no_shell(tools.runner)
+
     def test_allowed_hotkeys(self):
         cases = [
             (["cmd", "a"], ("command", "a")),

@@ -106,6 +106,34 @@ class KeyboardCapability:
             **state,
         )
 
+    def delete_selection(self) -> ToolResult:
+        """Send a single restricted Backspace to delete the current selection.
+
+        Routed through SecurityManager under the dedicated delete_selection
+        intent (RiskLevel.SAFE). Reserved for the controlled composite delete
+        workflow; it never opens the general key allowlist to Backspace/Delete.
+        """
+        security_result = self._security_result("delete_selection", "backspace")
+
+        if security_result is not None:
+            return security_result
+
+        try:
+            state = self.keyboard_tools.delete_backward()
+        except KeyboardError as error:
+            return self._keyboard_failure("delete_selection", error)
+        except Exception as error:
+            return self._system_error_result("delete_selection", error)
+
+        return ToolResult.success(
+            action="delete_selection",
+            message=(
+                "La commande de suppression a ete envoyee, mais Jarvis ne peut "
+                "pas confirmer son effet dans l'application active."
+            ),
+            **state,
+        )
+
     def _security_result(self, action: str, target: str | None) -> ToolResult | None:
         decision = self.security.evaluate(create_intent(action, target))
 

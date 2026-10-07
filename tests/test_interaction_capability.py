@@ -101,11 +101,24 @@ class RecordingKeyboard:
         hotkey_results=None,
         type_result=None,
         enter_result=None,
+        delete_result=None,
     ):
         self.hotkey_results = list(hotkey_results or [])
         self.type_result = type_result
         self.enter_result = enter_result
+        self.delete_result = delete_result
         self.calls = []
+
+    def delete_selection(self):
+        self.calls.append(("delete_selection",))
+        return self.delete_result or success(
+            "delete_selection",
+            command_executed=True,
+            state_confirmed=False,
+            key="backspace",
+            target_app="Safari",
+            target_window="Example",
+        )
 
     def hotkey(self, keys):
         self.calls.append(("hotkey", list(keys)))
@@ -146,15 +159,21 @@ class RecordingKeyboard:
 
 
 class RecordingClipboard:
-    def __init__(self, results=None):
+    def __init__(self, results=None, repeat_last=True):
         self.results = list(results or [])
+        self.repeat_last = repeat_last
+        self._last = None
         self.calls = []
 
     def get_clipboard_text(self):
         self.calls.append(("get_clipboard_text",))
 
         if self.results:
-            return self.results.pop(0)
+            self._last = self.results.pop(0)
+            return self._last
+
+        if self.repeat_last and self._last is not None:
+            return self._last
 
         return success(
             "get_clipboard_text",
@@ -265,6 +284,8 @@ class InteractionCapabilityTest(unittest.TestCase):
         clipboard=None,
         readiness_attempts=3,
         readiness_delay_seconds=0,
+        clipboard_read_attempts=4,
+        clipboard_read_delay_seconds=0,
         sleeper=None,
     ):
         return InteractionCapability(
@@ -275,6 +296,8 @@ class InteractionCapabilityTest(unittest.TestCase):
             clipboard=clipboard or RecordingClipboard(),
             readiness_attempts=readiness_attempts,
             readiness_delay_seconds=readiness_delay_seconds,
+            clipboard_read_attempts=clipboard_read_attempts,
+            clipboard_read_delay_seconds=clipboard_read_delay_seconds,
             sleeper=sleeper or (lambda seconds: None),
         )
 
@@ -451,6 +474,215 @@ class InteractionCapabilityTest(unittest.TestCase):
 
         self.assertNotIn("SECRET_OLD", payload)
         self.assertNotIn("SECRET_NEW", payload)
+
+    def test_select_all_and_copy_retries_until_clipboard_observable(self):
+        clipboard = RecordingClipboard(results=[
+            success("get_clipboard_text", has_text=False),  # before
+            success("get_clipboard_text", has_text=False),  # after 1 (lagging)
+            success("get_clipboard_text", has_text=False),  # after 2 (lagging)
+            success(
+                "get_clipboard_text", has_text=True, text="copied", length=6,
+            ),  # after 3 (now observable)
+        ])
+        sleeps = []
+        capability = self.make_capability(
+            clipboard=clipboard,
+            clipboard_read_attempts=4,
+            clipboard_read_delay_seconds=0.12,
+            sleeper=sleeps.append,
+        )
+
+        result = capability.select_all_and_copy()
+
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["state_confirmed"])
+        self.assertTrue(result.data["new_copy_proven"])
+        self.assertEqual(result.data["clipboard_read_attempts"], 3)
+        self.assertEqual(len(clipboard.calls), 4)  # before + 3 after reads
+        self.assertEqual(sleeps, [0.12, 0.12])
+
+    def test_select_all_and_copy_clipboard_retry_is_bounded_when_always_empty(self):
+        keyboard = RecordingKeyboard()
+        clipboard = RecordingClipboard(results=[
+            success("get_clipboard_text", has_text=False),  # before
+            success("get_clipboard_text", has_text=False),  # after (repeated)
+        ])
+        sleeps = []
+        capability = self.make_capability(
+            keyboard=keyboard,
+            clipboard=clipboard,
+            clipboard_read_attempts=3,
+            clipboard_read_delay_seconds=0.1,
+            sleeper=sleeps.append,
+        )
+
+        result = capability.select_all_and_copy()
+
+        self.assertTrue(result.ok)
+        self.assertFalse(result.data["state_confirmed"])
+        self.assertFalse(result.data["clipboard_has_text"])
+        self.assertEqual(result.data["clipboard_read_attempts"], 3)
+        self.assertEqual(len(clipboard.calls), 1 + 3)  # bounded, never more
+        self.assertEqual(len(sleeps), 2)
+        self.assertEqual(
+            keyboard.calls,
+            [("hotkey", ["command", "a"]), ("hotkey", ["command", "c"])],
+        )  # no second Command+C
+
+    def test_select_all_and_copy_observes_immediately_without_sleeping(self):
+        clipboard = RecordingClipboard(results=[
+            success("get_clipboard_text", has_text=False),  # before
+            success(
+                "get_clipboard_text", has_text=True, text="copied", length=6,
+            ),  # after 1 (already observable)
+        ])
+        sleeps = []
+        capability = self.make_capability(clipboard=clipboard, sleeper=sleeps.append)
+
+        result = capability.select_all_and_copy()
+
+        self.assertTrue(result.data["state_confirmed"])
+        self.assertEqual(result.data["clipboard_read_attempts"], 1)
+        self.assertEqual(sleeps, [])
+
+    def _editable_inspect(self, truncated=False, **changes):
+        base = dict(role="AXTextArea", focused=True, enabled=True, editable=True)
+        return success(
+            "inspect_ui",
+            elements=[{**base, **changes}],
+            truncated=truncated,
+        )
+
+    def test_select_all_and_delete_happy_path(self):
+        ui = RecordingUI(inspect_result=self._editable_inspect())
+        keyboard = RecordingKeyboard()
+        clipboard = RecordingClipboard()
+        capability = self.make_capability(
+            ui=ui, keyboard=keyboard, clipboard=clipboard,
+        )
+
+        result = capability.select_all_and_delete()
+
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["command_executed"])
+        self.assertFalse(result.data["state_confirmed"])
+        self.assertTrue(result.data["deletion_executed"])
+        self.assertEqual(
+            keyboard.calls,
+            [("hotkey", ["command", "a"]), ("delete_selection",)],
+        )
+        self.assertEqual(clipboard.calls, [])  # no clipboard access in delete
+        self.assertEqual(
+            [step["name"] for step in result.data["steps"]],
+            ["inspect_editable_target", "hotkey_command_a", "delete_selection"],
+        )
+
+    def test_select_all_and_delete_accepts_focused_editable_without_enabled_attribute(self):
+        # TextEdit's AXTextArea exposes no AXEnabled, so `enabled` is absent
+        # (not True). A focused, settable, non-secure field must still verify.
+        ui = RecordingUI(inspect_result=success("inspect_ui", elements=[
+            {
+                "role": "AXTextArea", "focused": True, "editable": True,
+                "identifier": "First Text View",
+            },
+        ], truncated=False))
+        keyboard = RecordingKeyboard()
+        capability = self.make_capability(ui=ui, keyboard=keyboard)
+
+        result = capability.select_all_and_delete()
+
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["deletion_executed"])
+        self.assertEqual(
+            keyboard.calls,
+            [("hotkey", ["command", "a"]), ("delete_selection",)],
+        )
+
+    def test_select_all_and_delete_stops_when_command_a_fails(self):
+        ui = RecordingUI(inspect_result=self._editable_inspect())
+        keyboard = RecordingKeyboard(
+            hotkey_results=[failure("hotkey", "select_failed")],
+        )
+        capability = self.make_capability(ui=ui, keyboard=keyboard)
+
+        result = capability.select_all_and_delete()
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "select_failed")
+        self.assertEqual(keyboard.calls, [("hotkey", ["command", "a"])])
+
+    def test_select_all_and_delete_stops_when_command_a_not_executed(self):
+        ui = RecordingUI(inspect_result=self._editable_inspect())
+        keyboard = RecordingKeyboard(
+            hotkey_results=[success("hotkey", command_executed=False)],
+        )
+        capability = self.make_capability(ui=ui, keyboard=keyboard)
+
+        result = capability.select_all_and_delete()
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "command_not_executed")
+        self.assertEqual(keyboard.calls, [("hotkey", ["command", "a"])])
+
+    def test_select_all_and_delete_requires_verified_editable_target(self):
+        two_fields = success("inspect_ui", elements=[
+            dict(role="AXTextField", focused=True, enabled=True, editable=True),
+            dict(role="AXTextField", focused=True, enabled=True, editable=True),
+        ], truncated=False)
+        for observation in (
+            success("inspect_ui", elements=[]),
+            two_fields,
+            self._editable_inspect(focused=False),
+            self._editable_inspect(editable=False),
+            self._editable_inspect(editable=None),
+            self._editable_inspect(enabled=False),
+            self._editable_inspect(role="AXButton"),
+            self._editable_inspect(secure=True),
+            self._editable_inspect(subrole="AXSecureTextField"),
+            self._editable_inspect(truncated=True),
+            failure("inspect_ui", "accessibility_permission_error"),
+        ):
+            with self.subTest(observation=observation.data):
+                ui = RecordingUI(inspect_result=observation)
+                keyboard = RecordingKeyboard()
+                result = self.make_capability(
+                    ui=ui, keyboard=keyboard,
+                ).select_all_and_delete()
+                self.assertEqual(result.error_code, "editable_target_not_verified")
+                self.assertEqual(keyboard.calls, [])  # no Command+A, no delete
+
+    def test_select_all_and_delete_deletes_only_once(self):
+        ui = RecordingUI(inspect_result=self._editable_inspect())
+        keyboard = RecordingKeyboard()
+        capability = self.make_capability(ui=ui, keyboard=keyboard)
+
+        capability.select_all_and_delete()
+
+        self.assertEqual(keyboard.calls.count(("delete_selection",)), 1)
+
+    def test_select_all_and_delete_uses_no_escape_or_enter(self):
+        ui = RecordingUI(inspect_result=self._editable_inspect())
+        keyboard = RecordingKeyboard()
+        capability = self.make_capability(ui=ui, keyboard=keyboard)
+
+        capability.select_all_and_delete()
+
+        self.assertNotIn(("press_key", "escape"), keyboard.calls)
+        self.assertNotIn(("press_key", "enter"), keyboard.calls)
+
+    def test_select_all_and_delete_does_not_expose_field_value(self):
+        ui = RecordingUI(inspect_result=success("inspect_ui", elements=[
+            dict(
+                role="AXTextArea", focused=True, enabled=True, editable=True,
+                title="PRIVATE_LABEL", value="PRIVATE_VALUE",
+            ),
+        ], truncated=False))
+        capability = self.make_capability(ui=ui)
+
+        result = capability.select_all_and_delete()
+
+        self.assertTrue(result.ok)
+        self.assertNotIn("PRIVATE", str(result.to_livekit_dict()))
 
     def test_focus_app_ui_and_type_runs_strict_sequence(self):
         apps = RecordingApps()

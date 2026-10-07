@@ -48,6 +48,20 @@ INTERESTING_ROLES = {
 TEXT_ROLES = {"AXTextField", "AXTextArea", "AXSecureTextField", "AXSearchField"}
 SECURE_ROLES = {"AXSecureTextField"}
 
+# Reading an OPTIONAL element attribute can fail for reasons that mean "this
+# attribute is not readable on this element" rather than "the element itself is
+# invalid". Those degrade to None so a single unreadable attribute never drops
+# the whole element from a snapshot. Observed in the field: TextEdit's main
+# AXTextArea raises kAXErrorFailure (-25200) on an optional attribute, which
+# previously discarded the only editable target. Hard errors not listed here
+# (e.g. invalid_ui_element) still propagate.
+SOFT_ATTRIBUTE_ERROR_CODES = {
+    "attribute_unsupported",
+    "no_value",
+    "failure",
+    "cannot_complete",
+}
+
 AX_ERROR_CODES = {
     0: "success",
     -25200: "failure",
@@ -511,7 +525,7 @@ class ApplicationServicesAccessibilityBackend:
         try:
             value = self.copy_attribute(element, attribute)
         except AccessibilityError as error:
-            if error.code in {"attribute_unsupported", "no_value"}:
+            if error.code in SOFT_ATTRIBUTE_ERROR_CODES:
                 return None
             raise
 
@@ -525,7 +539,7 @@ class ApplicationServicesAccessibilityBackend:
         try:
             value = self.copy_attribute(element, attribute)
         except AccessibilityError as error:
-            if error.code in {"attribute_unsupported", "no_value"}:
+            if error.code in SOFT_ATTRIBUTE_ERROR_CODES:
                 return None
             raise
 
@@ -546,7 +560,7 @@ class ApplicationServicesAccessibilityBackend:
         try:
             value = self.copy_attribute(element, attribute)
         except AccessibilityError as error:
-            if error.code in {"attribute_unsupported", "no_value"}:
+            if error.code in SOFT_ATTRIBUTE_ERROR_CODES:
                 return None
             raise
 

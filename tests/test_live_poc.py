@@ -81,6 +81,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "right_click",
     "scroll",
     "select_all_and_copy",
+    "select_all_and_delete",
     "set_brightness",
     "set_clipboard_text",
     "set_volume",
@@ -799,6 +800,25 @@ class RecordingLiveInteractionCapability:
                 {"name": "open_app", "ok": True},
                 {"name": "focus_window", "ok": True, "state_confirmed": True},
                 {"name": "type_text", "ok": True, "command_executed": True},
+            ],
+        )
+
+    def select_all_and_delete(self):
+        self.calls.append(("select_all_and_delete",))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="select_all_and_delete",
+            message="La cible a ete verifiee et la suppression a ete envoyee.",
+            command_executed=True,
+            state_confirmed=False,
+            deletion_executed=True,
+            steps=[
+                {"name": "inspect_editable_target", "ok": True},
+                {"name": "hotkey_command_a", "ok": True},
+                {"name": "delete_selection", "ok": True},
             ],
         )
 
@@ -2886,6 +2906,52 @@ class LiveInteractionToolTest(unittest.TestCase):
         self.assertFalse(result["state_confirmed"])
         self.assertEqual(len(result["steps"]), 2)
         self.assertEqual(capability.calls, [("select_all_and_copy",)])
+
+    def test_select_all_and_delete_is_named_and_distinct_from_copy(self):
+        tools = self.make_tools()
+
+        self.assertEqual(
+            tools["select_all_and_delete"].info.name,
+            "select_all_and_delete",
+        )
+        description = tools["select_all_and_delete"].info.description
+        self.assertIn("supprime", description)
+        self.assertIn("jamais select_all_and_copy", description)
+        self.assertNotIn("supprime", tools["select_all_and_copy"].info.description)
+
+    def test_select_all_and_delete_routes_to_capability(self):
+        capability = RecordingLiveInteractionCapability()
+        tool = self.make_tools(interaction_capability=capability)["select_all_and_delete"]
+
+        result = asyncio.run(tool())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "select_all_and_delete")
+        self.assertFalse(result["state_confirmed"])
+        self.assertTrue(result["deletion_executed"])
+        self.assertEqual(capability.calls, [("select_all_and_delete",)])
+
+    def test_interaction_debug_never_logs_arbitrary_data_fields(self):
+        class LeakyInteraction:
+            def select_all_and_copy(self):
+                return ToolResult.success(
+                    action="select_all_and_copy",
+                    message="ok",
+                    command_executed=True,
+                    state_confirmed=False,
+                    text="CLIPBOARD_SECRET_CONTENT",
+                    steps=[{"name": "get_clipboard_text_after", "ok": True}],
+                )
+
+        tools = self.make_tools(interaction_capability=LeakyInteraction())
+
+        with patch.dict(os.environ, {"JARVIS_DEBUG_LIVE": "1"}, clear=True):
+            output = StringIO()
+
+            with redirect_stdout(output):
+                asyncio.run(tools["select_all_and_copy"]())
+
+        self.assertNotIn("CLIPBOARD_SECRET_CONTENT", output.getvalue())
 
     def test_focus_app_ui_and_type_uses_text_but_debug_uses_length(self):
         secret_text = "JARVIS_INTERACTION_SECRET_TEXT"

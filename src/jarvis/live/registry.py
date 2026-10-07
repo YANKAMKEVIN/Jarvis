@@ -1008,6 +1008,29 @@ class ToolRegistry:
             return result.to_livekit_dict()
 
         @function_tool(
+            name="select_all_and_delete",
+            description=(
+                "Selectionne tout puis supprime le texte dans le champ editable "
+                "actuellement focalise : verifie d'abord une cible editable sure, "
+                "puis command+a, puis une suppression unique (Backspace). Utilise "
+                "ce tool pour les demandes comme selectionne tout et supprime ou "
+                "efface tout le texte. N'utilise jamais select_all_and_copy pour "
+                "supprimer, et ne simule jamais la suppression avec Escape ou "
+                "Entree. N'efface aucun fichier et ne copie rien. state_confirmed "
+                "reste false : l'effacement du champ ne peut pas etre confirme."
+            ),
+        )
+        async def select_all_and_delete() -> dict:
+            """Verify an editable target, then Command+A and one Backspace."""
+            debug_live("tool_call", tool="select_all_and_delete")
+            async with self.interaction_lock:
+                result = await asyncio.to_thread(
+                    self.interaction.select_all_and_delete,
+                )
+            self._debug_interaction_result("select_all_and_delete", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
             name="browse_open_url",
             description=(
                 "Ouvre une URL dans Safari ou Google Chrome, active la fenetre "
@@ -1280,6 +1303,7 @@ class ToolRegistry:
             select_all_and_copy,
             focus_app_ui_and_type,
             open_app_and_focus_ui,
+            select_all_and_delete,
             browse_open_url,
             browse_search_web,
             browse_get_active_tab,

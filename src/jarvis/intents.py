@@ -44,6 +44,12 @@ ALLOWED_ACTIONS = {
     "type_text": RiskLevel.SAFE,
     "press_key": RiskLevel.SAFE,
     "hotkey": RiskLevel.SAFE,
+    # Deleting the current selection is mutating but text-level and reversible
+    # via Undo in most apps. It is SAFE like type_text (also a mutating edit):
+    # CONFIRM has no usable confirmation channel in Live, and the safety comes
+    # from the controlled composite (verified editable target, stop-on-failure,
+    # single Backspace), not from a gate that would block the action entirely.
+    "delete_selection": RiskLevel.SAFE,
     "move_mouse": RiskLevel.SAFE,
     "click": RiskLevel.SAFE,
     "double_click": RiskLevel.SAFE,

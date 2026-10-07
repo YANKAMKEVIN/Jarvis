@@ -40,6 +40,10 @@ KEY_CODES = {
     "arrow_down": 125,
     "arrow_left": 123,
     "arrow_right": 124,
+    # backspace is intentionally absent from SAFE_KEYS, so it is never reachable
+    # through the generic press_key/validate_key path. Its key code lives here
+    # only for the restricted delete_backward primitive below.
+    "backspace": 51,
 }
 
 KEY_ALIASES = {
@@ -291,6 +295,23 @@ class KeyboardTools:
             "command_executed": True,
             "state_confirmed": False,
             "key": normalized,
+            **target,
+        }
+
+    def delete_backward(self) -> dict[str, Any]:
+        """Send a single Backspace, bypassing the SAFE_KEYS allowlist.
+
+        Restricted primitive for the controlled select-all-and-delete workflow
+        only. Backspace stays out of SAFE_KEYS so it is never exposed through the
+        generic press_key tool; this method is the single, narrow door to it.
+        """
+        target = self._read_frontmost_context()
+        self._run_osascript(self._press_key_script("backspace"))
+
+        return {
+            "command_executed": True,
+            "state_confirmed": False,
+            "key": "backspace",
             **target,
         }
 
