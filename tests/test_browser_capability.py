@@ -277,6 +277,89 @@ class BrowserActivateTabCapabilityTest(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.error_code, "tab_not_activated")
 
+    def test_activate_tab_ambiguous_does_not_activate(self):
+        tools = FakeBrowserTools(list_tabs_result=self._listing())
+        capability = BrowserCapability(browser_tools=tools)
+
+        result = capability.activate_tab("https://")
+
+        self.assertEqual(result.error_code, "ambiguous_tab")
+        self.assertNotIn(
+            "activate_tab_index",
+            [call[0] for call in tools.calls],
+        )
+
+    def _confirmed_index_tools(self, index=8):
+        return FakeBrowserTools(activate_result={
+            "browser": "Safari",
+            "index": index,
+            "active_index": index,
+            "active_url": "https://youtube.com/watch",
+            "active_title": "YouTube",
+            "command_executed": True,
+            "state_confirmed": True,
+        })
+
+    def test_activate_tab_by_explicit_index_is_direct(self):
+        tools = self._confirmed_index_tools(index=8)
+        capability = BrowserCapability(browser_tools=tools)
+
+        result = capability.activate_tab(index=8)
+
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["state_confirmed"])
+        self.assertEqual(result.data["active_index"], 8)
+        # Direct activation: no list_tabs, no text search.
+        self.assertEqual(tools.calls, [("activate_tab_index", 8, None)])
+
+    def test_explicit_index_wins_over_query_and_never_searches(self):
+        tools = self._confirmed_index_tools(index=8)
+        capability = BrowserCapability(browser_tools=tools)
+
+        result = capability.activate_tab(query="YouTube", index=8)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(tools.calls, [("activate_tab_index", 8, None)])
+
+    def test_activate_tab_index_out_of_range_fails_without_search(self):
+        tools = FakeBrowserTools(error=BrowserError("no tab", code="no_tab"))
+        capability = BrowserCapability(browser_tools=tools)
+
+        result = capability.activate_tab(index=99)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "no_tab")
+        self.assertEqual(tools.calls, [("activate_tab_index", 99, None)])
+
+    def test_activate_tab_rejects_invalid_index_before_any_tool_call(self):
+        for bad in (0, -1, "abc", True):
+            with self.subTest(index=bad):
+                tools = FakeBrowserTools()
+                capability = BrowserCapability(browser_tools=tools)
+
+                result = capability.activate_tab(index=bad)
+
+                self.assertFalse(result.ok)
+                self.assertEqual(result.error_code, "invalid_index")
+                self.assertEqual(tools.calls, [])
+
+    def test_activate_tab_by_index_requires_confirmation(self):
+        tools = FakeBrowserTools(activate_result={
+            "browser": "Safari",
+            "index": 8,
+            "active_index": 3,
+            "active_url": "https://github.com/",
+            "active_title": "GitHub",
+            "command_executed": True,
+            "state_confirmed": False,
+        })
+        capability = BrowserCapability(browser_tools=tools)
+
+        result = capability.activate_tab(index=8)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "tab_not_activated")
+
 
 if __name__ == "__main__":
     unittest.main()

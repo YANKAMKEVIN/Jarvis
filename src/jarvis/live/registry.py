@@ -1138,28 +1138,37 @@ class ToolRegistry:
         @function_tool(
             name="browse_activate_tab",
             description=(
-                "Active l'onglet dont l'URL ou le titre contient query, dans "
-                "Safari ou Google Chrome, puis verifie qu'il est au premier plan. "
-                "Si plusieurs onglets correspondent, retourne ambiguous_tab sans "
-                "choisir : demande une precision. browser=None choisit "
-                "automatiquement."
+                "Active un onglet dans Safari ou Google Chrome, puis verifie "
+                "qu'il est au premier plan. Deux modes exclusifs : fournis index, "
+                "un entier (position de l'onglet telle que donnee par "
+                "browse_list_tabs), pour l'activer directement et de maniere "
+                "deterministe ; OU fournis query (texte) pour une recherche sur "
+                "l'URL ou le titre. Quand l'utilisateur choisit explicitement un "
+                "onglet par son numero ou sa position (par exemple le 8), utilise "
+                "index, jamais query. Si query correspond a plusieurs onglets, le "
+                "resultat est ambiguous_tab : ne choisis pas au hasard, relis "
+                "browse_list_tabs et rappelle ce tool avec l'index voulu. "
+                "browser=None choisit automatiquement."
             ),
         )
         async def browse_activate_tab(
-            query: str,
+            query: str | None = None,
+            index: int | None = None,
             browser: str | None = None,
         ) -> dict:
-            """Activate the single tab matching query, then verify it."""
+            """Activate a tab by explicit index or by query, then verify it."""
             debug_live(
                 "tool_call",
                 tool="browse_activate_tab",
                 browser=browser,
+                index=index,
                 query_length=len(query) if isinstance(query, str) else None,
             )
             async with self.browser_lock:
                 result = await asyncio.to_thread(
                     self.browser.activate_tab,
                     query,
+                    index,
                     browser,
                 )
             self._debug_browser_result("browse_activate_tab", result)

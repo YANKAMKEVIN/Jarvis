@@ -110,11 +110,31 @@ class BrowserCapability:
 
         return ToolResult.success(action="list_tabs", message=message, **state)
 
-    def activate_tab(self, query: str, browser: str | None = None) -> ToolResult:
+    def activate_tab(
+        self,
+        query: str | None = None,
+        index: int | None = None,
+        browser: str | None = None,
+    ) -> ToolResult:
+        # An explicit index (a position the caller picked from list_tabs) always
+        # wins and is activated directly. It is never turned into a text search,
+        # so choosing "the 8th tab" cannot regress into an ambiguous query.
+        if index is not None:
+            coerced = self._coerce_index(index)
+
+            if coerced is None:
+                return ToolResult.failure(
+                    action="activate_tab",
+                    message="L'index d'onglet doit etre un entier positif.",
+                    error_code="invalid_index",
+                )
+
+            return self._activate_index(coerced, browser, query=None)
+
         if not isinstance(query, str) or not query.strip():
             return ToolResult.failure(
                 action="activate_tab",
-                message="Le critere de recherche de l'onglet est obligatoire.",
+                message="Fournis un index d'onglet ou un critere de recherche.",
                 error_code="invalid_query",
             )
 
@@ -143,13 +163,20 @@ class BrowserCapability:
                 error_code="ambiguous_tab",
             )
 
-        target = matches[0]
+        return self._activate_index(
+            matches[0]["index"],
+            listing.get("browser"),
+            query=query,
+        )
 
+    def _activate_index(
+        self,
+        index: int,
+        browser: str | None,
+        query: str | None,
+    ) -> ToolResult:
         try:
-            state = self.browser_tools.activate_tab_index(
-                target["index"],
-                listing.get("browser"),
-            )
+            state = self.browser_tools.activate_tab_index(index, browser)
         except BrowserError as error:
             return self._tool_failure("activate_tab", error)
         except Exception as error:
@@ -170,6 +197,18 @@ class BrowserCapability:
             query_length=self._safe_len(query),
             **state,
         )
+
+    @staticmethod
+    def _coerce_index(index: Any) -> int | None:
+        if isinstance(index, bool):
+            return None
+
+        try:
+            value = int(index)
+        except (TypeError, ValueError):
+            return None
+
+        return value if value >= 1 else None
 
     @staticmethod
     def _match_tabs(query: str, tabs: list[dict[str, Any]]) -> list[dict[str, Any]]:

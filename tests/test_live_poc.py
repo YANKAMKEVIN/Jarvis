@@ -3092,13 +3092,14 @@ class RecordingLiveBrowserCapability:
             count=2,
         )
 
-    def activate_tab(self, query, browser=None):
-        self.calls.append(("activate_tab", query, browser))
+    def activate_tab(self, query=None, index=None, browser=None):
+        self.calls.append(("activate_tab", query, index, browser))
         return ToolResult.success(
             action="activate_tab",
             message="Onglet active.",
             browser=browser or "Safari",
             query_length=len(query) if isinstance(query, str) else None,
+            active_index=index,
             command_executed=True,
             state_confirmed=True,
         )
@@ -3152,14 +3153,24 @@ class LiveBrowserToolTest(unittest.TestCase):
             [("search_web", "meteo paris", None, "duckduckgo")],
         )
 
-    def test_browse_activate_tab_routes_to_capability(self):
+    def test_browse_activate_tab_routes_query_to_capability(self):
         capability = RecordingLiveBrowserCapability()
         tool = self.make_tools(capability)["browse_activate_tab"]
 
-        result = asyncio.run(tool("github", None))
+        result = asyncio.run(tool("github"))
 
         self.assertTrue(result["ok"])
-        self.assertEqual(capability.calls, [("activate_tab", "github", None)])
+        self.assertEqual(capability.calls, [("activate_tab", "github", None, None)])
+
+    def test_browse_activate_tab_routes_explicit_index_to_capability(self):
+        capability = RecordingLiveBrowserCapability()
+        tool = self.make_tools(capability)["browse_activate_tab"]
+
+        result = asyncio.run(tool(None, 8))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["active_index"], 8)
+        self.assertEqual(capability.calls, [("activate_tab", None, 8, None)])
 
     def test_browser_debug_logs_host_not_full_url_or_query(self):
         capability = RecordingLiveBrowserCapability()
