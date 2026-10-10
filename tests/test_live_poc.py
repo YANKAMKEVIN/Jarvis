@@ -32,18 +32,22 @@ from jarvis.voice_mode import VoiceMode
 
 EXPECTED_LIVE_TOOL_NAMES = [
     "activate_ui_element",
+    "ask_about_screen",
     "browse_activate_tab",
     "browse_get_active_tab",
     "browse_list_tabs",
     "browse_open_url",
     "browse_search_web",
+    "cancel_action",
     "capture_region",
     "capture_screen",
     "capture_window",
     "clear_clipboard",
     "click",
     "close_app",
+    "confirm_action",
     "create_folder",
+    "describe_screen",
     "double_click",
     "find_files",
     "find_ui_elements",
@@ -75,6 +79,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "open_file",
     "open_folder",
     "play_pause",
+    "prepare_send_message",
     "press_key",
     "previous_track",
     "rename_file",
@@ -82,6 +87,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "scroll",
     "select_all_and_copy",
     "select_all_and_delete",
+    "send_prompt_to_app",
     "set_brightness",
     "set_clipboard_text",
     "set_volume",
@@ -2931,6 +2937,25 @@ class LiveInteractionToolTest(unittest.TestCase):
         self.assertTrue(result["deletion_executed"])
         self.assertEqual(capability.calls, [("select_all_and_delete",)])
 
+    def test_send_prompt_to_app_submits_via_focus_app_ui_and_type(self):
+        capability = RecordingLiveInteractionCapability()
+        tool = self.make_tools(interaction_capability=capability)["send_prompt_to_app"]
+
+        result = asyncio.run(tool("Claude", "Explique la relativite"))
+
+        self.assertTrue(result["ok"])
+        # Delegates to the verified typing flow with press_enter=True (submit).
+        self.assertEqual(
+            capability.calls,
+            [("focus_app_ui_and_type", "Claude", "Explique la relativite", None, None, True)],
+        )
+
+    def test_send_prompt_to_app_description_mentions_claude_and_submit(self):
+        tools = self.make_tools()
+        description = tools["send_prompt_to_app"].info.description
+        self.assertIn("Claude", description)
+        self.assertIn("Entree", description)
+
     def test_interaction_debug_never_logs_arbitrary_data_fields(self):
         class LeakyInteraction:
             def select_all_and_copy(self):
@@ -3315,6 +3340,240 @@ class LiveScreenshotToolTest(unittest.TestCase):
 
         self.assertIsNot(registry.screenshot_lock, registry.browser_lock)
         self.assertTrue(hasattr(registry.screenshot_lock, "acquire"))
+
+
+class RecordingLiveVisionCapability:
+    def __init__(self, analysis="Une page web est affichee.", question_length=None):
+        self.analysis = analysis
+        self.question_length = question_length
+        self.calls = []
+
+    def describe_screen(self, target="window", app_name=None):
+        self.calls.append(("describe_screen", target, app_name))
+        return ToolResult.success(
+            action="describe_screen",
+            message=self.analysis,
+            analysis=self.analysis,
+            source=target,
+            model="gemini-2.5-flash",
+            image_path="/Users/someone/Pictures/Jarvis/shot.png",
+            image_bytes=1234,
+            image_width=3024,
+            image_height=1964,
+            duration_ms=42,
+        )
+
+    def ask_about_screen(self, question, target="window", app_name=None):
+        self.calls.append(("ask_about_screen", question, target, app_name))
+        return ToolResult.success(
+            action="ask_about_screen",
+            message=self.analysis,
+            analysis=self.analysis,
+            source=target,
+            model="gemini-2.5-flash",
+            question_length=len(question) if isinstance(question, str) else None,
+            image_path="/Users/someone/Pictures/Jarvis/shot.png",
+            image_bytes=1234,
+            duration_ms=42,
+        )
+
+
+class LiveVisionToolTest(unittest.TestCase):
+    def make_tools(self, vision_capability=None):
+        tools = create_live_tools(
+            security=RecordingLiveSecurity(),
+            vision_capability=vision_capability or RecordingLiveVisionCapability(),
+        )
+        return {tool.info.name: tool for tool in tools}
+
+    def test_vision_tools_are_named_and_read_only(self):
+        tools = self.make_tools()
+
+        self.assertEqual(tools["describe_screen"].info.name, "describe_screen")
+        self.assertEqual(tools["ask_about_screen"].info.name, "ask_about_screen")
+        for name in ("describe_screen", "ask_about_screen"):
+            description = tools[name].info.description
+            self.assertIn("Accessibility", description)
+            self.assertIn("coordonnee", description)
+
+    def test_describe_screen_routes_when_enabled(self):
+        capability = RecordingLiveVisionCapability()
+        tool = self.make_tools(capability)["describe_screen"]
+
+        with patch.dict(os.environ, {"JARVIS_VISION_ENABLED": "1"}, clear=True):
+            result = asyncio.run(tool("screen", None))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["source"], "screen")
+        self.assertEqual(capability.calls, [("describe_screen", "screen", None)])
+
+    def test_ask_about_screen_routes_when_enabled(self):
+        capability = RecordingLiveVisionCapability()
+        tool = self.make_tools(capability)["ask_about_screen"]
+
+        with patch.dict(os.environ, {"JARVIS_VISION_ENABLED": "1"}, clear=True):
+            result = asyncio.run(tool("Quelle temperature ?", "window", None))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            capability.calls,
+            [("ask_about_screen", "Quelle temperature ?", "window", None)],
+        )
+
+    def test_vision_disabled_blocks_without_capturing(self):
+        capability = RecordingLiveVisionCapability()
+        tool = self.make_tools(capability)["describe_screen"]
+
+        with patch.dict(os.environ, {}, clear=True):  # JARVIS_VISION_ENABLED unset
+            result = asyncio.run(tool("window", None))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "vision_disabled")
+        self.assertEqual(capability.calls, [])  # capability never invoked
+
+    def test_vision_debug_logs_metadata_not_analysis_or_question(self):
+        capability = RecordingLiveVisionCapability(analysis="SECRET_ANALYSIS_TEXT")
+        tools = self.make_tools(capability)
+
+        with patch.dict(
+            os.environ,
+            {"JARVIS_VISION_ENABLED": "1", "JARVIS_DEBUG_LIVE": "1"},
+            clear=True,
+        ):
+            output = StringIO()
+            with redirect_stdout(output):
+                asyncio.run(tools["ask_about_screen"]("SECRET_QUESTION_TEXT", "window", None))
+
+        debug_output = output.getvalue()
+
+        self.assertNotIn("SECRET_ANALYSIS_TEXT", debug_output)
+        self.assertNotIn("SECRET_QUESTION_TEXT", debug_output)
+        self.assertNotIn("/Users/someone/Pictures/Jarvis", debug_output)
+        self.assertIn("shot.png", debug_output)
+        self.assertIn("gemini-2.5-flash", debug_output)
+
+    def test_vision_has_its_own_lock(self):
+        registry = ToolRegistry(
+            vision_capability=object(),
+            screenshot_capability=object(),
+        )
+
+        self.assertIsNot(registry.vision_lock, registry.screenshot_lock)
+        self.assertTrue(hasattr(registry.vision_lock, "acquire"))
+
+
+class LiveConfirmationToolTest(unittest.TestCase):
+    def make_tools(self, interaction_capability=None):
+        tools = create_live_tools(
+            security=RecordingLiveSecurity(),
+            interaction_capability=(
+                interaction_capability or RecordingLiveInteractionCapability()
+            ),
+        )
+        return {tool.info.name: tool for tool in tools}
+
+    def test_confirmation_tools_are_named(self):
+        tools = self.make_tools()
+
+        for name in ("prepare_send_message", "confirm_action", "cancel_action"):
+            self.assertEqual(tools[name].info.name, name)
+
+        self.assertIn("token", tools["confirm_action"].info.description)
+        self.assertIn("SANS l'envoyer", tools["prepare_send_message"].info.description)
+
+    def test_prepare_does_not_send(self):
+        capability = RecordingLiveInteractionCapability()
+        tools = self.make_tools(capability)
+
+        result = asyncio.run(tools["prepare_send_message"]("WhatsApp", "Salut"))
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["requires_confirmation"])
+        self.assertIn("token", result)
+        self.assertEqual(result["target_app"], "WhatsApp")
+        self.assertEqual(capability.calls, [])  # nothing sent yet
+
+    def test_confirm_executes_the_prepared_send(self):
+        capability = RecordingLiveInteractionCapability()
+        tools = self.make_tools(capability)
+
+        prepared = asyncio.run(tools["prepare_send_message"]("WhatsApp", "Salut", None))
+        result = asyncio.run(tools["confirm_action"](prepared["token"]))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            capability.calls,
+            [("focus_app_ui_and_type", "WhatsApp", "Salut", None, None, True)],
+        )
+
+    def test_confirm_is_single_use(self):
+        capability = RecordingLiveInteractionCapability()
+        tools = self.make_tools(capability)
+
+        prepared = asyncio.run(tools["prepare_send_message"]("WhatsApp", "Salut"))
+        token = prepared["token"]
+        asyncio.run(tools["confirm_action"](token))
+        second = asyncio.run(tools["confirm_action"](token))
+
+        self.assertFalse(second["ok"])
+        self.assertEqual(second["error_code"], "no_pending_action")
+        self.assertEqual(len(capability.calls), 1)  # executed only once
+
+    def test_confirm_unknown_token_sends_nothing(self):
+        capability = RecordingLiveInteractionCapability()
+        tools = self.make_tools(capability)
+
+        result = asyncio.run(tools["confirm_action"]("not-a-real-token"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "no_pending_action")
+        self.assertEqual(capability.calls, [])
+
+    def test_cancel_prevents_send(self):
+        capability = RecordingLiveInteractionCapability()
+        tools = self.make_tools(capability)
+
+        prepared = asyncio.run(tools["prepare_send_message"]("WhatsApp", "Salut"))
+        token = prepared["token"]
+        cancelled = asyncio.run(tools["cancel_action"](token))
+        confirmed = asyncio.run(tools["confirm_action"](token))
+
+        self.assertTrue(cancelled["ok"])
+        self.assertTrue(cancelled["cancelled"])
+        self.assertEqual(confirmed["error_code"], "no_pending_action")
+        self.assertEqual(capability.calls, [])  # never sent
+
+    def test_prepare_rejects_empty_message(self):
+        capability = RecordingLiveInteractionCapability()
+        tools = self.make_tools(capability)
+
+        result = asyncio.run(tools["prepare_send_message"]("WhatsApp", "   "))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "invalid_text")
+        self.assertNotIn("token", result)
+
+    def test_confirmation_debug_never_logs_message_text(self):
+        capability = RecordingLiveInteractionCapability()
+        tools = self.make_tools(capability)
+
+        with patch.dict(os.environ, {"JARVIS_DEBUG_LIVE": "1"}, clear=True):
+            output = StringIO()
+            with redirect_stdout(output):
+                prepared = asyncio.run(
+                    tools["prepare_send_message"]("WhatsApp", "SECRET_MSG_TEXT")
+                )
+                asyncio.run(tools["confirm_action"](prepared["token"]))
+
+        debug_output = output.getvalue()
+        self.assertNotIn("SECRET_MSG_TEXT", debug_output)
+        self.assertIn("text_length: 15", debug_output)
+
+    def test_confirmation_has_its_own_lock(self):
+        registry = ToolRegistry(interaction_capability=object())
+
+        self.assertTrue(hasattr(registry.confirmation_lock, "acquire"))
+        self.assertIsNot(registry.confirmation_lock, registry.interaction_lock)
 
 
 if __name__ == "__main__":

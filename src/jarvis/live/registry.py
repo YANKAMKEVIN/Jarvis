@@ -12,11 +12,15 @@ from jarvis.capabilities.interaction import InteractionCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.mouse import MouseCapability
+from jarvis.capabilities.results import ToolResult
 from jarvis.capabilities.screenshot import ScreenshotCapability
 from jarvis.capabilities.system import SystemCapability
 from jarvis.capabilities.ui_accessibility import UIAccessibilityCapability
+from jarvis.capabilities.vision import VisionCapability
 from jarvis.capabilities.windows import WindowCapability
-from jarvis.live.config import debug_live
+from jarvis.live.config import debug_live, get_vision_model, is_vision_enabled
+from jarvis.live.confirmation import PendingActionStore
+from jarvis.tools.vision import VisionTools
 
 
 class ToolRegistry:
@@ -35,6 +39,8 @@ class ToolRegistry:
         interaction_capability=None,
         browser_capability=None,
         screenshot_capability=None,
+        vision_capability=None,
+        pending_actions=None,
     ):
         self.audio = (
             audio_capability
@@ -107,6 +113,16 @@ class ToolRegistry:
             if screenshot_capability is not None
             else ScreenshotCapability()
         )
+        self.vision = (
+            vision_capability
+            if vision_capability is not None
+            else VisionCapability()
+        )
+        self.pending_actions = (
+            pending_actions
+            if pending_actions is not None
+            else PendingActionStore()
+        )
         self.media_lock = asyncio.Lock()
         self.clipboard_lock = asyncio.Lock()
         self.keyboard_lock = asyncio.Lock()
@@ -115,6 +131,8 @@ class ToolRegistry:
         self.interaction_lock = asyncio.Lock()
         self.browser_lock = asyncio.Lock()
         self.screenshot_lock = asyncio.Lock()
+        self.vision_lock = asyncio.Lock()
+        self.confirmation_lock = asyncio.Lock()
 
     def livekit_tools(self) -> list[Any]:
         @function_tool(
@@ -1031,6 +1049,176 @@ class ToolRegistry:
             return result.to_livekit_dict()
 
         @function_tool(
+            name="send_prompt_to_app",
+            description=(
+                "Ouvre ou focalise une application de chat (par exemple Claude), "
+                "verifie le champ de saisie editable focalise, y saisit le texte "
+                "puis valide avec Entree pour l'envoyer. Utilise ce tool pour une "
+                "demande comme demande a Claude de ..., ouvre Claude et ecris ... "
+                "ou lance une discussion avec Claude sur ... Fournis query "
+                "seulement si un champ precis est nomme ; sinon la saisie va dans "
+                "le champ editable actuellement focalise, qui doit etre verifie "
+                "via Accessibility. Si editable_target_not_verified est retourne, "
+                "rien n'a ete saisi ni envoye : demande une clarification. "
+                "command_executed signifie que la saisie et la validation ont ete "
+                "envoyees, pas que l'application a traite la demande."
+            ),
+        )
+        async def send_prompt_to_app(
+            app_name: str,
+            text: str,
+            query: str | None = None,
+        ) -> dict:
+            """Open/focus an app, type a prompt into it, and submit with Enter."""
+            debug_live(
+                "tool_call",
+                tool="send_prompt_to_app",
+                app_name=app_name,
+                text_length=len(text) if isinstance(text, str) else None,
+                query_length=len(query) if isinstance(query, str) else None,
+            )
+            async with self.interaction_lock:
+                result = await asyncio.to_thread(
+                    self.interaction.focus_app_ui_and_type,
+                    app_name,
+                    text,
+                    query,
+                    None,
+                    True,
+                )
+            self._debug_interaction_result("send_prompt_to_app", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="prepare_send_message",
+            description=(
+                "PREPARE l'envoi d'un message a un destinataire dans une "
+                "application de messagerie (par exemple WhatsApp), SANS l'envoyer. "
+                "Enregistre l'envoi et renvoie un token et requires_confirmation. "
+                "Utilise ce tool des que l'utilisateur veut envoyer un message a "
+                "une personne, un contact ou un groupe. Apres l'avoir appele, "
+                "annonce clairement a l'utilisateur l'application, le destinataire "
+                "et le contenu exact, puis attends une confirmation orale "
+                "explicite. N'envoie rien ici ; l'envoi reel se fait uniquement "
+                "ensuite via confirm_action(token). query cible un champ de saisie "
+                "nomme si besoin. N'utilise pas ce tool pour un simple prompt a un "
+                "assistant comme Claude : utilise send_prompt_to_app pour cela."
+            ),
+        )
+        async def prepare_send_message(
+            app_name: str,
+            text: str,
+            query: str | None = None,
+        ) -> dict:
+            """Register a message send for confirmation; no side effect here."""
+            if not isinstance(app_name, str) or not app_name.strip():
+                return ToolResult.failure(
+                    action="prepare_send_message",
+                    message="Le nom de l'application de messagerie est obligatoire.",
+                    error_code="invalid_app_name",
+                ).to_livekit_dict()
+
+            if not isinstance(text, str) or not text.strip():
+                return ToolResult.failure(
+                    action="prepare_send_message",
+                    message="Le message a envoyer est obligatoire.",
+                    error_code="invalid_text",
+                ).to_livekit_dict()
+
+            def _executor():
+                return self.interaction.focus_app_ui_and_type(
+                    app_name, text, query, None, True,
+                )
+
+            async with self.confirmation_lock:
+                token = self.pending_actions.register("send_message", _executor)
+
+            debug_live(
+                "tool_call",
+                tool="prepare_send_message",
+                app_name=app_name,
+                text_length=len(text),
+                query_length=len(query) if isinstance(query, str) else None,
+                token=token,
+            )
+            return ToolResult.success(
+                action="prepare_send_message",
+                message=(
+                    "Envoi prepare. Annonce le destinataire et le contenu a "
+                    "l'utilisateur et attends sa confirmation avant confirm_action."
+                ),
+                requires_confirmation=True,
+                token=token,
+                target_app=app_name,
+                text_length=len(text),
+                query_length=len(query) if isinstance(query, str) else None,
+            ).to_livekit_dict()
+
+        @function_tool(
+            name="confirm_action",
+            description=(
+                "Execute reellement une action sortante preparee (par exemple un "
+                "envoi de message) en utilisant le token renvoye par un tool de "
+                "preparation comme prepare_send_message. N'appelle ce tool "
+                "qu'APRES une confirmation orale explicite de l'utilisateur. "
+                "N'invente jamais de token et ne l'appelle jamais sans preparation "
+                "prealable. Si aucune action n'est en attente, il retourne "
+                "no_pending_action."
+            ),
+        )
+        async def confirm_action(token: str) -> dict:
+            """Execute a previously prepared outward action after confirmation."""
+            debug_live("tool_call", tool="confirm_action", token=token)
+            async with self.confirmation_lock:
+                pending = self.pending_actions.confirm(token)
+
+            if pending is None:
+                debug_live("tool_failed", tool="confirm_action", error="no_pending_action")
+                return ToolResult.failure(
+                    action="confirm_action",
+                    message=(
+                        "Aucune action en attente de confirmation (ou expiree). "
+                        "Rien n'a ete envoye."
+                    ),
+                    error_code="no_pending_action",
+                ).to_livekit_dict()
+
+            result = await asyncio.to_thread(pending.executor)
+            self._debug_interaction_result(f"confirm_action:{pending.action}", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="cancel_action",
+            description=(
+                "Annule une action sortante preparee (par exemple un envoi de "
+                "message) sans l'executer, en utilisant son token. Utilise ce tool "
+                "si l'utilisateur refuse, hesite ou se retracte apres une "
+                "preparation. Rien n'est envoye."
+            ),
+        )
+        async def cancel_action(token: str) -> dict:
+            """Discard a prepared outward action without executing it."""
+            debug_live("tool_call", tool="cancel_action", token=token)
+            async with self.confirmation_lock:
+                pending = self.pending_actions.cancel(token)
+
+            cancelled = pending is not None
+            debug_live(
+                "tool_succeeded" if cancelled else "tool_failed",
+                tool="cancel_action",
+                cancelled=cancelled,
+            )
+            return ToolResult.success(
+                action="cancel_action",
+                message=(
+                    "Action annulee, rien n'a ete envoye."
+                    if cancelled
+                    else "Aucune action en attente a annuler."
+                ),
+                cancelled=cancelled,
+            ).to_livekit_dict()
+
+        @function_tool(
             name="browse_open_url",
             description=(
                 "Ouvre une URL dans Safari ou Google Chrome, active la fenetre "
@@ -1265,6 +1453,74 @@ class ToolRegistry:
             self._debug_screenshot_result("capture_window", result)
             return result.to_livekit_dict()
 
+        @function_tool(
+            name="describe_screen",
+            description=(
+                "Regarde l'ecran et decrit ce qui est visible. Capture (fenetre "
+                "active par defaut, ou tout l'ecran avec target='screen') puis "
+                "analyse l'image avec un modele multimodal, et renvoie une "
+                "description. Utilise ce tool pour une demande comme qu'est-ce "
+                "qu'il y a sur mon ecran. Rapporte seulement ce que l'analyse "
+                "renvoie ; n'invente rien. Ce tool observe uniquement : il ne "
+                "fournit aucune coordonnee et ne declenche aucune action. Pour "
+                "cliquer ou taper, utilise Accessibility, jamais ce tool."
+            ),
+        )
+        async def describe_screen(
+            target: str = "window",
+            app_name: str | None = None,
+        ) -> dict:
+            """Capture then describe what is visible (read-only)."""
+            guard = self._vision_guard("describe_screen")
+            if guard is not None:
+                return guard
+            debug_live("tool_call", tool="describe_screen", source=target)
+            async with self.vision_lock:
+                result = await asyncio.to_thread(
+                    self.vision.describe_screen,
+                    target,
+                    app_name,
+                )
+            self._debug_vision_result("describe_screen", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="ask_about_screen",
+            description=(
+                "Regarde l'ecran et repond a une question sur ce qui est affiche "
+                "(par exemple quelle temperature / quel prix est affiche, que dit "
+                "cette page). Capture (fenetre active par defaut, ou tout l'ecran "
+                "avec target='screen') puis analyse l'image. Si l'information "
+                "n'est pas visible ou lisible, dis-le, n'invente jamais une "
+                "valeur. Ce tool observe uniquement : aucune coordonnee, aucune "
+                "action. Pour agir, utilise Accessibility."
+            ),
+        )
+        async def ask_about_screen(
+            question: str,
+            target: str = "window",
+            app_name: str | None = None,
+        ) -> dict:
+            """Capture then answer a question about the screen (read-only)."""
+            guard = self._vision_guard("ask_about_screen")
+            if guard is not None:
+                return guard
+            debug_live(
+                "tool_call",
+                tool="ask_about_screen",
+                source=target,
+                question_length=len(question) if isinstance(question, str) else None,
+            )
+            async with self.vision_lock:
+                result = await asyncio.to_thread(
+                    self.vision.ask_about_screen,
+                    question,
+                    target,
+                    app_name,
+                )
+            self._debug_vision_result("ask_about_screen", result)
+            return result.to_livekit_dict()
+
         return [
             set_volume,
             get_volume,
@@ -1313,6 +1569,10 @@ class ToolRegistry:
             focus_app_ui_and_type,
             open_app_and_focus_ui,
             select_all_and_delete,
+            send_prompt_to_app,
+            prepare_send_message,
+            confirm_action,
+            cancel_action,
             browse_open_url,
             browse_search_web,
             browse_get_active_tab,
@@ -1321,6 +1581,8 @@ class ToolRegistry:
             capture_screen,
             capture_region,
             capture_window,
+            describe_screen,
+            ask_about_screen,
         ]
 
     @staticmethod
@@ -1507,6 +1769,48 @@ class ToolRegistry:
         else:
             debug_live("tool_failed", tool=tool_name, error=result.error_code)
 
+    @staticmethod
+    def _vision_guard(tool_name: str) -> dict | None:
+        # Opt-in gate: Vision sends a screen capture to an external service.
+        if is_vision_enabled():
+            return None
+
+        debug_live("tool_failed", tool=tool_name, error="vision_disabled")
+        return {
+            "ok": False,
+            "action": tool_name,
+            "message": (
+                "La vision est desactivee. Active JARVIS_VISION_ENABLED pour "
+                "autoriser Jarvis a analyser une capture d'ecran."
+            ),
+            "error_code": "vision_disabled",
+        }
+
+    @staticmethod
+    def _debug_vision_result(tool_name: str, result) -> None:
+        # Metadata only: never the analysis text, the raw question, the image
+        # bytes/base64, or the full path.
+        import os as _os
+
+        path = result.data.get("image_path")
+        fields = {
+            "tool": tool_name,
+            "source": result.data.get("source"),
+            "target_app": result.data.get("target_app"),
+            "model": result.data.get("model"),
+            "image_file": _os.path.basename(path) if isinstance(path, str) else None,
+            "image_bytes": result.data.get("image_bytes"),
+            "image_width": result.data.get("image_width"),
+            "image_height": result.data.get("image_height"),
+            "question_length": result.data.get("question_length"),
+            "duration_ms": result.data.get("duration_ms"),
+        }
+
+        if result.ok:
+            debug_live("tool_succeeded", **fields)
+        else:
+            debug_live("tool_failed", tool=tool_name, error=result.error_code)
+
 
 def create_live_tools(
     security=None,
@@ -1529,6 +1833,7 @@ def create_live_tools(
     interaction_capability=None,
     browser_capability=None,
     screenshot_capability=None,
+    vision_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -1605,6 +1910,12 @@ def create_live_tools(
     if screenshot_capability is None:
         screenshot_capability = ScreenshotCapability(windows=window_capability)
 
+    if vision_capability is None:
+        vision_capability = VisionCapability(
+            screenshot=screenshot_capability,
+            vision_tools=VisionTools(model=get_vision_model()),
+        )
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
@@ -1619,4 +1930,5 @@ def create_live_tools(
         interaction_capability=interaction_capability,
         browser_capability=browser_capability,
         screenshot_capability=screenshot_capability,
+        vision_capability=vision_capability,
     ).livekit_tools()

@@ -11,6 +11,7 @@ from jarvis.capabilities.results import CapabilityError, ToolResult
 from jarvis.capabilities.screenshot import ScreenshotCapability
 from jarvis.capabilities.system import SystemCapability
 from jarvis.capabilities.ui_accessibility import UIAccessibilityCapability
+from jarvis.capabilities.vision import VisionCapability
 from jarvis.capabilities.windows import WindowCapability
 
 __all__ = [
@@ -28,5 +29,6 @@ __all__ = [
     "SystemCapability",
     "ToolResult",
     "UIAccessibilityCapability",
+    "VisionCapability",
     "WindowCapability",
 ]

@@ -7,6 +7,12 @@ DEFAULT_GEMINI_LIVE_VOICE = "Puck"
 DEFAULT_LIVE_AGENT_NAME = "jarvis-live-poc"
 DEFAULT_GEMINI_LIVE_TEMPERATURE = 0.8
 
+# One-shot multimodal model for Vision (NOT the realtime Live model). An
+# explicit, stable GA Flash model id is used rather than a mutable alias such as
+# "gemini-flash-latest", so Vision behaviour stays reproducible. Override with
+# JARVIS_GEMINI_VISION_MODEL once a preferred available model is confirmed.
+DEFAULT_GEMINI_VISION_MODEL = "gemini-2.5-flash"
+
 
 @dataclass(frozen=True)
 class LiveConfig:
@@ -44,6 +50,19 @@ def get_required_runtime_env_names() -> tuple[str, ...]:
         "LIVEKIT_API_KEY",
         "LIVEKIT_API_SECRET",
     )
+
+
+def get_vision_model() -> str:
+    return os.environ.get(
+        "JARVIS_GEMINI_VISION_MODEL",
+        DEFAULT_GEMINI_VISION_MODEL,
+    )
+
+
+def is_vision_enabled() -> bool:
+    # Opt-in: Vision sends a screen capture to an external service (Gemini), so
+    # it stays off until explicitly enabled. Once on, no per-capture prompt.
+    return os.environ.get("JARVIS_VISION_ENABLED") == "1"
 
 
 def is_live_debug_enabled() -> bool:
