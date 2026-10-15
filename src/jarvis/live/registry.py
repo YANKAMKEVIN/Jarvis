@@ -1161,11 +1161,11 @@ class ToolRegistry:
 
             if isinstance(recipient, str) and recipient.strip():
                 verification = await asyncio.to_thread(
-                    self.messaging.verify_recipient,
+                    self.messaging.ensure_recipient,
                     app_name,
                     recipient,
                 )
-                self._debug_interaction_result("verify_recipient", verification)
+                self._debug_interaction_result("ensure_recipient", verification)
                 if not verification.ok:
                     # Fail safe: never prepare a send against an unverified chat.
                     return verification.to_livekit_dict()
@@ -1975,6 +1975,8 @@ def create_live_tools(
         messaging_capability = MessagingCapability(
             windows=window_capability,
             ui_accessibility=ui_accessibility_capability,
+            apps=app_capability,
+            keyboard=keyboard_capability,
         )
 
     return ToolRegistry(

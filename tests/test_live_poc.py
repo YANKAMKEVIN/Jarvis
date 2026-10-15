@@ -3525,8 +3525,8 @@ class RecordingLiveMessagingCapability:
             return self.composer
         return None
 
-    def verify_recipient(self, app_name, expected_recipient):
-        self.calls.append(("verify_recipient", app_name, expected_recipient))
+    def ensure_recipient(self, app_name, expected_recipient):
+        self.calls.append(("ensure_recipient", app_name, expected_recipient))
         if self.verified:
             return ToolResult.success(
                 action="verify_recipient",
@@ -3678,7 +3678,7 @@ class LiveConfirmationToolTest(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertIn("token", result)
-        self.assertEqual(messaging.calls, [("verify_recipient", "WhatsApp", "Kevin")])
+        self.assertEqual(messaging.calls, [("ensure_recipient", "WhatsApp", "Kevin")])
         self.assertEqual(interaction.calls, [])  # verified, but not sent yet
 
     def test_prepare_with_unverified_recipient_refuses(self):

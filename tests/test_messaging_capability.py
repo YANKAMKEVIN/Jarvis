@@ -24,34 +24,90 @@ def message_bubble(description):
 
 
 class FakeWindows:
-    def __init__(self, active=None):
+    def __init__(self, active=None, focus_confirmed=True):
         self.active = active or ToolResult.success(
             action="get_active_window", message="ok", target_app="WhatsApp",
         )
+        self.focus_confirmed = focus_confirmed
+        self.calls = []
 
     def get_active_window(self):
         return self.active
 
+    def focus_window(self, app_name):
+        self.calls.append(("focus_window", app_name))
+        return ToolResult.success(
+            action="focus_window", message="ok",
+            state_confirmed=self.focus_confirmed, target_app=app_name,
+        )
+
 
 class FakeUI:
-    def __init__(self, elements=None, inspect=None):
-        if inspect is not None:
-            self.inspect = inspect
+    def __init__(self, elements=None, inspect=None, inspects=None, focus_confirmed=True):
+        if inspects is not None:
+            self._inspects = list(inspects)
+        elif inspect is not None:
+            self._inspects = [inspect]
         else:
-            self.inspect = ToolResult.success(
+            self._inspects = [ToolResult.success(
                 action="inspect_ui", message="ok",
                 elements=elements if elements is not None else [header()],
                 truncated=False,
-            )
+            )]
+        self.focus_confirmed = focus_confirmed
         self.calls = []
 
     def inspect_ui(self, max_depth=4, max_elements=80):
-        self.calls.append((max_depth, max_elements))
-        return self.inspect
+        self.calls.append(("inspect_ui", max_depth, max_elements))
+        if len(self._inspects) > 1:
+            return self._inspects.pop(0)
+        return self._inspects[0]
+
+    def focus_ui_element(self, query, role=None):
+        self.calls.append(("focus_ui_element", query, role))
+        return ToolResult.success(
+            action="focus_ui_element", message="ok",
+            state_confirmed=self.focus_confirmed, query_length=len(query), role=role,
+        )
 
 
-def make(windows=None, ui=None):
-    return MessagingCapability(windows=windows or FakeWindows(), ui_accessibility=ui or FakeUI())
+class FakeApps:
+    def __init__(self, ok=True):
+        self.ok = ok
+        self.calls = []
+
+    def open_app(self, app_name):
+        self.calls.append(("open_app", app_name))
+        if self.ok:
+            return ToolResult.success(action="open_app", message="ok", target=app_name)
+        return ToolResult.failure(action="open_app", message="ko", error_code="app_missing")
+
+
+class FakeKeyboard:
+    def __init__(self):
+        self.calls = []
+
+    def type_text(self, text):
+        self.calls.append(("type_text", text))
+        return ToolResult.success(
+            action="type_text", message="ok", command_executed=True, state_confirmed=False,
+        )
+
+    def press_key(self, key):
+        self.calls.append(("press_key", key))
+        return ToolResult.success(
+            action="press_key", message="ok", command_executed=True, state_confirmed=False,
+        )
+
+
+def make(windows=None, ui=None, apps=None, keyboard=None):
+    return MessagingCapability(
+        windows=windows or FakeWindows(),
+        ui_accessibility=ui or FakeUI(),
+        apps=apps or FakeApps(),
+        keyboard=keyboard or FakeKeyboard(),
+        sleeper=lambda _seconds: None,
+    )
 
 
 class VerifyRecipientTest(unittest.TestCase):
@@ -147,6 +203,112 @@ class ComposerQueryTest(unittest.TestCase):
 
         self.assertEqual(capability.composer_query("Signal"), "Signal_Composer")
         self.assertIsNone(capability.composer_query("WhatsApp"))
+
+
+class EnsureRecipientTest(unittest.TestCase):
+    def test_already_open_match_does_not_navigate(self):
+        ui = FakeUI(elements=[header("Joel Chinda")])
+        apps = FakeApps()
+        keyboard = FakeKeyboard()
+        capability = make(ui=ui, apps=apps, keyboard=keyboard)
+
+        result = capability.ensure_recipient("WhatsApp", "Joel")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(apps.calls, [])      # no navigation
+        self.assertEqual(keyboard.calls, [])
+
+    def test_navigates_then_verifies(self):
+        # First inspection = wrong chat, second (after navigation) = right chat.
+        ui = FakeUI(inspects=[
+            ToolResult.success(action="inspect_ui", message="ok",
+                               elements=[header("Alice Martin")], truncated=False),
+            ToolResult.success(action="inspect_ui", message="ok",
+                               elements=[header("Joel Chinda")], truncated=False),
+        ])
+        apps = FakeApps()
+        keyboard = FakeKeyboard()
+        capability = make(ui=ui, apps=apps, keyboard=keyboard)
+
+        result = capability.ensure_recipient("WhatsApp", "Joel")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(apps.calls, [("open_app", "WhatsApp")])
+        self.assertIn(("focus_ui_element", "TokenizedSearchBar_TextView", None), ui.calls)
+        self.assertEqual(keyboard.calls, [("type_text", "Joel"), ("press_key", "enter")])
+
+    def test_navigation_that_still_mismatches_refuses(self):
+        ui = FakeUI(inspects=[
+            ToolResult.success(action="inspect_ui", message="ok",
+                               elements=[header("Alice Martin")], truncated=False),
+            ToolResult.success(action="inspect_ui", message="ok",
+                               elements=[header("Bob Dupont")], truncated=False),
+        ])
+        keyboard = FakeKeyboard()
+        capability = make(ui=ui, keyboard=keyboard)
+
+        result = capability.ensure_recipient("WhatsApp", "Joel")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "recipient_not_verified")
+        self.assertEqual(keyboard.calls, [("type_text", "Joel"), ("press_key", "enter")])
+
+    def test_unsupported_app_does_not_navigate(self):
+        ui = FakeUI(elements=[header("Alice")])
+        apps = FakeApps()
+        keyboard = FakeKeyboard()
+        capability = make(ui=ui, apps=apps, keyboard=keyboard)
+
+        result = capability.ensure_recipient("Signal", "Joel")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(apps.calls, [])  # no search support -> no navigation
+        self.assertEqual(keyboard.calls, [])
+
+
+class NavigateToRecipientTest(unittest.TestCase):
+    def test_happy_path_sequence(self):
+        apps = FakeApps()
+        windows = FakeWindows()
+        ui = FakeUI()
+        keyboard = FakeKeyboard()
+        capability = make(windows=windows, ui=ui, apps=apps, keyboard=keyboard)
+
+        result = capability.navigate_to_recipient("WhatsApp", "Joel")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(apps.calls, [("open_app", "WhatsApp")])
+        self.assertEqual(windows.calls, [("focus_window", "WhatsApp")])
+        self.assertEqual(ui.calls, [("focus_ui_element", "TokenizedSearchBar_TextView", None)])
+        self.assertEqual(keyboard.calls, [("type_text", "Joel"), ("press_key", "enter")])
+
+    def test_unsupported_app(self):
+        result = make().navigate_to_recipient("Signal", "Joel")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "search_not_supported")
+
+    def test_focus_window_failure_stops(self):
+        windows = FakeWindows(focus_confirmed=False)
+        keyboard = FakeKeyboard()
+        capability = make(windows=windows, keyboard=keyboard)
+
+        result = capability.navigate_to_recipient("WhatsApp", "Joel")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "no_window")
+        self.assertEqual(keyboard.calls, [])  # never typed
+
+    def test_search_field_not_focusable_stops(self):
+        ui = FakeUI(focus_confirmed=False)
+        keyboard = FakeKeyboard()
+        capability = make(ui=ui, keyboard=keyboard)
+
+        result = capability.navigate_to_recipient("WhatsApp", "Joel")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "search_field_not_found")
+        self.assertEqual(keyboard.calls, [])
 
 
 if __name__ == "__main__":
