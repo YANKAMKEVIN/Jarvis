@@ -38,6 +38,13 @@ DEFAULT_SEARCH_QUERIES = {
     "whatsapp": "TokenizedSearchBar_TextView",
 }
 
+# AX identifier of the "send" button, per app. Pressing it is more reliable than
+# a Return keystroke and needs no composer focus (which some apps, e.g. the
+# WhatsApp Catalyst app, never confirm).
+DEFAULT_SEND_BUTTON_QUERIES = {
+    "whatsapp": "ChatBar_SendButton",
+}
+
 # Reasons from verify_recipient that navigation can try to resolve (wrong chat
 # open, or the app not frontmost). Anything else is a hard refusal.
 _NAVIGABLE_REASONS = {
@@ -100,6 +107,9 @@ class MessagingCapability:
         self._search_queries = {
             key.casefold(): value for key, value in search_source.items()
         }
+        self._send_button_queries = {
+            key.casefold(): value for key, value in DEFAULT_SEND_BUTTON_QUERIES.items()
+        }
         self.search_settle_seconds = max(0.0, float(search_settle_seconds))
         self.sleeper = sleeper if sleeper is not None else time.sleep
 
@@ -115,6 +125,101 @@ class MessagingCapability:
             return None
 
         return self._composer_queries.get(app_name.strip().casefold())
+
+    def send_button_query(self, app_name: str) -> str | None:
+        """AX query for the send button of a known messaging app."""
+        if not isinstance(app_name, str):
+            return None
+
+        return self._send_button_queries.get(app_name.strip().casefold())
+
+    def supports_composer_send(self, app_name: str) -> bool:
+        """Whether the verified composer-send path exists for this app."""
+        return bool(self.composer_query(app_name) and self.send_button_query(app_name))
+
+    def send_text(self, app_name: str, text: str) -> ToolResult:
+        """Send a message: focus the composer, type, then press send.
+
+        The WhatsApp composer ignores programmatic focus (AXFocused never
+        confirms) and does not treat a set AXValue as real input (the send
+        button stays hidden). It does honor AXPress to focus, and real
+        keystrokes register as input and reveal the send button. So: press the
+        composer to focus it, type the text, then press the send button. The
+        send button only exists once text has actually been entered, so its
+        absence means the text did not register -- we then report a clean
+        failure and send nothing. Delivery is checked by "verify, don't
+        assume": the composer emptying after the press is state_confirmed.
+        """
+        if not isinstance(text, str) or not text.strip():
+            return ToolResult.failure(
+                action="send_text",
+                message="Le message a envoyer est vide.",
+                error_code="invalid_text",
+            )
+
+        composer = self.composer_query(app_name)
+        send_button = self.send_button_query(app_name)
+        if not composer or not send_button:
+            return ToolResult.failure(
+                action="send_text",
+                message="L'envoi par champ de saisie n'est pas supporte pour cette application.",
+                error_code="composer_unsupported",
+            )
+
+        # Clear any residual draft so exactly `text` is sent.
+        self.ui_accessibility.set_value(composer, "")
+
+        focus = self.ui_accessibility.activate_ui_element(composer)
+        if not focus.ok:
+            return ToolResult(
+                ok=False,
+                action="send_text",
+                message="Le champ de saisie n'a pas pu etre active.",
+                data=dict(focus.data),
+                error_code=focus.error_code or "composer_not_focused",
+            )
+
+        typed = self.keyboard.type_text(text)
+        if not typed.ok:
+            return typed
+
+        self.sleeper(self.search_settle_seconds)
+        pressed = self.ui_accessibility.activate_ui_element(send_button)
+        if not pressed.ok:
+            # No send button means the text never registered as input: fail safe.
+            return ToolResult.failure(
+                action="send_text",
+                message=(
+                    "Le message n'a pas pu etre saisi dans le champ (bouton d'envoi "
+                    "absent). Rien n'a ete envoye."
+                ),
+                error_code="composer_not_filled",
+            )
+
+        # Verify by effect: a sent message leaves the composer empty.
+        self.sleeper(self.search_settle_seconds)
+        emptied = False
+        after = self.ui_accessibility.read_value(composer)
+        if after.ok:
+            value = after.data.get("value")
+            emptied = value is None or str(value).strip() == ""
+
+        if emptied:
+            message = "Message envoye : le champ de saisie s'est vide apres l'envoi."
+        else:
+            message = (
+                "Commande d'envoi envoyee (bouton presse), mais Jarvis n'a pas pu "
+                "confirmer que le message est parti."
+            )
+
+        return ToolResult.success(
+            action="send_text",
+            message=message,
+            command_executed=True,
+            state_confirmed=emptied,
+            app=app_name,
+            text_length=len(text),
+        )
 
     def verify_recipient(self, app_name: str, expected_recipient: str) -> ToolResult:
         if not isinstance(app_name, str) or not app_name.strip():

@@ -149,6 +149,9 @@ class RecordingMessaging:
     def composer_query(self, app_name):
         return None
 
+    def supports_composer_send(self, app_name):
+        return False
+
     def ensure_recipient(self, app_name, recipient):
         self.calls.append((app_name, recipient))
         return ToolResult.success(action="verify_recipient", message="ok")

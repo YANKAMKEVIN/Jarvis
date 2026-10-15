@@ -121,6 +121,44 @@ class UIAccessibilityCapability:
             **state,
         )
 
+    def set_value(self, query: str, value: str, role: str | None = None) -> ToolResult:
+        """Write a value into an editable element, confirmed by read-back.
+
+        Internal to verified flows (e.g. the messaging composer): it is not a
+        voice tool, so it does not go through the security confirmation gate,
+        which the surrounding send flow already enforces.
+        """
+        try:
+            state = self.accessibility_tools.set_value(query, value, role)
+        except AccessibilityError as error:
+            return self._accessibility_failure("set_value", error)
+        except Exception as error:
+            return self._system_error_result("set_value", error)
+
+        if state.get("state_confirmed"):
+            message = "La valeur a ete inseree et confirmee par relecture."
+        else:
+            message = (
+                "La commande d'ecriture a ete envoyee, mais la relecture n'a pas "
+                "confirme la valeur inseree."
+            )
+
+        return ToolResult.success(action="set_value", message=message, **state)
+
+    def read_value(self, query: str, role: str | None = None) -> ToolResult:
+        try:
+            state = self.accessibility_tools.read_value(query, role)
+        except AccessibilityError as error:
+            return self._accessibility_failure("read_value", error)
+        except Exception as error:
+            return self._system_error_result("read_value", error)
+
+        return ToolResult.success(
+            action="read_value",
+            message="Valeur de l'element lue.",
+            **state,
+        )
+
     @staticmethod
     def _target(query: str, role: str | None) -> str:
         return f"{role or 'any'}:{len(query) if isinstance(query, str) else 0}"

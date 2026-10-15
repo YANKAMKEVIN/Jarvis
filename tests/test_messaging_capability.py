@@ -43,7 +43,8 @@ class FakeWindows:
 
 
 class FakeUI:
-    def __init__(self, elements=None, inspect=None, inspects=None, focus_confirmed=True):
+    def __init__(self, elements=None, inspect=None, inspects=None, focus_confirmed=True,
+                 send_button_present=True, composer_value_after=""):
         if inspects is not None:
             self._inspects = list(inspects)
         elif inspect is not None:
@@ -55,7 +56,34 @@ class FakeUI:
                 truncated=False,
             )]
         self.focus_confirmed = focus_confirmed
+        self.send_button_present = send_button_present
+        self.composer_value_after = composer_value_after
         self.calls = []
+
+    def set_value(self, query, value, role=None):
+        self.calls.append(("set_value", query, value))
+        return ToolResult.success(
+            action="set_value", message="ok",
+            command_executed=True, state_confirmed=True,
+        )
+
+    def activate_ui_element(self, query, role=None):
+        self.calls.append(("activate_ui_element", query))
+        if query == "ChatBar_SendButton" and not self.send_button_present:
+            return ToolResult(
+                ok=False, action="activate_ui_element", message="ko",
+                data={}, error_code="ui_element_not_found",
+            )
+        return ToolResult.success(
+            action="activate_ui_element", message="ok",
+            command_executed=True, state_confirmed=False,
+        )
+
+    def read_value(self, query, role=None):
+        self.calls.append(("read_value", query))
+        return ToolResult.success(
+            action="read_value", message="ok", value=self.composer_value_after,
+        )
 
     def inspect_ui(self, max_depth=4, max_elements=80):
         self.calls.append(("inspect_ui", max_depth, max_elements))
@@ -203,6 +231,51 @@ class ComposerQueryTest(unittest.TestCase):
 
         self.assertEqual(capability.composer_query("Signal"), "Signal_Composer")
         self.assertIsNone(capability.composer_query("WhatsApp"))
+
+
+class SendTextTest(unittest.TestCase):
+    def test_focuses_types_then_presses_send_and_confirms_emptied(self):
+        ui = FakeUI(send_button_present=True, composer_value_after="")
+        keyboard = FakeKeyboard()
+        result = make(ui=ui, keyboard=keyboard).send_text("WhatsApp", "Salut")
+
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["state_confirmed"])  # composer emptied
+        # Clear, focus the composer by press, (type), press send, verify empty.
+        self.assertEqual(ui.calls[0], ("set_value", "ChatBar_ComposerTextView", ""))
+        self.assertEqual(ui.calls[1], ("activate_ui_element", "ChatBar_ComposerTextView"))
+        self.assertEqual(ui.calls[2], ("activate_ui_element", "ChatBar_SendButton"))
+        self.assertEqual(ui.calls[3], ("read_value", "ChatBar_ComposerTextView"))
+        self.assertEqual(keyboard.calls, [("type_text", "Salut")])  # real keystrokes
+
+    def test_missing_send_button_means_text_did_not_register_and_sends_nothing(self):
+        ui = FakeUI(send_button_present=False)
+        keyboard = FakeKeyboard()
+        result = make(ui=ui, keyboard=keyboard).send_text("WhatsApp", "Salut")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "composer_not_filled")
+        self.assertNotIn("read_value", [call[0] for call in ui.calls])  # never got to verify
+
+    def test_not_emptied_after_send_is_command_executed_but_unconfirmed(self):
+        ui = FakeUI(send_button_present=True, composer_value_after="Salut")
+        result = make(ui=ui).send_text("WhatsApp", "Salut")
+
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["command_executed"])
+        self.assertFalse(result.data["state_confirmed"])
+
+    def test_unsupported_app_refuses(self):
+        result = make().send_text("Claude", "Salut")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "composer_unsupported")
+
+    def test_empty_text_refused(self):
+        result = make().send_text("WhatsApp", "   ")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "invalid_text")
 
 
 class EnsureRecipientTest(unittest.TestCase):

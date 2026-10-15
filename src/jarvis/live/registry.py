@@ -1371,6 +1371,16 @@ class ToolRegistry:
             )
 
             def _executor():
+                # Verified composer send for messaging apps that support it
+                # (writes + reads back the composer, then presses send) -- the
+                # WhatsApp composer never confirms programmatic focus, so the
+                # focus + type path cannot reach it. Unknown apps keep the old
+                # focus + type path unchanged.
+                if (
+                    not (isinstance(query, str) and query.strip())
+                    and self.messaging.supports_composer_send(app_name)
+                ):
+                    return self.messaging.send_text(app_name, text)
                 return self.interaction.focus_app_ui_and_type(
                     app_name, text, effective_query, None, True,
                 )

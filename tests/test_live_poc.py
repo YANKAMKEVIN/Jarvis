@@ -3538,6 +3538,20 @@ class RecordingLiveMessagingCapability:
             return self.composer
         return None
 
+    def supports_composer_send(self, app_name):
+        return bool(self.composer_query(app_name))
+
+    def send_text(self, app_name, text):
+        self.calls.append(("send_text", app_name, text))
+        return ToolResult.success(
+            action="send_text",
+            message="Message envoye.",
+            command_executed=True,
+            state_confirmed=True,
+            app=app_name,
+            text_length=len(text),
+        )
+
     def ensure_recipient(self, app_name, expected_recipient):
         self.calls.append(("ensure_recipient", app_name, expected_recipient))
         if self.verified:
@@ -3592,19 +3606,19 @@ class LiveConfirmationToolTest(unittest.TestCase):
         self.assertEqual(capability.calls, [])  # nothing sent yet
 
     def test_confirm_executes_the_prepared_send(self):
-        capability = RecordingLiveInteractionCapability()
-        tools = self.make_tools(capability)
+        interaction = RecordingLiveInteractionCapability()
+        messaging = RecordingLiveMessagingCapability()
+        tools = self.make_tools(interaction, messaging)
 
         prepared = asyncio.run(tools["prepare_send_message"]("WhatsApp", "Salut", None))
         result = asyncio.run(tools["confirm_action"](prepared["token"]))
 
         self.assertTrue(result["ok"])
-        # The WhatsApp composer is targeted by its identifier (not focused by
-        # default), so the executor receives it as the query.
-        self.assertEqual(
-            capability.calls,
-            [("focus_app_ui_and_type", "WhatsApp", "Salut", "ChatBar_ComposerTextView", None, True)],
-        )
+        # WhatsApp supports the verified composer-send path (write + read back +
+        # press send), which the WhatsApp composer needs since it never confirms
+        # programmatic focus. The focus + type path is not used.
+        self.assertEqual(messaging.calls[-1], ("send_text", "WhatsApp", "Salut"))
+        self.assertEqual(interaction.calls, [])
 
     def test_explicit_query_overrides_composer_default(self):
         capability = RecordingLiveInteractionCapability()
@@ -3618,8 +3632,8 @@ class LiveConfirmationToolTest(unittest.TestCase):
         self.assertEqual(capability.calls[0][3], "Champ custom")
 
     def test_confirm_is_single_use(self):
-        capability = RecordingLiveInteractionCapability()
-        tools = self.make_tools(capability)
+        messaging = RecordingLiveMessagingCapability()
+        tools = self.make_tools(messaging_capability=messaging)
 
         prepared = asyncio.run(tools["prepare_send_message"]("WhatsApp", "Salut"))
         token = prepared["token"]
@@ -3628,7 +3642,8 @@ class LiveConfirmationToolTest(unittest.TestCase):
 
         self.assertFalse(second["ok"])
         self.assertEqual(second["error_code"], "no_pending_action")
-        self.assertEqual(len(capability.calls), 1)  # executed only once
+        sends = [call for call in messaging.calls if call[0] == "send_text"]
+        self.assertEqual(len(sends), 1)  # executed only once
 
     def test_confirm_unknown_token_sends_nothing(self):
         capability = RecordingLiveInteractionCapability()

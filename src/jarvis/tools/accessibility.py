@@ -503,6 +503,22 @@ class ApplicationServicesAccessibilityBackend:
 
         self.raise_for_status(status, "AXFocused")
 
+    def set_value_text(self, element, value: str) -> None:
+        attribute = self.cf_string("AXValue")
+        cf_value = self.cf_string(value)
+
+        try:
+            status = self.app_services.AXUIElementSetAttributeValue(
+                element,
+                attribute,
+                cf_value,
+            )
+        finally:
+            self.release(attribute)
+            self.release(cf_value)
+
+        self.raise_for_status(status, "AXValue")
+
     def copy_attribute(self, element, attribute: str):
         value = ctypes.c_void_p()
         attribute_name = self.cf_string(attribute)
@@ -820,8 +836,62 @@ class AccessibilityTools:
         finally:
             self.backend.release(element)
 
+    def set_value(self, query: str, value: str, role: str | None = None) -> dict[str, Any]:
+        """Write a value into an editable element and confirm it by read-back.
+
+        For apps whose composer does not accept programmatic focus (AXFocused
+        never confirms), this sets AXValue directly and verifies the text
+        landed, rather than relying on focus + keystrokes.
+        """
+        element, candidate = self._resolve_one(
+            query, role, max_depth=MAX_UI_DEPTH, max_elements=MAX_UI_ELEMENTS,
+        )
+
+        try:
+            if candidate.get("enabled") is False:
+                raise AccessibilityError(
+                    "L'element Accessibility est desactive.",
+                    "ui_element_disabled",
+                    {"candidate": candidate},
+                )
+            if candidate.get("editable") is False:
+                raise AccessibilityError(
+                    "Cet element Accessibility n'est pas editable.",
+                    "ui_element_not_editable",
+                    {"candidate": candidate},
+                )
+
+            self.backend.set_value_text(element, value)
+            readback = self.backend.copy_attribute_text(element, "AXValue")
+            refreshed = self._snapshot_element(element, candidate["path"])
+
+            return {
+                "command_executed": True,
+                "state_confirmed": readback == value,
+                "candidate": candidate,
+                "element": refreshed,
+            }
+        finally:
+            self.backend.release(element)
+
+    def read_value(self, query: str, role: str | None = None) -> dict[str, Any]:
+        """Read an element's own AXValue (e.g. the composer draft)."""
+        element, candidate = self._resolve_one(
+            query, role, max_depth=MAX_UI_DEPTH, max_elements=MAX_UI_ELEMENTS,
+        )
+
+        try:
+            value = self.backend.copy_attribute_text(element, "AXValue")
+            return {"command_executed": True, "value": value, "candidate": candidate}
+        finally:
+            self.backend.release(element)
+
     def activate_ui_element(self, query: str, role: str | None = None) -> dict[str, Any]:
-        element, candidate = self._resolve_one(query, role)
+        # Reach as deep as focus_ui_element: some controls (e.g. a messaging
+        # app's send button) sit below the shallow default depth.
+        element, candidate = self._resolve_one(
+            query, role, max_depth=MAX_UI_DEPTH, max_elements=MAX_UI_ELEMENTS,
+        )
 
         try:
             if candidate.get("enabled") is False:
