@@ -179,6 +179,9 @@ class ToolRegistry:
         # Single-shot web search runs in the background so the voice model can
         # acknowledge at once and announce the result when it lands.
         self._web_task: asyncio.Task | None = None
+        # The last retrieved web answer, kept verbatim so "envoie ça" sends
+        # exactly what was found (not a paraphrase). Content only; never logged.
+        self._last_web_result_text: str | None = None
 
     @staticmethod
     def _default_knowledge() -> KnowledgeCapability:
@@ -217,10 +220,25 @@ class ToolRegistry:
                 message=f"La recherche web a echoue : {error}",
                 error_code="system_error",
             )
+        # Keep the answer verbatim so the user can ask to send it afterwards.
+        if result.ok and result.data.get("external_knowledge_retrieved"):
+            self._last_web_result_text = self._format_web_result_for_send(result)
+        else:
+            self._last_web_result_text = None
         # Journal the outcome only (never the question or the content).
         await self._log_action("search_the_web", None, result)
         if self.task_notifier is not None:
             await self.task_notifier(web_announcement_for(result))
+
+    @staticmethod
+    def _format_web_result_for_send(result: ToolResult) -> str:
+        """The web answer plus a couple of source links, for sending as text."""
+        message = (result.message or "").strip()
+        sources = result.data.get("sources") or []
+        urls = [s.get("url") for s in sources[:2] if isinstance(s, dict) and s.get("url")]
+        if urls:
+            message = message + "\n\nSources :\n" + "\n".join(f"- {url}" for url in urls)
+        return message
 
     async def _preferred_media_app(self) -> str | None:
         # Memory applied locally: the model never sees the preference.
@@ -1384,6 +1402,43 @@ class ToolRegistry:
             ).to_livekit_dict()
 
         @function_tool(
+            name="send_last_web_result",
+            description=(
+                "PREPARE l'envoi du resultat de la DERNIERE recherche web (celle "
+                "annoncee juste avant) a un destinataire, sans l'envoyer. Utilise ce "
+                "tool quand l'utilisateur dit 'envoie ca', 'partage ces nouvelles a "
+                "...', 'envoie-moi ce recap' apres une recherche. Le contenu exact "
+                "trouve est repris tel quel (tu n'as pas a le reecrire). Comme pour "
+                "tout envoi, annonce ensuite l'application, le destinataire et le "
+                "contenu, puis attends un oui clair avant confirm_action(token). "
+                "app_name : l'application (par exemple WhatsApp) ; recipient : le nom "
+                "du destinataire."
+            ),
+        )
+        @self._journaled("send_last_web_result", "app_name")
+        async def send_last_web_result(
+            app_name: str,
+            recipient: str | None = None,
+        ) -> dict:
+            """Prepare sending the last web answer, verbatim, via prepare_send_message."""
+            debug_live("tool_call", tool="send_last_web_result", app_name=app_name)
+            if not self._last_web_result_text:
+                return ToolResult.failure(
+                    action="send_last_web_result",
+                    message=(
+                        "Aucun resultat de recherche recent a envoyer. Fais d'abord "
+                        "une recherche avec search_the_web."
+                    ),
+                    error_code="no_recent_web_result",
+                ).to_livekit_dict()
+            # Reuse the verified two-step send flow unchanged.
+            return await prepare_send_message(
+                app_name=app_name,
+                text=self._last_web_result_text,
+                recipient=recipient,
+            )
+
+        @function_tool(
             name="remember",
             description=(
                 "Enregistre un souvenir durable UNIQUEMENT quand l'utilisateur "
@@ -2139,6 +2194,7 @@ class ToolRegistry:
             describe_screen,
             ask_about_screen,
             search_the_web,
+            send_last_web_result,
             run_task,
             task_status,
             cancel_task,

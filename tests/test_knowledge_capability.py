@@ -186,5 +186,70 @@ class SearchTheWebToolTests(unittest.TestCase):
         self.assertEqual(knowledge.calls, [])
 
 
+class FakeMemory:
+    """Minimal memory so journaling in the registry is a no-op in tests."""
+
+    def log_action(self, *args, **kwargs):
+        return None
+
+    def resolve_person(self, name):
+        return None
+
+
+class SendLastWebResultTests(unittest.TestCase):
+    def _result(self):
+        return ToolResult.success(
+            action="web_answer",
+            message="Trois nouvelles ce matin.",
+            sources=[
+                {"title": "Le Monde", "url": "https://lemonde.fr/a"},
+                {"title": "AFP", "url": "https://afp.com/b"},
+            ],
+            source_count=2,
+            external_knowledge_retrieved=True,
+            state_confirmed=True,
+        )
+
+    def test_no_recent_result_is_rejected(self):
+        async def scenario():
+            registry = create_live_registry(
+                knowledge_capability=FakeKnowledge(self._result()),
+                memory_capability=FakeMemory(),
+            )
+            tools = {tool.info.name: tool for tool in registry.livekit_tools()}
+            return await tools["send_last_web_result"]("WhatsApp")
+
+        ack = asyncio.run(scenario())
+        self.assertFalse(ack["ok"])
+        self.assertEqual(ack["error_code"], "no_recent_web_result")
+
+    def test_sends_last_result_verbatim_through_confirmation_flow(self):
+        async def scenario():
+            registry = create_live_registry(
+                knowledge_capability=FakeKnowledge(self._result()),
+                memory_capability=FakeMemory(),
+            )
+
+            async def notifier(_instructions):
+                return None
+
+            registry.set_task_notifier(notifier)
+            tools = {tool.info.name: tool for tool in registry.livekit_tools()}
+            await tools["search_the_web"]("les nouvelles")
+            await registry._web_task
+            # recipient=None skips UI verification; no Mac is touched.
+            prepared = await tools["send_last_web_result"]("WhatsApp")
+            return registry._last_web_result_text, prepared
+
+        text, prepared = asyncio.run(scenario())
+
+        self.assertIn("Trois nouvelles ce matin.", text)
+        self.assertIn("https://lemonde.fr/a", text)  # source appended verbatim
+        self.assertTrue(prepared["ok"])
+        self.assertTrue(prepared["requires_confirmation"])
+        self.assertTrue(prepared["token"])
+        self.assertEqual(prepared["target_app"], "WhatsApp")
+
+
 if __name__ == "__main__":
     unittest.main()

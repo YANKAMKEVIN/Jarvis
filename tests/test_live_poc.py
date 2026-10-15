@@ -98,6 +98,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "search_the_web",
     "select_all_and_copy",
     "select_all_and_delete",
+    "send_last_web_result",
     "send_prompt_to_app",
     "set_brightness",
     "set_clipboard_text",
