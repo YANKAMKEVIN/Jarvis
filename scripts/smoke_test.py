@@ -92,6 +92,7 @@ REQUIRES = {
     "screenshot": ("screen_recording", "screen_unlocked"),
     "apps": ("screen_unlocked",),
     "safari": ("screen_unlocked",),
+    "whatsapp": ("accessibility", "screen_unlocked"),
 }
 
 
@@ -481,6 +482,43 @@ def group_messaging(ctx: Context, step) -> None:
     step("confirm_action refuse apres annulation", confirm_after_cancel)
 
 
+def group_whatsapp(ctx: Context, step) -> None:
+    # Live recipient verification against the real WhatsApp UI, WITHOUT sending.
+    # Opt-in: set JARVIS_SMOKE_WHATSAPP_CONTACT to a SAFE contact (yourself or a
+    # test contact). prepare_send_message runs the full verify + navigate path
+    # and only REGISTERS a pending send; we cancel it immediately, so nothing is
+    # ever sent (the send would happen only on confirm_action, never called).
+    contact = os.environ.get("JARVIS_SMOKE_WHATSAPP_CONTACT", "").strip()
+    state = {}
+
+    def prepare_and_verify():
+        if not contact:
+            raise Skipped(
+                "definis JARVIS_SMOKE_WHATSAPP_CONTACT=<contact sur> pour activer ce test")
+        result = call(
+            ctx, "prepare_send_message", "WhatsApp",
+            "Test smoke Jarvis - ne pas envoyer.", contact,
+        )
+        if result.get("error_code") == "recipient_not_verified":
+            raise CheckFailed(
+                "conversation non verifiee : la bonne discussion n'a pas pu etre ouverte")
+        expect(result.get("ok") is True,
+               f"prepare -> {result.get('error_code')} : {result.get('message')}")
+        expect(result.get("requires_confirmation") is True, "confirmation non requise")
+        expect(bool(result.get("token")), "token absent")
+        expect(result.get("recipient_verified") is True, "destinataire non marque verifie")
+        state["token"] = result["token"]
+
+    def cancel_without_sending():
+        if "token" not in state:
+            raise Skipped("pas de token (verification ignoree ou echouee)")
+        result = call_ok(ctx, "cancel_action", state["token"])
+        expect(result.get("cancelled") is True, f"annulation non effective : {result}")
+
+    step("verif destinataire + composer (sans envoi)", prepare_and_verify, critical=True)
+    step("annulation (rien n'est envoye)", cancel_without_sending)
+
+
 def group_memory(ctx: Context, step) -> None:
     # Runs against the throwaway DB set in main() (JARVIS_MEMORY_PATH), never
     # the user's real memory. Checked independently by reading SQLite directly.
@@ -581,6 +619,7 @@ GROUPS = {
     "textedit": group_textedit,
     "safari": group_safari,
     "messaging": group_messaging,
+    "whatsapp": group_whatsapp,
     "memory": group_memory,
     "knowledge": group_knowledge,
 }
