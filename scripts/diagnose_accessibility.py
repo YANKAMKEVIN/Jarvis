@@ -280,14 +280,41 @@ def _safe_settable(backend, element):
         return None
 
 
+def resolve_pids(app: str) -> list[str]:
+    """Find the app's MAIN process pid, robustly.
+
+    Prefers an exact process-name match (pgrep -x). Falls back to matching the
+    bundle's main executable path <App>.app/Contents/MacOS/<App>, since on some
+    setups the kernel reports the full path as the process name and pgrep -x
+    then misses it. The path match also excludes helper processes and same-named
+    CLIs in other bundles.
+    """
+    exact = subprocess.run(
+        ["pgrep", "-x", "--", app], capture_output=True, text=True, check=False,
+    ).stdout.split()
+    if exact:
+        return exact
+
+    suffix = f"/{app}.app/Contents/MacOS/{app}"
+    listing = subprocess.run(
+        ["ps", "-axo", "pid=,comm="], capture_output=True, text=True, check=False,
+    ).stdout.splitlines()
+    pids = []
+    for line in listing:
+        line = line.strip()
+        if not line:
+            continue
+        pid, _, comm = line.partition(" ")
+        if comm.strip().endswith(suffix) and pid.isdigit():
+            pids.append(pid)
+    return pids
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", required=True)
     args = parser.parse_args()
-    processes = subprocess.run(
-        ["pgrep", "-x", "--", args.app], capture_output=True, text=True, check=False,
-    )
-    pids = processes.stdout.split()
+    pids = resolve_pids(args.app)
     if len(pids) != 1:
         print(json.dumps({"error_code": "app_missing_or_ambiguous", "count": len(pids)}))
         return 1

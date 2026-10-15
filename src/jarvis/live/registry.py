@@ -11,6 +11,7 @@ from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.media import MediaCapability
+from jarvis.capabilities.messaging import MessagingCapability
 from jarvis.capabilities.mouse import MouseCapability
 from jarvis.capabilities.results import ToolResult
 from jarvis.capabilities.screenshot import ScreenshotCapability
@@ -21,6 +22,13 @@ from jarvis.capabilities.windows import WindowCapability
 from jarvis.live.config import debug_live, get_vision_model, is_vision_enabled
 from jarvis.live.confirmation import PendingActionStore
 from jarvis.tools.vision import VisionTools
+
+
+# Assistant apps whose input field is not introspectable via Accessibility
+# (Electron/web, e.g. Claude): send_prompt_to_app types directly into the
+# frontmost app instead of verifying an AX field. Low-risk prompt apps only;
+# outward messaging never uses this path.
+DIRECT_PROMPT_APPS = {"claude"}
 
 
 class ToolRegistry:
@@ -40,6 +48,7 @@ class ToolRegistry:
         browser_capability=None,
         screenshot_capability=None,
         vision_capability=None,
+        messaging_capability=None,
         pending_actions=None,
     ):
         self.audio = (
@@ -117,6 +126,11 @@ class ToolRegistry:
             vision_capability
             if vision_capability is not None
             else VisionCapability()
+        )
+        self.messaging = (
+            messaging_capability
+            if messaging_capability is not None
+            else MessagingCapability()
         )
         self.pending_actions = (
             pending_actions
@@ -1077,15 +1091,30 @@ class ToolRegistry:
                 text_length=len(text) if isinstance(text, str) else None,
                 query_length=len(query) if isinstance(query, str) else None,
             )
+            direct = (
+                not (isinstance(query, str) and query.strip())
+                and isinstance(app_name, str)
+                and app_name.strip().casefold() in DIRECT_PROMPT_APPS
+            )
             async with self.interaction_lock:
-                result = await asyncio.to_thread(
-                    self.interaction.focus_app_ui_and_type,
-                    app_name,
-                    text,
-                    query,
-                    None,
-                    True,
-                )
+                if direct:
+                    # Electron/web apps (e.g. Claude) expose no targetable AX
+                    # field: confirm the app is frontmost, then type directly.
+                    result = await asyncio.to_thread(
+                        self.interaction.open_app_and_type,
+                        app_name,
+                        text,
+                        True,
+                    )
+                else:
+                    result = await asyncio.to_thread(
+                        self.interaction.focus_app_ui_and_type,
+                        app_name,
+                        text,
+                        query,
+                        None,
+                        True,
+                    )
             self._debug_interaction_result("send_prompt_to_app", result)
             return result.to_livekit_dict()
 
@@ -1101,13 +1130,18 @@ class ToolRegistry:
                 "et le contenu exact, puis attends une confirmation orale "
                 "explicite. N'envoie rien ici ; l'envoi reel se fait uniquement "
                 "ensuite via confirm_action(token). query cible un champ de saisie "
-                "nomme si besoin. N'utilise pas ce tool pour un simple prompt a un "
-                "assistant comme Claude : utilise send_prompt_to_app pour cela."
+                "nomme si besoin. Fournis recipient (le nom du destinataire) pour "
+                "que Jarvis verifie d'abord que la conversation ouverte correspond "
+                "bien ; si recipient_not_verified est retourne, rien n'est prepare "
+                "et il faut ouvrir la bonne conversation. N'utilise pas ce tool "
+                "pour un simple prompt a un assistant comme Claude : utilise "
+                "send_prompt_to_app pour cela."
             ),
         )
         async def prepare_send_message(
             app_name: str,
             text: str,
+            recipient: str | None = None,
             query: str | None = None,
         ) -> dict:
             """Register a message send for confirmation; no side effect here."""
@@ -1125,9 +1159,28 @@ class ToolRegistry:
                     error_code="invalid_text",
                 ).to_livekit_dict()
 
+            if isinstance(recipient, str) and recipient.strip():
+                verification = await asyncio.to_thread(
+                    self.messaging.verify_recipient,
+                    app_name,
+                    recipient,
+                )
+                self._debug_interaction_result("verify_recipient", verification)
+                if not verification.ok:
+                    # Fail safe: never prepare a send against an unverified chat.
+                    return verification.to_livekit_dict()
+
+            # Target the app's composer by default (e.g. WhatsApp's is not
+            # focused on its own); an explicit query still wins.
+            effective_query = (
+                query
+                if isinstance(query, str) and query.strip()
+                else self.messaging.composer_query(app_name)
+            )
+
             def _executor():
                 return self.interaction.focus_app_ui_and_type(
-                    app_name, text, query, None, True,
+                    app_name, text, effective_query, None, True,
                 )
 
             async with self.confirmation_lock:
@@ -1152,6 +1205,7 @@ class ToolRegistry:
                 target_app=app_name,
                 text_length=len(text),
                 query_length=len(query) if isinstance(query, str) else None,
+                recipient_verified=bool(isinstance(recipient, str) and recipient.strip()),
             ).to_livekit_dict()
 
         @function_tool(
@@ -1834,6 +1888,7 @@ def create_live_tools(
     browser_capability=None,
     screenshot_capability=None,
     vision_capability=None,
+    messaging_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -1916,6 +1971,12 @@ def create_live_tools(
             vision_tools=VisionTools(model=get_vision_model()),
         )
 
+    if messaging_capability is None:
+        messaging_capability = MessagingCapability(
+            windows=window_capability,
+            ui_accessibility=ui_accessibility_capability,
+        )
+
     return ToolRegistry(
         audio_capability=audio_capability,
         app_capability=app_capability,
@@ -1931,4 +1992,5 @@ def create_live_tools(
         browser_capability=browser_capability,
         screenshot_capability=screenshot_capability,
         vision_capability=vision_capability,
+        messaging_capability=messaging_capability,
     ).livekit_tools()

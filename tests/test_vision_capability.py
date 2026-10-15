@@ -78,6 +78,24 @@ class VisionCapabilityTest(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(shot.calls, [("capture_screen",)])
 
+    def test_target_aliases_map_to_real_targets(self):
+        for alias, expected_call in (
+            ("active_window", ("capture_window", None)),
+            ("fenêtre", ("capture_window", None)),
+            ("ecran", ("capture_screen",)),
+            ("tout l'écran", ("capture_screen",)),
+        ):
+            with self.subTest(alias=alias):
+                shot = FakeScreenshot()
+                capability = VisionCapability(
+                    screenshot=shot, vision_tools=FakeVisionTools()
+                )
+
+                result = capability.describe_screen(target=alias)
+
+                self.assertTrue(result.ok)
+                self.assertEqual(shot.calls, [expected_call])
+
     def test_invalid_target_does_not_capture(self):
         shot = FakeScreenshot()
         vision = FakeVisionTools()

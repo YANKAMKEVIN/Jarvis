@@ -5,7 +5,7 @@ import time
 from typing import Any, Callable
 
 
-DEFAULT_VISION_MODEL = "gemini-2.5-flash"
+DEFAULT_VISION_MODEL = "gemini-3.5-flash"
 DEFAULT_API_KEY_ENV = "GOOGLE_API_KEY"
 
 # Inline request payloads are capped by the Gemini API (~20 MB total). A full

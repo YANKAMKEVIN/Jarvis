@@ -11,7 +11,7 @@ DEFAULT_GEMINI_LIVE_TEMPERATURE = 0.8
 # explicit, stable GA Flash model id is used rather than a mutable alias such as
 # "gemini-flash-latest", so Vision behaviour stays reproducible. Override with
 # JARVIS_GEMINI_VISION_MODEL once a preferred available model is confirmed.
-DEFAULT_GEMINI_VISION_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_VISION_MODEL = "gemini-3.5-flash"
 
 
 @dataclass(frozen=True)

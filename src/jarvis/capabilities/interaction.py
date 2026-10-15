@@ -329,6 +329,71 @@ class InteractionCapability:
             steps=steps,
         )
 
+    def open_app_and_type(
+        self,
+        app_name: str,
+        text: str,
+        press_enter: bool = True,
+    ) -> ToolResult:
+        """Open/focus an app and type into its keyboard focus, no AX field check.
+
+        For apps whose input field is not introspectable via Accessibility (e.g.
+        Electron/web apps like Claude, whose composer is a deep contenteditable
+        with no identifier or text role). Safety floor: it still confirms the
+        requested app is frontmost before typing, so text never lands in another
+        app; it just trusts the app's own keyboard focus for the exact field.
+        Reserved for low-risk assistant prompts, never for outward messaging.
+        """
+        result = self._open_focus_and_verify_app(
+            action="open_app_and_type",
+            app_name=app_name,
+        )
+
+        if isinstance(result, ToolResult):
+            return result
+
+        steps = result
+        typed = self.keyboard.type_text(text)
+        steps.append(self._step("type_text", typed, text_length=self._safe_len(text)))
+
+        failure = self._require_command_executed(
+            "open_app_and_type", "type_text", typed, steps,
+        )
+
+        if failure is not None:
+            return failure
+
+        if typed.data.get("command_executed") is not True:
+            return self._failure(
+                action="open_app_and_type", failed_step="type_text", steps=steps,
+                message="L'execution de la saisie n'est pas attestee.",
+                error_code="command_not_executed",
+            )
+
+        if press_enter:
+            enter = self.keyboard.press_key("enter")
+            steps.append(self._step("press_key_enter", enter))
+            failure = self._require_command_executed(
+                "open_app_and_type", "press_key_enter", enter, steps,
+            )
+
+            if failure is not None:
+                return failure
+
+        return ToolResult.success(
+            action="open_app_and_type",
+            message=(
+                "L'application a ete mise au premier plan et la saisie a ete "
+                "envoyee ; l'effet applicatif n'est pas confirme."
+            ),
+            command_executed=True,
+            state_confirmed=False,
+            target_app=app_name,
+            text_length=self._safe_len(text),
+            press_enter=press_enter,
+            steps=steps,
+        )
+
     def focus_app_ui_and_type(
         self,
         app_name: str,

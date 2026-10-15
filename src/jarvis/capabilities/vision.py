@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from jarvis.capabilities.results import ToolResult
 from jarvis.capabilities.screenshot import ScreenshotCapability
+from jarvis.tools.accessibility import normalize_text
 from jarvis.tools.vision import VisionError, VisionTools
 
 
 VALID_TARGETS = {"screen", "window"}
+
+# The model sometimes names the target loosely ("active_window", "l'ecran"...).
+# Resolve by keyword rather than exact string so underscores, apostrophes and
+# extra words don't cause a spurious invalid_target.
+_SCREEN_TOKENS = {"screen", "ecran", "fullscreen", "display"}
+_WINDOW_TOKENS = {"window", "fenetre", "app", "application"}
 
 # Reliability-first instructions: Jarvis must separate what it clearly sees from
 # what it cannot read and what it would merely infer, and never invent a value
@@ -92,12 +100,16 @@ class VisionCapability:
         app_name: str | None,
         question: str | None,
     ) -> ToolResult:
-        if target not in VALID_TARGETS:
+        resolved = self._resolve_target(target)
+
+        if resolved is None:
             return ToolResult.failure(
                 action=action,
                 message="La cible doit etre 'screen' ou 'window'.",
                 error_code="invalid_target",
             )
+
+        target = resolved
 
         capture = self._capture(target, app_name)
 
@@ -148,6 +160,24 @@ class VisionCapability:
             image_height=capture.data.get("height"),
             duration_ms=analysis["duration_ms"],
         )
+
+    @staticmethod
+    def _resolve_target(target: str) -> str | None:
+        if target in VALID_TARGETS:
+            return target
+
+        if not isinstance(target, str):
+            return None
+
+        tokens = set(re.sub(r"[^a-z0-9]+", " ", normalize_text(target)).split())
+
+        if tokens & _SCREEN_TOKENS:
+            return "screen"
+
+        if tokens & _WINDOW_TOKENS:
+            return "window"
+
+        return None
 
     def _capture(self, target: str, app_name: str | None) -> ToolResult:
         if target == "screen":

@@ -1240,6 +1240,45 @@ class InteractionCapabilityTest(unittest.TestCase):
         self.assertEqual(ui.calls, [("focus_ui_element", "barre de recherche", None)])
         self.assertEqual(keyboard.calls, [])
 
+    def test_open_app_and_type_types_directly_without_ax_field_check(self):
+        ui = RecordingUI()
+        keyboard = RecordingKeyboard()
+        capability = self.make_capability(ui=ui, keyboard=keyboard)
+
+        result = capability.open_app_and_type("Safari", "Bonjour")
+
+        self.assertTrue(result.ok)
+        self.assertFalse(result.data["state_confirmed"])
+        self.assertEqual(
+            keyboard.calls,
+            [("type_text", "Bonjour"), ("press_key", "enter")],
+        )
+        self.assertEqual(ui.calls, [])  # no AX inspection/focus at all
+
+    def test_open_app_and_type_stops_on_active_window_mismatch(self):
+        windows = RecordingWindows(active_result=success(
+            "get_active_window", target_app="JARVIS", window_title="Chat",
+        ))
+        keyboard = RecordingKeyboard()
+        capability = self.make_capability(windows=windows, keyboard=keyboard)
+
+        result = capability.open_app_and_type("Claude", "Bonjour")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "active_window_mismatch")
+        self.assertEqual(keyboard.calls, [])  # nothing typed into the wrong app
+
+    def test_open_app_and_type_stops_when_open_fails(self):
+        apps = RecordingApps(result=failure("open_app", "app_missing"))
+        keyboard = RecordingKeyboard()
+        capability = self.make_capability(apps=apps, keyboard=keyboard)
+
+        result = capability.open_app_and_type("Claude", "Bonjour")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "app_missing")
+        self.assertEqual(keyboard.calls, [])
+
     def test_interaction_steps_do_not_include_raw_text_or_query(self):
         capability = self.make_capability()
 

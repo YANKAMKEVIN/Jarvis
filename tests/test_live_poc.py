@@ -828,6 +828,26 @@ class RecordingLiveInteractionCapability:
             ],
         )
 
+    def open_app_and_type(self, app_name, text, press_enter=True):
+        self.calls.append(("open_app_and_type", app_name, text, press_enter))
+
+        if self.error_result is not None:
+            return self.error_result
+
+        return ToolResult.success(
+            action="open_app_and_type",
+            message="Saisie directe envoyee.",
+            command_executed=True,
+            state_confirmed=False,
+            target_app=app_name,
+            text_length=len(text) if isinstance(text, str) else None,
+            press_enter=press_enter,
+            steps=[
+                {"name": "open_app", "ok": True},
+                {"name": "type_text", "ok": True, "command_executed": True},
+            ],
+        )
+
     def open_app_and_focus_ui(self, app_name, query, role=None):
         self.calls.append(("open_app_and_focus_ui", app_name, query, role))
 
@@ -2941,14 +2961,46 @@ class LiveInteractionToolTest(unittest.TestCase):
         capability = RecordingLiveInteractionCapability()
         tool = self.make_tools(interaction_capability=capability)["send_prompt_to_app"]
 
+        # A non-direct-type app uses the AX-verified flow with press_enter=True.
+        result = asyncio.run(tool("Notes", "Explique la relativite"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            capability.calls,
+            [("focus_app_ui_and_type", "Notes", "Explique la relativite", None, None, True)],
+        )
+
+    def test_send_prompt_to_app_claude_types_directly(self):
+        capability = RecordingLiveInteractionCapability()
+        tool = self.make_tools(interaction_capability=capability)["send_prompt_to_app"]
+
         result = asyncio.run(tool("Claude", "Explique la relativite"))
 
         self.assertTrue(result["ok"])
-        # Delegates to the verified typing flow with press_enter=True (submit).
+        # Electron app → direct type, no AX field verification.
         self.assertEqual(
             capability.calls,
-            [("focus_app_ui_and_type", "Claude", "Explique la relativite", None, None, True)],
+            [("open_app_and_type", "Claude", "Explique la relativite", True)],
         )
+
+    def test_send_prompt_to_app_other_app_uses_ax_verified_path(self):
+        capability = RecordingLiveInteractionCapability()
+        tool = self.make_tools(interaction_capability=capability)["send_prompt_to_app"]
+
+        result = asyncio.run(tool("TextEdit", "Bonjour"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(capability.calls[0][0], "focus_app_ui_and_type")
+
+    def test_send_prompt_to_app_explicit_query_overrides_direct_type(self):
+        capability = RecordingLiveInteractionCapability()
+        tool = self.make_tools(interaction_capability=capability)["send_prompt_to_app"]
+
+        result = asyncio.run(tool("Claude", "Salut", "un champ"))
+
+        self.assertTrue(result["ok"])
+        # Explicit query → AX-verified path even for a direct-type app.
+        self.assertEqual(capability.calls[0][0], "focus_app_ui_and_type")
 
     def test_send_prompt_to_app_description_mentions_claude_and_submit(self):
         tools = self.make_tools()
@@ -3462,12 +3514,45 @@ class LiveVisionToolTest(unittest.TestCase):
         self.assertTrue(hasattr(registry.vision_lock, "acquire"))
 
 
+class RecordingLiveMessagingCapability:
+    def __init__(self, verified=True, composer="ChatBar_ComposerTextView"):
+        self.verified = verified
+        self.composer = composer
+        self.calls = []
+
+    def composer_query(self, app_name):
+        if isinstance(app_name, str) and app_name.strip().casefold() == "whatsapp":
+            return self.composer
+        return None
+
+    def verify_recipient(self, app_name, expected_recipient):
+        self.calls.append(("verify_recipient", app_name, expected_recipient))
+        if self.verified:
+            return ToolResult.success(
+                action="verify_recipient",
+                message="Destinataire verifie.",
+                recipient_verified=True,
+                target_app=app_name,
+                recipient_length=len(expected_recipient),
+            )
+        return ToolResult(
+            ok=False,
+            action="verify_recipient",
+            message="La conversation ouverte ne correspond pas.",
+            data={"recipient_verified": False, "reason": "recipient_not_visible"},
+            error_code="recipient_not_verified",
+        )
+
+
 class LiveConfirmationToolTest(unittest.TestCase):
-    def make_tools(self, interaction_capability=None):
+    def make_tools(self, interaction_capability=None, messaging_capability=None):
         tools = create_live_tools(
             security=RecordingLiveSecurity(),
             interaction_capability=(
                 interaction_capability or RecordingLiveInteractionCapability()
+            ),
+            messaging_capability=(
+                messaging_capability or RecordingLiveMessagingCapability()
             ),
         )
         return {tool.info.name: tool for tool in tools}
@@ -3501,10 +3586,23 @@ class LiveConfirmationToolTest(unittest.TestCase):
         result = asyncio.run(tools["confirm_action"](prepared["token"]))
 
         self.assertTrue(result["ok"])
+        # The WhatsApp composer is targeted by its identifier (not focused by
+        # default), so the executor receives it as the query.
         self.assertEqual(
             capability.calls,
-            [("focus_app_ui_and_type", "WhatsApp", "Salut", None, None, True)],
+            [("focus_app_ui_and_type", "WhatsApp", "Salut", "ChatBar_ComposerTextView", None, True)],
         )
+
+    def test_explicit_query_overrides_composer_default(self):
+        capability = RecordingLiveInteractionCapability()
+        tools = self.make_tools(capability)
+
+        prepared = asyncio.run(
+            tools["prepare_send_message"]("WhatsApp", "Salut", None, "Champ custom")
+        )
+        asyncio.run(tools["confirm_action"](prepared["token"]))
+
+        self.assertEqual(capability.calls[0][3], "Champ custom")
 
     def test_confirm_is_single_use(self):
         capability = RecordingLiveInteractionCapability()
@@ -3568,6 +3666,34 @@ class LiveConfirmationToolTest(unittest.TestCase):
         debug_output = output.getvalue()
         self.assertNotIn("SECRET_MSG_TEXT", debug_output)
         self.assertIn("text_length: 15", debug_output)
+
+    def test_prepare_with_verified_recipient_prepares_without_sending(self):
+        interaction = RecordingLiveInteractionCapability()
+        messaging = RecordingLiveMessagingCapability(verified=True)
+        tools = self.make_tools(interaction, messaging)
+
+        result = asyncio.run(
+            tools["prepare_send_message"]("WhatsApp", "Salut", "Kevin")
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertIn("token", result)
+        self.assertEqual(messaging.calls, [("verify_recipient", "WhatsApp", "Kevin")])
+        self.assertEqual(interaction.calls, [])  # verified, but not sent yet
+
+    def test_prepare_with_unverified_recipient_refuses(self):
+        interaction = RecordingLiveInteractionCapability()
+        messaging = RecordingLiveMessagingCapability(verified=False)
+        tools = self.make_tools(interaction, messaging)
+
+        result = asyncio.run(
+            tools["prepare_send_message"]("WhatsApp", "Salut", "Kevin")
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "recipient_not_verified")
+        self.assertNotIn("token", result)
+        self.assertEqual(interaction.calls, [])  # nothing prepared or sent
 
     def test_confirmation_has_its_own_lock(self):
         registry = ToolRegistry(interaction_capability=object())

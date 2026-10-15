@@ -6,6 +6,7 @@ from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.media import MediaCapability
+from jarvis.capabilities.messaging import MessagingCapability
 from jarvis.capabilities.mouse import MouseCapability
 from jarvis.capabilities.results import CapabilityError, ToolResult
 from jarvis.capabilities.screenshot import ScreenshotCapability
@@ -24,6 +25,7 @@ __all__ = [
     "InteractionCapability",
     "KeyboardCapability",
     "MediaCapability",
+    "MessagingCapability",
     "MouseCapability",
     "ScreenshotCapability",
     "SystemCapability",
