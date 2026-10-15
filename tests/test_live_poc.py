@@ -95,6 +95,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "run_task",
     "save_task_procedure",
     "scroll",
+    "search_the_web",
     "select_all_and_copy",
     "select_all_and_delete",
     "send_prompt_to_app",

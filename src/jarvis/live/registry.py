@@ -12,6 +12,7 @@ from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
+from jarvis.capabilities.knowledge import KnowledgeCapability, web_announcement_for
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.memory import MemoryCapability
 from jarvis.capabilities.messaging import MessagingCapability
@@ -56,6 +57,7 @@ class ToolRegistry:
         vision_capability=None,
         messaging_capability=None,
         memory_capability=None,
+        knowledge_capability=None,
         pending_actions=None,
         planner_model=None,
     ):
@@ -145,6 +147,11 @@ class ToolRegistry:
             if memory_capability is not None
             else MemoryCapability()
         )
+        self.knowledge = (
+            knowledge_capability
+            if knowledge_capability is not None
+            else self._default_knowledge()
+        )
         self.pending_actions = (
             pending_actions
             if pending_actions is not None
@@ -166,6 +173,22 @@ class ToolRegistry:
         # Set by the voice agent: async callable speaking an announcement.
         self.task_notifier = None
         self.tasks: TaskManager | None = None
+        # Single-shot web search runs in the background so the voice model can
+        # acknowledge at once and announce the result when it lands.
+        self._web_task: asyncio.Task | None = None
+
+    @staticmethod
+    def _default_knowledge() -> KnowledgeCapability:
+        # Free and local: a running SearXNG if present, else keyless web search
+        # (Google News RSS / DuckDuckGo). Synthesis uses the local Ollama brain.
+        # Imported lazily so the registry stays light for callers that inject.
+        from jarvis.brain import LocalBrain
+        from jarvis.knowledge.keyless import FallbackProvider, KeylessWebProvider
+        from jarvis.knowledge.searxng import SearXNGProvider
+        from jarvis.knowledge.service import KnowledgeService
+
+        provider = FallbackProvider(SearXNGProvider(), KeylessWebProvider())
+        return KnowledgeCapability(KnowledgeService(brain=LocalBrain(), provider=provider))
 
     def set_task_notifier(self, notifier) -> None:
         self.task_notifier = notifier
@@ -178,6 +201,23 @@ class ToolRegistry:
         )
         if self.task_notifier is not None:
             await self.task_notifier(announcement_for(goal, outcome))
+
+    def _web_running(self) -> bool:
+        return self._web_task is not None and not self._web_task.done()
+
+    async def _run_web_search(self, question: str) -> None:
+        try:
+            result = await asyncio.to_thread(self.knowledge.answer, question)
+        except Exception as error:
+            result = ToolResult.failure(
+                action="web_answer",
+                message=f"La recherche web a echoue : {error}",
+                error_code="system_error",
+            )
+        # Journal the outcome only (never the question or the content).
+        await self._log_action("search_the_web", None, result)
+        if self.task_notifier is not None:
+            await self.task_notifier(web_announcement_for(result))
 
     async def _preferred_media_app(self) -> str | None:
         # Memory applied locally: the model never sees the preference.
@@ -1850,6 +1890,53 @@ class ToolRegistry:
             return result.to_livekit_dict()
 
         @function_tool(
+            name="search_the_web",
+            description=(
+                "Cherche une information a jour sur le web et la synthetise a voix "
+                "haute : actualites, meteo, prix, cours, resultats, 'qui est', 'quelles "
+                "sont les nouvelles', 'quoi de neuf sur X'. La recherche tourne en "
+                "arriere-plan (quelques secondes) ; des que tu appelles ce tool, dis a "
+                "l'utilisateur que tu regardes, puis le resultat sera annonce tout seul. "
+                "Si l'utilisateur ne precise pas de domaine pour 'les nouvelles', ne "
+                "bloque pas : prends les grands titres a la une et propose d'affiner. "
+                "N'utilise pas ce tool pour agir sur le Mac ni pour une question dont la "
+                "reponse ne depend pas d'une information actuelle. question : la question "
+                "complete en francais."
+            ),
+        )
+        @self._journaled("search_the_web")
+        async def search_the_web(question: str) -> dict:
+            """Start a background web search; its result is announced by voice."""
+            debug_live(
+                "tool_call",
+                tool="search_the_web",
+                question_length=len(question) if isinstance(question, str) else None,
+            )
+            if not isinstance(question, str) or not question.strip():
+                return ToolResult.failure(
+                    action="search_the_web",
+                    message="La question de recherche est vide.",
+                    error_code="invalid_question",
+                ).to_livekit_dict()
+            if self._web_running():
+                return ToolResult.failure(
+                    action="search_the_web",
+                    message="Une recherche web est deja en cours ; attends son resultat.",
+                    error_code="web_search_running",
+                ).to_livekit_dict()
+            self._web_task = asyncio.get_running_loop().create_task(
+                self._run_web_search(question.strip())
+            )
+            return ToolResult.success(
+                action="search_the_web",
+                message=(
+                    "Recherche lancee. Dis simplement a l'utilisateur que tu regardes ; "
+                    "le resultat sera annonce dans un instant."
+                ),
+                search_started=True,
+            ).to_livekit_dict()
+
+        @function_tool(
             name="run_task",
             description=(
                 "Confie a Jarvis une TACHE LONGUE en plusieurs etapes qui demande "
@@ -2027,6 +2114,7 @@ class ToolRegistry:
             capture_window,
             describe_screen,
             ask_about_screen,
+            search_the_web,
             run_task,
             task_status,
             cancel_task,
@@ -2315,6 +2403,7 @@ def create_live_registry(
     vision_capability=None,
     messaging_capability=None,
     memory_capability=None,
+    knowledge_capability=None,
     planner_model=None,
 ) -> "ToolRegistry":
     if audio_capability is None:
@@ -2423,5 +2512,6 @@ def create_live_registry(
         vision_capability=vision_capability,
         messaging_capability=messaging_capability,
         memory_capability=memory_capability,
+        knowledge_capability=knowledge_capability,
         planner_model=planner_model,
     )

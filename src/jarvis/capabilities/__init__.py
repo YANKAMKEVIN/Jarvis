@@ -5,6 +5,7 @@ from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
+from jarvis.capabilities.knowledge import KnowledgeCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.messaging import MessagingCapability
 from jarvis.capabilities.mouse import MouseCapability
@@ -24,6 +25,7 @@ __all__ = [
     "FilesCapability",
     "InteractionCapability",
     "KeyboardCapability",
+    "KnowledgeCapability",
     "MediaCapability",
     "MessagingCapability",
     "MouseCapability",
