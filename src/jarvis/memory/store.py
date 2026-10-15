@@ -23,7 +23,7 @@ from typing import Any, Callable
 from jarvis.tools.accessibility import normalize_text
 
 
-MEMORY_KINDS = ("profile", "person", "preference", "fact")
+MEMORY_KINDS = ("profile", "person", "preference", "fact", "procedure")
 MEMORY_SOURCES = ("user", "inferred")
 
 EPISODE_RETENTION_SECONDS = 30 * 24 * 3600
@@ -31,6 +31,9 @@ MAX_EPISODE_FIELD_LENGTH = 80
 
 MAX_SUBJECT_LENGTH = 120
 MAX_CONTENT_LENGTH = 500
+# A learned procedure stores a small JSON plan (tool + target per step), which
+# needs more room than a one-line fact.
+MAX_PROCEDURE_CONTENT_LENGTH = 2000
 DEFAULT_SEARCH_LIMIT = 10
 DEFAULT_LIST_LIMIT = 50
 
@@ -215,7 +218,10 @@ class MemoryStore:
         """Normalized (kind, subject, content, source); raises MemoryError."""
         kind = cls._validate_kind(kind)
         subject = cls._validate_text(subject, "subject", MAX_SUBJECT_LENGTH)
-        content = cls._validate_text(content, "content", MAX_CONTENT_LENGTH)
+        content_max = (
+            MAX_PROCEDURE_CONTENT_LENGTH if kind == "procedure" else MAX_CONTENT_LENGTH
+        )
+        content = cls._validate_text(content, "content", content_max)
         if source not in MEMORY_SOURCES:
             raise MemoryError("Source de souvenir invalide.", "invalid_source")
         return kind, subject, content, source

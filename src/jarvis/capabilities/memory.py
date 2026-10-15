@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from jarvis.capabilities.results import ToolResult
 from jarvis.memory.guard import contains_secret
 from jarvis.memory.store import MemoryError, MemoryStore
 from jarvis.tools.accessibility import normalize_text
+
+
+PROCEDURE_KIND = "procedure"
+MAX_PROCEDURE_STEPS = 25
+MAX_STEP_TARGET_LENGTH = 120
 
 
 class MemoryCapability:
@@ -214,6 +222,110 @@ class MemoryCapability:
         except Exception:
             return None
         return memory.content if memory is not None else None
+
+    def save_procedure(self, name: str, steps, source: str = "inferred") -> ToolResult:
+        """Store a reusable procedure (a small plan) under a name.
+
+        Steps are reduced to {tool, target} only — the same non-sensitive shape
+        as the activity journal — so a learned procedure never captures message
+        bodies, typed text or other content. Re-saving the same name updates it.
+        """
+        if not isinstance(name, str) or not name.strip():
+            return ToolResult.failure(
+                action="save_procedure",
+                message="Le nom de la procedure est obligatoire.",
+                error_code="invalid_subject",
+            )
+
+        clean_steps = self._clean_steps(steps)
+        if not clean_steps:
+            return ToolResult.failure(
+                action="save_procedure",
+                message="La procedure ne contient aucune etape exploitable.",
+                error_code="invalid_procedure",
+            )
+
+        content = json.dumps({"steps": clean_steps}, ensure_ascii=False)
+
+        refusal = self.check_storable(name, content, action="save_procedure")
+        if refusal is not None:
+            return refusal
+
+        try:
+            memory, created = self.store.remember(PROCEDURE_KIND, name, content, source)
+        except MemoryError as error:
+            return self._memory_failure("save_procedure", error)
+        except Exception as error:
+            return self._system_error_result("save_procedure", error)
+
+        return ToolResult.success(
+            action="save_procedure",
+            message=("Procedure enregistree." if created else "Procedure mise a jour."),
+            procedure={"id": memory.id, "name": memory.subject, "steps": clean_steps},
+            created=created,
+            command_executed=True,
+            state_confirmed=True,
+        )
+
+    def get_procedure(self, name: str) -> ToolResult:
+        """Return a stored procedure's steps, to seed a task replay."""
+        if not isinstance(name, str) or not name.strip():
+            return ToolResult.failure(
+                action="get_procedure",
+                message="Le nom de la procedure est obligatoire.",
+                error_code="invalid_subject",
+            )
+
+        try:
+            memory = self.store.find_by_subject(PROCEDURE_KIND, name)
+        except Exception as error:
+            return self._system_error_result("get_procedure", error)
+
+        if memory is None:
+            return ToolResult.failure(
+                action="get_procedure",
+                message="Aucune procedure enregistree sous ce nom.",
+                error_code="memory_not_found",
+            )
+
+        steps = self._parse_steps(memory.content)
+        return ToolResult.success(
+            action="get_procedure",
+            message=f"Procedure '{memory.subject}' : {len(steps)} etape(s).",
+            procedure={"id": memory.id, "name": memory.subject, "steps": steps},
+            count=len(steps),
+        )
+
+    @staticmethod
+    def _clean_steps(steps) -> list[dict[str, str | None]]:
+        if not isinstance(steps, (list, tuple)):
+            return []
+
+        clean = []
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            tool = step.get("tool")
+            if not isinstance(tool, str) or not tool.strip():
+                continue
+            target = step.get("target")
+            if isinstance(target, str):
+                target = target.strip()[:MAX_STEP_TARGET_LENGTH] or None
+            else:
+                target = None
+            clean.append({"tool": tool.strip(), "target": target})
+            if len(clean) >= MAX_PROCEDURE_STEPS:
+                break
+        return clean
+
+    @staticmethod
+    def _parse_steps(content: str) -> list[dict[str, Any]]:
+        try:
+            data = json.loads(content)
+            steps = data.get("steps") if isinstance(data, dict) else None
+            return steps if isinstance(steps, list) else []
+        except (ValueError, TypeError):
+            return []
 
     @staticmethod
     def _memory_failure(action: str, error: MemoryError) -> ToolResult:

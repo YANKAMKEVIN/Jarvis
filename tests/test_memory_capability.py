@@ -346,5 +346,67 @@ class LiveMemoryToolsTest(TempMemoryMixin, unittest.TestCase):
         self.assertNotIn("SECRET_CONTENT", output.getvalue())
 
 
+class ProcedureTest(TempMemoryMixin, unittest.TestCase):
+    STEPS = [
+        {"tool": "open_app", "target": "Safari"},
+        {"tool": "browse_open_url", "target": "example.com"},
+        {"tool": "capture_screen", "target": None},
+    ]
+
+    def test_save_then_get_roundtrip(self):
+        saved = self.memory.save_procedure("préparer réunion", self.STEPS)
+        self.assertTrue(saved.ok)
+        self.assertTrue(saved.data["created"])
+        self.assertEqual(len(saved.data["procedure"]["steps"]), 3)
+
+        # Accent/case-insensitive subject lookup.
+        got = self.memory.get_procedure("preparer reunion")
+        self.assertTrue(got.ok)
+        self.assertEqual(got.data["procedure"]["steps"], self.STEPS)
+
+    def test_resaving_updates(self):
+        self.memory.save_procedure("ma tache", self.STEPS)
+        again = self.memory.save_procedure("ma tache", self.STEPS[:1])
+
+        self.assertFalse(again.data["created"])
+        got = self.memory.get_procedure("ma tache")
+        self.assertEqual(len(got.data["procedure"]["steps"]), 1)
+
+    def test_steps_are_reduced_to_tool_and_target_only(self):
+        saved = self.memory.save_procedure("fuite", [
+            {"tool": "type_text", "target": "champ", "text": "SECRET_BODY"},
+            "pas un dict",
+            {"target": "sans tool"},
+        ])
+        self.assertTrue(saved.ok)
+        steps = saved.data["procedure"]["steps"]
+        self.assertEqual(steps, [{"tool": "type_text", "target": "champ"}])
+        self.assertNotIn("SECRET_BODY", repr(self.store.get(saved.data["procedure"]["id"]).content))
+
+    def test_empty_procedure_is_rejected(self):
+        result = self.memory.save_procedure("vide", [])
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "invalid_procedure")
+
+    def test_secret_in_step_is_refused(self):
+        result = self.memory.save_procedure("login", [
+            {"tool": "type_text", "target": "mot de passe hunter2"},
+        ])
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "secret_refused")
+        self.assertEqual(self.store.count(), 0)
+
+    def test_get_unknown_procedure(self):
+        result = self.memory.get_procedure("inconnue")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "memory_not_found")
+
+    def test_procedure_is_a_memory_kind(self):
+        self.memory.save_procedure("ma tache", self.STEPS)
+        recalled = self.memory.recall("tache", kind="procedure")
+        self.assertTrue(recalled.ok)
+        self.assertEqual(recalled.data["count"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
