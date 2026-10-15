@@ -114,6 +114,7 @@ class PlannerEngineTest(unittest.TestCase):
         self.assertEqual(outcome.status, "needs_confirmation")
         self.assertEqual(outcome.pending, {
             "token": "tok123", "tool": "prepare_send_message", "target_app": "WhatsApp",
+            "arguments": {"app_name": "WhatsApp", "text": "Salut"},
         })
         self.assertEqual(len(model.calls), 1)  # stopped right after preparing
         self.assertNotIn(("confirm_action", "tok123"), fake.calls)

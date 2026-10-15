@@ -148,7 +148,12 @@ class PlannerEngine:
         self.clock = clock if clock is not None else time.monotonic
         self.system_prompt = system_prompt
 
-    async def run(self, goal: str, cancel: threading.Event | None = None) -> TaskOutcome:
+    async def run(
+        self,
+        goal: str,
+        cancel: threading.Event | None = None,
+        on_step: Callable[[StepRecord], None] | None = None,
+    ) -> TaskOutcome:
         if not isinstance(goal, str) or not goal.strip():
             return TaskOutcome("failed", "L'objectif de la tache est vide.")
 
@@ -196,6 +201,11 @@ class PlannerEngine:
                     error_code=result.get("error_code"),
                 )
                 steps.append(record)
+                if on_step is not None:
+                    try:
+                        on_step(record)
+                    except Exception:
+                        pass
                 messages.append(
                     {
                         "role": "tool",
@@ -217,6 +227,9 @@ class PlannerEngine:
                             "token": result["token"],
                             "tool": call.name,
                             "target_app": result.get("target_app"),
+                            # What was prepared, so the user can confirm
+                            # knowingly. Never journaled.
+                            "arguments": dict(call.arguments),
                         },
                     )
 

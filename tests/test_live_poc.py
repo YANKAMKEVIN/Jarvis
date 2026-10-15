@@ -39,6 +39,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "browse_open_url",
     "browse_search_web",
     "cancel_action",
+    "cancel_task",
     "capture_region",
     "capture_screen",
     "capture_window",
@@ -90,6 +91,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "remember",
     "rename_file",
     "right_click",
+    "run_task",
     "scroll",
     "select_all_and_copy",
     "select_all_and_delete",
@@ -97,6 +99,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "set_brightness",
     "set_clipboard_text",
     "set_volume",
+    "task_status",
     "type_text",
 ]
 

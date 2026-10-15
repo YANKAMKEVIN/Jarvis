@@ -1,8 +1,9 @@
 # Phase 3 — Boucle de planification
 
-> Statut : **3a fait** (moteur + adaptateur Ollama local, testés). 3b et 3c à
-> venir. Contrainte retenue : **aucune dépense** — le cerveau est un modèle
-> local Ollama, gratuit et privé ; le moteur reste indépendant du modèle.
+> Statut : **3a et 3b faits** (moteur, modèle local Ollama, branchement à la
+> voix avec tâches en arrière-plan). 3c à venir : vraies tâches mesurées.
+> Contrainte retenue : **aucune dépense** — le cerveau est un modèle local
+> Ollama, gratuit et privé ; le moteur reste indépendant du modèle.
 
 ## Le problème
 
@@ -119,6 +120,18 @@ du modèle temps réel ont des délais limites). Donc :
 - `src/jarvis/planner/models.py` : l'interface modèle, un faux modèle
   scénarisé pour les tests, et l'adaptateur Ollama local.
 - Essai manuel : `PYTHONPATH=src .venv/bin/python -m jarvis.planner "objectif"`.
+
+## État de la phase 3b
+
+- `src/jarvis/planner/tasks.py` : une tâche à la fois en arrière-plan,
+  avancement (`task_status`), annulation (`cancel_task`), annonce de fin.
+- Tools vocaux `run_task`, `task_status`, `cancel_task` ; consignes dans le
+  prompt : `run_task` seulement pour les tâches longues.
+- Le planificateur utilise le **même registre** que la voix : un message
+  qu'il prépare est annoncé (application, destinataire, contenu) et ne part
+  qu'après ton « oui » (`confirm_action`).
+- L'agent vocal prononce l'annonce de fin via la session LiveKit.
+- Journal : `run_task`, puis `task_completed` / `task_failed`…
 
 ### Mesures sur le Mac actuel (M3, 8 Go, `granite4:3b`)
 

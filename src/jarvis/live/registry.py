@@ -24,6 +24,9 @@ from jarvis.capabilities.vision import VisionCapability
 from jarvis.capabilities.windows import WindowCapability
 from jarvis.live.config import debug_live, get_vision_model, is_vision_enabled
 from jarvis.live.confirmation import PendingActionStore
+from jarvis.planner.engine import PlannerEngine, TaskOutcome
+from jarvis.planner.models import OllamaPlannerModel
+from jarvis.planner.tasks import TaskManager, announcement_for
 from jarvis.tools.vision import VisionTools
 
 
@@ -54,6 +57,7 @@ class ToolRegistry:
         messaging_capability=None,
         memory_capability=None,
         pending_actions=None,
+        planner_model=None,
     ):
         self.audio = (
             audio_capability
@@ -157,6 +161,23 @@ class ToolRegistry:
         self.vision_lock = asyncio.Lock()
         self.confirmation_lock = asyncio.Lock()
         self.memory_lock = asyncio.Lock()
+        # Brain of background tasks; local Ollama unless injected (tests).
+        self.planner_model = planner_model
+        # Set by the voice agent: async callable speaking an announcement.
+        self.task_notifier = None
+        self.tasks: TaskManager | None = None
+
+    def set_task_notifier(self, notifier) -> None:
+        self.task_notifier = notifier
+
+    async def _on_task_finished(self, goal: str, outcome: TaskOutcome) -> None:
+        await self._log_action(
+            f"task_{outcome.status}",
+            None,
+            {"ok": outcome.status in ("completed", "needs_confirmation")},
+        )
+        if self.task_notifier is not None:
+            await self.task_notifier(announcement_for(goal, outcome))
 
     async def _preferred_media_app(self) -> str | None:
         # Memory applied locally: the model never sees the preference.
@@ -1828,7 +1849,58 @@ class ToolRegistry:
             self._debug_vision_result("ask_about_screen", result)
             return result.to_livekit_dict()
 
-        return [
+        @function_tool(
+            name="run_task",
+            description=(
+                "Confie a Jarvis une TACHE LONGUE en plusieurs etapes qui demande "
+                "de chercher, verifier et enchainer plusieurs actions (par exemple : "
+                "retrouve le dernier PDF telecharge, renomme-le et range-le dans "
+                "Documents). La tache tourne en arriere-plan avec un planificateur "
+                "local plus lent (souvent une minute) ; le resultat sera annonce a la "
+                "fin. N'utilise PAS ce tool pour une demande simple ou un enchainement "
+                "court que tu peux faire directement avec tes autres tools (volume, "
+                "media, ouvrir une app ou un site, envoyer un message). goal : "
+                "l'objectif complet et autonome, en francais."
+            ),
+        )
+        @self._journaled("run_task")
+        async def run_task(goal: str) -> dict:
+            """Start a multi-step planner task in the background."""
+            debug_live(
+                "tool_call",
+                tool="run_task",
+                goal_length=len(goal) if isinstance(goal, str) else None,
+            )
+            return self.tasks.start(goal)
+
+        @function_tool(
+            name="task_status",
+            description=(
+                "Donne l'avancement de la tache en arriere-plan (en cours, nombre "
+                "d'etapes, duree) ou le resultat de la derniere tache. Utilise ce "
+                "tool pour 'ou en est la tache', 'c'est bientot fini ?'."
+            ),
+        )
+        async def task_status() -> dict:
+            """Report the background task progress or last result."""
+            debug_live("tool_call", tool="task_status")
+            return self.tasks.status()
+
+        @function_tool(
+            name="cancel_task",
+            description=(
+                "Annule la tache en arriere-plan quand l'utilisateur dit stop, "
+                "annule ou laisse tomber pendant qu'une tache tourne. Elle s'arrete "
+                "avant l'etape suivante."
+            ),
+        )
+        @self._journaled("cancel_task")
+        async def cancel_task() -> dict:
+            """Request cancellation of the running background task."""
+            debug_live("tool_call", tool="cancel_task")
+            return self.tasks.cancel()
+
+        tools = [
             set_volume,
             get_volume,
             open_app,
@@ -1896,7 +1968,18 @@ class ToolRegistry:
             capture_window,
             describe_screen,
             ask_about_screen,
+            run_task,
+            task_status,
+            cancel_task,
         ]
+
+        # The planner drives these very tools (same locks, journal and pending
+        # action store), so a message it prepares is confirmable by voice.
+        self.tasks = TaskManager(
+            lambda: PlannerEngine(self.planner_model or OllamaPlannerModel(), tools),
+            on_finished=self._on_task_finished,
+        )
+        return tools
 
     @staticmethod
     def _debug_tool_result(tool_name: str, result) -> None:
@@ -2143,7 +2226,11 @@ class ToolRegistry:
             debug_live("tool_failed", tool=tool_name, error=result.error_code)
 
 
-def create_live_tools(
+def create_live_tools(*args, **kwargs) -> list[Any]:
+    return create_live_registry(*args, **kwargs).livekit_tools()
+
+
+def create_live_registry(
     security=None,
     macos_tools=None,
     filesystem_tools=None,
@@ -2167,7 +2254,8 @@ def create_live_tools(
     vision_capability=None,
     messaging_capability=None,
     memory_capability=None,
-) -> list[Any]:
+    planner_model=None,
+) -> "ToolRegistry":
     if audio_capability is None:
         audio_capability = AudioCapability(
             security=security,
@@ -2274,4 +2362,5 @@ def create_live_tools(
         vision_capability=vision_capability,
         messaging_capability=messaging_capability,
         memory_capability=memory_capability,
-    ).livekit_tools()
+        planner_model=planner_model,
+    )
