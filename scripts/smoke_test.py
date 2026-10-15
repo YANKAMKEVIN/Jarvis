@@ -535,6 +535,41 @@ def group_memory(ctx: Context, step) -> None:
     step("forget", forget)
 
 
+def group_knowledge(ctx: Context, step) -> None:
+    # Exercises the real production search path (SearXNG if up, else keyless
+    # Google News / DuckDuckGo). Read-only, no Mac UI, no LLM synthesis -- fast.
+    # Needs the network; without it the steps SKIP rather than fail.
+    from jarvis.knowledge.keyless import FallbackProvider, KeylessWebProvider
+    from jarvis.knowledge.models import SearchMode
+    from jarvis.knowledge.searxng import SearXNGProvider
+
+    provider = FallbackProvider(SearXNGProvider(), KeylessWebProvider())
+
+    def news():
+        try:
+            results = provider.search("France", mode=SearchMode.NEWS)
+        except Exception as error:
+            raise Skipped(f"pas de reseau : {error}")
+        expect(len(results) >= 1, "aucun resultat d'actualite")
+        first = results[0]
+        expect(first.url.startswith("http"), f"url invalide : {first.url}")
+        expect(bool(first.title.strip()), "titre vide")
+        expect(first.published_date is not None, "date d'actualite non normalisee")
+
+    def general():
+        try:
+            results = provider.search("Wikipedia", mode=SearchMode.GENERAL)
+        except Exception as error:
+            raise Skipped(f"pas de reseau : {error}")
+        # General scraping is best effort; tolerate zero but verify shape if any.
+        if not results:
+            raise Skipped("aucun resultat general (scraping best effort)")
+        expect(results[0].url.startswith("http"), f"url invalide : {results[0].url}")
+
+    step("recherche actus (chemin live)", news)
+    step("recherche generale (best effort)", general)
+
+
 GROUPS = {
     "system": group_system,
     "volume": group_volume,
@@ -547,6 +582,7 @@ GROUPS = {
     "safari": group_safari,
     "messaging": group_messaging,
     "memory": group_memory,
+    "knowledge": group_knowledge,
 }
 
 
