@@ -28,6 +28,7 @@ from jarvis.live.confirmation import PendingActionStore
 from jarvis.planner.engine import PlannerEngine, TaskOutcome
 from jarvis.planner.models import build_planner_model
 from jarvis.planner.tasks import TaskManager, announcement_for
+from jarvis.schedule.store import ScheduleError, ScheduledMessageStore, parse_due_at
 from jarvis.tools.vision import VisionTools
 
 
@@ -58,6 +59,7 @@ class ToolRegistry:
         messaging_capability=None,
         memory_capability=None,
         knowledge_capability=None,
+        schedule_store=None,
         pending_actions=None,
         planner_model=None,
     ):
@@ -151,6 +153,11 @@ class ToolRegistry:
             knowledge_capability
             if knowledge_capability is not None
             else self._default_knowledge()
+        )
+        self.schedule_store = (
+            schedule_store
+            if schedule_store is not None
+            else ScheduledMessageStore()
         )
         self.pending_actions = (
             pending_actions
@@ -2135,6 +2142,143 @@ class ToolRegistry:
             )
             return self.tasks.start(goal)
 
+        @function_tool(
+            name="schedule_message",
+            description=(
+                "PLANIFIE l'envoi d'un message a un destinataire a une date/heure "
+                "future, SANS l'envoyer maintenant. Utilise ce tool quand "
+                "l'utilisateur dit 'envoie X a Marie demain a 9h', 'programme un "
+                "message pour ce soir'. Calcule when comme une date/heure absolue au "
+                "format ISO 8601 (par exemple 2026-10-16T09:00) a partir de l'heure "
+                "actuelle. Comme tout envoi, ce tool renvoie un token et "
+                "requires_confirmation : annonce a l'utilisateur l'application, le "
+                "destinataire, le contenu et l'heure, puis attends un oui clair avant "
+                "confirm_action(token). Le message partira tout seul a l'heure dite si "
+                "le Mac est allume, deverrouille et WhatsApp lance ; le destinataire "
+                "sera revérifie a ce moment-la. app_name par defaut WhatsApp."
+            ),
+        )
+        @self._journaled("schedule_message", "app_name")
+        async def schedule_message(
+            recipient: str,
+            text: str,
+            when: str,
+            app_name: str = "WhatsApp",
+        ) -> dict:
+            """Register a future send for confirmation; nothing is scheduled yet."""
+            debug_live(
+                "tool_call",
+                tool="schedule_message",
+                app_name=app_name,
+                text_length=len(text) if isinstance(text, str) else None,
+            )
+            if not isinstance(text, str) or not text.strip():
+                return ToolResult.failure(
+                    action="schedule_message",
+                    message="Le message a planifier est obligatoire.",
+                    error_code="invalid_text",
+                ).to_livekit_dict()
+            if not isinstance(recipient, str) or not recipient.strip():
+                return ToolResult.failure(
+                    action="schedule_message",
+                    message="Le destinataire est obligatoire.",
+                    error_code="invalid_recipient",
+                ).to_livekit_dict()
+            try:
+                due_at = parse_due_at(when)
+            except ScheduleError as error:
+                return ToolResult.failure(
+                    action="schedule_message",
+                    message=error.message,
+                    error_code=error.code,
+                ).to_livekit_dict()
+
+            # Apply memory locally: "ma mere" -> stored contact name.
+            async with self.memory_lock:
+                resolved = await asyncio.to_thread(self.memory.resolve_person, recipient)
+            target_recipient = resolved or recipient.strip()
+
+            def _executor():
+                row = self.schedule_store.add(app_name, target_recipient, text, due_at)
+                return ToolResult.success(
+                    action="schedule_message",
+                    message="Message planifie.",
+                    scheduled_id=row["id"],
+                    recipient=row["recipient"],
+                    due_at=row["due_at"],
+                    app=row["app"],
+                )
+
+            async with self.confirmation_lock:
+                token = self.pending_actions.register("schedule_message", _executor)
+            return ToolResult.success(
+                action="schedule_message",
+                message=(
+                    "Envoi planifie a confirmer. Annonce le destinataire, le contenu "
+                    "et l'heure, puis attends la confirmation avant confirm_action."
+                ),
+                requires_confirmation=True,
+                token=token,
+                target_app=app_name,
+                due_at=due_at,
+                text_length=len(text),
+                recipient_from_memory=bool(resolved),
+            ).to_livekit_dict()
+
+        @function_tool(
+            name="list_scheduled_messages",
+            description=(
+                "Liste les messages planifies en attente d'envoi (id, destinataire, "
+                "heure prevue, contenu). Utilise ce tool pour 'quels messages sont "
+                "programmes', 'qu'est-ce que tu dois envoyer plus tard'."
+            ),
+        )
+        async def list_scheduled_messages() -> dict:
+            """Return pending scheduled messages."""
+            debug_live("tool_call", tool="list_scheduled_messages")
+            rows = await asyncio.to_thread(self.schedule_store.list, "pending")
+            messages = [
+                {
+                    "id": row["id"],
+                    "app": row["app"],
+                    "recipient": row["recipient"],
+                    "due_at": row["due_at"],
+                    "text": row["text"],
+                }
+                for row in rows
+            ]
+            return ToolResult.success(
+                action="list_scheduled_messages",
+                message=f"{len(messages)} message(s) planifie(s) en attente.",
+                scheduled=messages,
+                count=len(messages),
+            ).to_livekit_dict()
+
+        @function_tool(
+            name="cancel_scheduled_message",
+            description=(
+                "Annule un message planifie par son id (obtenu via "
+                "list_scheduled_messages). Utilise ce tool pour 'annule le message "
+                "prevu pour Marie', 'ne l'envoie finalement pas'."
+            ),
+        )
+        @self._journaled("cancel_scheduled_message")
+        async def cancel_scheduled_message(message_id: int) -> dict:
+            """Cancel a still-pending scheduled message."""
+            debug_live("tool_call", tool="cancel_scheduled_message")
+            cancelled = await asyncio.to_thread(self.schedule_store.cancel, message_id)
+            if not cancelled:
+                return ToolResult.failure(
+                    action="cancel_scheduled_message",
+                    message="Aucun message planifie en attente avec cet id.",
+                    error_code="scheduled_message_not_found",
+                ).to_livekit_dict()
+            return ToolResult.success(
+                action="cancel_scheduled_message",
+                message="Message planifie annule.",
+                scheduled_id=message_id,
+            ).to_livekit_dict()
+
         tools = [
             set_volume,
             get_volume,
@@ -2205,6 +2349,9 @@ class ToolRegistry:
             ask_about_screen,
             search_the_web,
             send_last_web_result,
+            schedule_message,
+            list_scheduled_messages,
+            cancel_scheduled_message,
             run_task,
             task_status,
             cancel_task,
@@ -2499,6 +2646,7 @@ def create_live_registry(
     messaging_capability=None,
     memory_capability=None,
     knowledge_capability=None,
+    schedule_store=None,
     planner_model=None,
 ) -> "ToolRegistry":
     if audio_capability is None:
@@ -2608,5 +2756,6 @@ def create_live_registry(
         messaging_capability=messaging_capability,
         memory_capability=memory_capability,
         knowledge_capability=knowledge_capability,
+        schedule_store=schedule_store,
         planner_model=planner_model,
     )

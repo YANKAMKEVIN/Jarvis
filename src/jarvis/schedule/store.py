@@ -15,6 +15,7 @@ import os
 import sqlite3
 import time
 from contextlib import closing
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -49,6 +50,32 @@ class ScheduleError(Exception):
         super().__init__(message)
         self.message = message
         self.code = code
+
+
+def parse_due_at(when: str, now: float | None = None) -> float:
+    """Parse an ISO 8601 date/time into a future epoch.
+
+    A naive value is read in the machine's local time zone. Raises ScheduleError
+    with "invalid_when" if unparseable, or "due_in_past" if not in the future.
+    """
+    if not isinstance(when, str) or not when.strip():
+        raise ScheduleError("La date et l'heure d'envoi sont obligatoires.", "invalid_when")
+    text = when.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        raise ScheduleError(
+            "Date/heure non comprise (format ISO 8601 attendu).", "invalid_when"
+        )
+    if moment.tzinfo is None:
+        moment = moment.astimezone()  # assume local time
+    epoch = moment.timestamp()
+    reference = time.time() if now is None else float(now)
+    if epoch <= reference:
+        raise ScheduleError("L'heure d'envoi est deja passee.", "due_in_past")
+    return epoch
 
 
 def default_schedule_path() -> Path:

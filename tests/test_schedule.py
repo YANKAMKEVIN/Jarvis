@@ -1,10 +1,17 @@
+import asyncio
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from jarvis.capabilities.results import ToolResult
+from jarvis.live.registry import create_live_registry
 from jarvis.schedule.runner import DEFAULT_GRACE_SECONDS, deliver_due
-from jarvis.schedule.store import ScheduleError, ScheduledMessageStore
+from jarvis.schedule.store import (
+    ScheduleError,
+    ScheduledMessageStore,
+    parse_due_at,
+)
 
 
 class Clock:
@@ -173,6 +180,85 @@ class RunnerTests(unittest.TestCase):
 
         self.assertEqual(store.get(row["id"])["status"], "pending")  # deferred, retry
         self.assertEqual(messaging.sent, [])
+
+
+class ParseDueAtTests(unittest.TestCase):
+    def test_future_iso_returns_epoch(self):
+        epoch = parse_due_at("2999-01-01T09:00", now=1000.0)
+        self.assertGreater(epoch, 1000.0)
+
+    def test_past_is_rejected(self):
+        with self.assertRaises(ScheduleError) as ctx:
+            parse_due_at("2000-01-01T09:00", now=4_000_000_000.0)
+        self.assertEqual(ctx.exception.code, "due_in_past")
+
+    def test_garbage_is_rejected(self):
+        with self.assertRaises(ScheduleError) as ctx:
+            parse_due_at("demain matin", now=1000.0)
+        self.assertEqual(ctx.exception.code, "invalid_when")
+
+    def test_blank_is_rejected(self):
+        with self.assertRaises(ScheduleError):
+            parse_due_at("   ", now=1000.0)
+
+
+class FakeMemory:
+    def resolve_person(self, name):
+        return None
+
+    def log_action(self, *args, **kwargs):
+        return None
+
+
+class ScheduleToolsTest(unittest.TestCase):
+    def _tools(self):
+        tmp = tempfile.mkdtemp()
+        store = ScheduledMessageStore(path=Path(tmp) / "scheduled.db")
+        registry = create_live_registry(
+            schedule_store=store, memory_capability=FakeMemory(),
+        )
+        tools = {tool.info.name: tool for tool in registry.livekit_tools()}
+        return tools, store
+
+    def test_schedule_then_confirm_stores_pending(self):
+        tools, store = self._tools()
+        when = (datetime.now() + timedelta(days=1)).isoformat(timespec="minutes")
+
+        prepared = asyncio.run(tools["schedule_message"]("Marie", "Salut", when))
+        self.assertTrue(prepared["ok"])
+        self.assertTrue(prepared["requires_confirmation"])
+        self.assertEqual(store.list("pending"), [])  # not scheduled until confirmed
+
+        confirmed = asyncio.run(tools["confirm_action"](prepared["token"]))
+        self.assertTrue(confirmed["ok"])
+        pending = store.list("pending")
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["recipient"], "Marie")
+        self.assertEqual(pending[0]["text"], "Salut")
+
+    def test_schedule_rejects_past_time(self):
+        tools, store = self._tools()
+        result = asyncio.run(tools["schedule_message"]("Marie", "Salut", "2000-01-01T09:00"))
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "due_in_past")
+
+    def test_list_and_cancel(self):
+        tools, store = self._tools()
+        row = store.add("WhatsApp", "Marie", "Salut", due_at=4_000_000_000.0)
+
+        listed = asyncio.run(tools["list_scheduled_messages"]())
+        self.assertEqual(listed["count"], 1)
+        self.assertEqual(listed["scheduled"][0]["id"], row["id"])
+
+        cancelled = asyncio.run(tools["cancel_scheduled_message"](row["id"]))
+        self.assertTrue(cancelled["ok"])
+        self.assertEqual(store.get(row["id"])["status"], "cancelled")
+
+    def test_cancel_unknown_id(self):
+        tools, store = self._tools()
+        result = asyncio.run(tools["cancel_scheduled_message"](999))
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "scheduled_message_not_found")
 
 
 if __name__ == "__main__":
