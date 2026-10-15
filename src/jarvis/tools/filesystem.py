@@ -415,6 +415,27 @@ class FileSystemTools:
             action="move_file",
         )
 
+        # "Move X into Documents": an existing folder (not a symlink) as the
+        # destination means "inside it", keeping the source name. Collisions
+        # inside that folder are still refused by _move_or_rename.
+        if resolved_destination.is_dir() and not resolved_destination.is_symlink():
+            canonical_source = resolved_source.resolve(strict=False)
+            canonical_folder = resolved_destination.resolve(strict=False)
+
+            if canonical_folder == canonical_source.parent:
+                raise FileSystemError(
+                    "Le fichier ou dossier est deja dans ce dossier.",
+                    "same_path",
+                )
+
+            if canonical_folder.is_relative_to(canonical_source):
+                raise FileSystemError(
+                    "Impossible de deplacer un dossier dans lui-meme.",
+                    "destination_inside_source",
+                )
+
+            resolved_destination = resolved_destination / resolved_source.name
+
         return self._move_or_rename(
             action="move_file",
             source=resolved_source,

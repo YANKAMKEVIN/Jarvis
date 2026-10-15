@@ -619,8 +619,10 @@ class ToolRegistry:
         @function_tool(
             name="move_file",
             description=(
-                "Deplace un fichier ou dossier local vers une destination exacte "
-                "sans jamais ecraser de chemin existant."
+                "Deplace un fichier ou dossier local sans jamais ecraser de "
+                "chemin existant. destination est soit le chemin final exact, "
+                "soit un dossier existant (par exemple Documents ou Bureau) : "
+                "l'element y est alors place en gardant son nom."
             ),
         )
         async def move_file(source: str, destination: str) -> dict:

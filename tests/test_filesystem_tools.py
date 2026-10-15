@@ -190,6 +190,42 @@ class FileSystemToolsTest(unittest.TestCase):
             "destination_parent_missing",
         )
 
+    def test_move_into_existing_folder_keeps_source_name(self):
+        source = self.write_file("Documents/file.txt")
+        (self.home / "Downloads").mkdir(exist_ok=True)
+
+        result = self.tools.move_file(str(source), str(self.home / "Downloads"))
+
+        self.assertTrue(result["state_confirmed"])
+        self.assertEqual(result["destination"], str(self.home / "Downloads/file.txt"))
+        self.assertFalse(source.exists())
+        self.assertTrue((self.home / "Downloads/file.txt").exists())
+
+    def test_move_into_folder_refuses_collision_without_mutation(self):
+        source = self.write_file("Documents/file.txt")
+        existing = self.write_file("Downloads/file.txt")
+
+        with self.assertRaises(FileSystemError) as context:
+            self.tools.move_file(str(source), str(self.home / "Downloads"))
+
+        self.assertEqual(context.exception.code, "destination_exists")
+        self.assertTrue(source.exists())
+        self.assertTrue(existing.exists())
+
+    def test_move_into_own_parent_or_inside_itself_is_refused(self):
+        folder = self.home / "Documents/Projet"
+        (folder / "sub").mkdir(parents=True)
+
+        with self.assertRaises(FileSystemError) as same_parent:
+            self.tools.move_file(str(folder), str(self.home / "Documents"))
+
+        with self.assertRaises(FileSystemError) as inside:
+            self.tools.move_file(str(folder), str(folder / "sub"))
+
+        self.assertEqual(same_parent.exception.code, "same_path")
+        self.assertEqual(inside.exception.code, "destination_inside_source")
+        self.assertTrue((folder / "sub").is_dir())
+
     def test_outside_home_and_path_traversal_are_refused(self):
         outside = Path(self.tempdir.name).parent / "outside-jarvis-test.txt"
 
