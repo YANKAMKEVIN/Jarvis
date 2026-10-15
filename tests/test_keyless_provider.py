@@ -5,6 +5,7 @@ from jarvis.knowledge.keyless import (
     FallbackProvider,
     KeylessWebProvider,
     _decode_ddg_href,
+    _rfc822_to_iso,
 )
 from jarvis.knowledge.models import SearchMode
 from jarvis.knowledge.searxng import SearXNGError
@@ -94,6 +95,8 @@ class KeylessNewsTests(unittest.TestCase):
         self.assertEqual(first.title, "OpenAI lance un nouveau modele")
         self.assertEqual(first.url, "https://news.google.com/articles/abc")
         self.assertEqual(first.pubdate, "Wed, 15 Oct 2026 08:00:00 GMT")
+        # RFC 822 pubDate normalized to ISO so the service can date it.
+        self.assertEqual(first.published_date, "2026-10-15T08:00:00+00:00")
         self.assertIn("Le Monde", first.snippet)
 
     def test_malformed_feed_yields_empty(self):
@@ -142,6 +145,18 @@ class DecodeHrefTests(unittest.TestCase):
 
     def test_empty_href(self):
         self.assertEqual(_decode_ddg_href(""), "")
+
+
+class Rfc822DateTests(unittest.TestCase):
+    def test_parses_rfc822(self):
+        self.assertEqual(
+            _rfc822_to_iso("Wed, 15 Oct 2026 08:00:00 GMT"),
+            "2026-10-15T08:00:00+00:00",
+        )
+
+    def test_none_and_garbage_return_none(self):
+        self.assertIsNone(_rfc822_to_iso(None))
+        self.assertIsNone(_rfc822_to_iso("not a date"))
 
 
 class FallbackProviderTests(unittest.TestCase):

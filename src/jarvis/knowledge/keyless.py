@@ -20,6 +20,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 
 from jarvis.knowledge.models import SearchMode, SearchResult
@@ -103,13 +104,17 @@ class KeylessWebProvider:
             snippet = _strip_html(description)
             if source_name and source_name not in snippet:
                 snippet = f"{source_name} — {snippet}" if snippet else source_name
+            raw_pubdate = (item.findtext("pubDate") or "").strip() or None
             results.append(
                 SearchResult(
                     title=title,
                     url=link,
                     snippet=snippet,
-                    published_date=None,
-                    pubdate=(item.findtext("pubDate") or "").strip() or None,
+                    # RSS pubDate is RFC 822; expose it as ISO 8601 so the
+                    # knowledge service can date and rank the article (it only
+                    # parses ISO). Keep the raw value too, harmlessly.
+                    published_date=_rfc822_to_iso(raw_pubdate),
+                    pubdate=raw_pubdate,
                 )
             )
             if len(results) >= self.max_results:
@@ -186,6 +191,19 @@ class FallbackProvider:
             raise
         except Exception as error:  # a fallback bug must not crash the session
             raise SearXNGError("Les sources web ont echoue.") from error
+
+
+def _rfc822_to_iso(value: str | None) -> str | None:
+    """Convert an RSS RFC 822 date (e.g. 'Wed, 15 Oct 2026 08:00:00 GMT') to
+    ISO 8601, which KnowledgeService can parse. Returns None when absent or
+    unparseable, so a missing date simply stays unknown."""
+    if not value:
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed.isoformat() if parsed is not None else None
 
 
 def _strip_html(markup: str) -> str:
