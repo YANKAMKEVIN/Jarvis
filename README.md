@@ -201,6 +201,26 @@ rédaction.
 PYTHONPATH=src .venv/bin/python -m pytest -q
 ```
 
+### Smoke test sur la vraie machine
+
+`scripts/smoke_test.py` appelle les tools réellement exposés à Gemini Live
+(`create_live_tools`) sur le Mac, puis vérifie chaque effet par une
+observation indépendante de Jarvis (`osascript`, `pbpaste`, `lsappinfo`,
+disque). Chaque scénario restaure l'état touché (volume, presse-papiers,
+souris, apps, fichiers). Rien n'est jamais envoyé : la messagerie est
+seulement préparée puis annulée.
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/smoke_test.py
+PYTHONPATH=src .venv/bin/python scripts/smoke_test.py --group safari --group textedit
+PYTHONPATH=src .venv/bin/python scripts/smoke_test.py --list
+```
+
+Il pilote clavier et souris : ne pas utiliser le Mac pendant l'exécution.
+Les groupes qui exigent une permission macOS absente (Accessibilité,
+Enregistrement de l'écran) sont marqués `SKIP`, jamais `FAIL`. Code de
+sortie non nul en cas d'échec ; `--json` écrit un rapport.
+
 ## Diagnostic Accessibility
 
 Outil local **en lecture seule** pour découvrir les cibles (`query` / `role`) à
