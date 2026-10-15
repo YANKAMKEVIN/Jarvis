@@ -46,6 +46,7 @@ src/jarvis/
 ├── tools/             # Implémentations macOS bas niveau
 ├── knowledge/         # Recherche externe (SearXNG) + benchmark
 ├── memory/            # Mémoire durable locale (SQLite + FTS5, filtre à secrets)
+├── planner/           # Boucle de planification (phase 3a, modèle local Ollama)
 └── live/              # POC Gemini Live + LiveKit (isolé)
 ```
 
