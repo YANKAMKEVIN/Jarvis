@@ -45,6 +45,7 @@ src/jarvis/
 ├── capabilities/      # Briques d'action de haut niveau (composables)
 ├── tools/             # Implémentations macOS bas niveau
 ├── knowledge/         # Recherche externe (SearXNG) + benchmark
+├── memory/            # Mémoire durable locale (SQLite + FTS5, filtre à secrets)
 └── live/              # POC Gemini Live + LiveKit (isolé)
 ```
 
@@ -73,6 +74,7 @@ Deux niveaux séparent clairement l'intention et l'exécution :
 | `AudioCapability` | Volume |
 | `SystemCapability` | Batterie, luminosité, infos système, verrouillage |
 | `InteractionCapability` | **Flux composites** multi-étapes vérifiés (voir ci-dessous) |
+| `MemoryCapability` | **Mémoire durable** locale : retenir, retrouver, oublier (voir ci-dessous) |
 
 ### InteractionCapability
 
@@ -123,6 +125,37 @@ jamais l'image — le fichier n'est pas analysé.
 Par défaut, les captures sont enregistrées dans `~/Pictures/Jarvis/` avec un nom
 horodaté. En mode Live : tools `capture_screen`, `capture_region`,
 `capture_window`.
+
+### MemoryCapability
+
+Mémoire durable **locale et privée** : une base SQLite (recherche plein texte
+FTS5) dans `~/Library/Application Support/Jarvis/memory.db`, lisible par
+l'utilisateur seul (`0600`). Chemin modifiable via `JARVIS_MEMORY_PATH`.
+
+- **Types** : `profile` (l'utilisateur), `person` (surnom ou relation → nom
+  exact du contact), `preference`, `fact`. Même type + même sujet = mise à jour,
+  jamais de doublon.
+- **Écriture** : `remember` uniquement sur demande explicite (« souviens-toi
+  que… »). Une information *déduite* passe par `propose_memory` → question à
+  l'utilisateur → `confirm_action` ; rien n'est stocké sans son accord.
+- **Jamais de secrets** : mots de passe, codes, numéros de carte (Luhn), IBAN,
+  clés d'API… sont refusés (`secret_refused`).
+- **Rien n'est envoyé d'avance au modèle** : aucun résumé de mémoire dans le
+  prompt. Les tools appliquent la mémoire localement — `prepare_send_message`
+  traduit « ma mère » en nom de contact sans renvoyer ce nom au modèle. Seuls
+  les résultats d'un `recall` explicite remontent au modèle.
+- **Oubli** : `forget` par identifiant ou requête ; refuse de deviner si
+  plusieurs souvenirs correspondent (`ambiguous_memory`).
+
+- **Journal d'activité** : chaque action notable (ouvrir une app, régler le
+  volume, préparer / envoyer un message, ouvrir un site…) est notée avec
+  l'heure et le résultat, gardée 30 jours. Jamais de contenu : ni texte de
+  message, ni presse-papiers, ni texte tapé, ni chemin de fichier ; pour un
+  site, seul l'hôte est gardé. Le tool `recent_activity` répond à « qu'est-ce
+  que tu as fait ? » ou « tu as bien envoyé le message ? ».
+
+En mode Live : tools `remember`, `propose_memory`, `recall`, `list_memories`,
+`forget`, `recent_activity`. Les tests n'utilisent jamais la vraie base (`tests/conftest.py`).
 
 ## Les trois modes d'exécution
 
@@ -218,7 +251,10 @@ PYTHONPATH=src .venv/bin/python scripts/smoke_test.py --list
 
 Il pilote clavier et souris : ne pas utiliser le Mac pendant l'exécution.
 Les groupes qui exigent une permission macOS absente (Accessibilité,
-Enregistrement de l'écran) sont marqués `SKIP`, jamais `FAIL`. Code de
+Enregistrement de l'écran) ou un écran déverrouillé sont marqués `SKIP`, jamais
+`FAIL`. Si une étape de préparation échoue (ex. l'app n'est pas au premier
+plan), les étapes dépendantes sont ignorées : le test ne tape jamais à
+l'aveugle. La mémoire est testée sur une base temporaire. Code de
 sortie non nul en cas d'échec ; `--json` écrit un rapport.
 
 ## Diagnostic Accessibility

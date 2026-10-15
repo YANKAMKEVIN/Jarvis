@@ -1,5 +1,7 @@
 import asyncio
-from typing import Any
+import functools
+import inspect
+from typing import Any, Callable
 
 from livekit.agents import function_tool
 
@@ -11,6 +13,7 @@ from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.media import MediaCapability
+from jarvis.capabilities.memory import MemoryCapability
 from jarvis.capabilities.messaging import MessagingCapability
 from jarvis.capabilities.mouse import MouseCapability
 from jarvis.capabilities.results import ToolResult
@@ -49,6 +52,7 @@ class ToolRegistry:
         screenshot_capability=None,
         vision_capability=None,
         messaging_capability=None,
+        memory_capability=None,
         pending_actions=None,
     ):
         self.audio = (
@@ -132,6 +136,11 @@ class ToolRegistry:
             if messaging_capability is not None
             else MessagingCapability()
         )
+        self.memory = (
+            memory_capability
+            if memory_capability is not None
+            else MemoryCapability()
+        )
         self.pending_actions = (
             pending_actions
             if pending_actions is not None
@@ -147,6 +156,55 @@ class ToolRegistry:
         self.screenshot_lock = asyncio.Lock()
         self.vision_lock = asyncio.Lock()
         self.confirmation_lock = asyncio.Lock()
+        self.memory_lock = asyncio.Lock()
+
+    async def _preferred_media_app(self) -> str | None:
+        # Memory applied locally: the model never sees the preference.
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.memory.preferred_media_app)
+
+    async def _log_action(self, tool_name: str, target: str | None, result) -> None:
+        # Off the event loop, but kept apart from asyncio.to_thread which is
+        # reserved for capability calls.
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, self.memory.log_action, tool_name, target, result,
+        )
+
+    def _journaled(
+        self,
+        tool_name: str,
+        target_arg: str | None = None,
+        target_from: Callable[[Any], str | None] | None = None,
+    ):
+        """Record the action in the activity journal after it ran.
+
+        Only the tool name, a non-sensitive target (app name, URL host) and
+        the outcome are kept; never text, message content or paths.
+        """
+        def decorate(fn):
+            signature = inspect.signature(fn)
+
+            @functools.wraps(fn)
+            async def wrapper(*args, **kwargs):
+                result = await fn(*args, **kwargs)
+                target = None
+                if target_arg is not None:
+                    try:
+                        value = signature.bind_partial(*args, **kwargs).arguments.get(target_arg)
+                        target = target_from(value) if target_from else value
+                    except Exception:
+                        target = None
+                await self._log_action(
+                    tool_name,
+                    target if isinstance(target, str) else None,
+                    result,
+                )
+                return result
+
+            return wrapper
+
+        return decorate
 
     def livekit_tools(self) -> list[Any]:
         @function_tool(
@@ -157,6 +215,7 @@ class ToolRegistry:
                 "monter ou baisser le volume à un niveau précis entre 0 et 100."
             ),
         )
+        @self._journaled("set_volume")
         async def set_volume(volume: int) -> dict:
             """Set the Mac output volume to a value between 0 and 100."""
             debug_live("tool_call", tool="set_volume", volume=volume)
@@ -213,6 +272,7 @@ class ToolRegistry:
                 "Visual Studio Code."
             ),
         )
+        @self._journaled("open_app", "app_name")
         async def open_app(app_name: str) -> dict:
             """Open a macOS application by name."""
             debug_live("tool_call", tool="open_app", app_name=app_name)
@@ -241,6 +301,7 @@ class ToolRegistry:
                 "quitter ou arrêter une application."
             ),
         )
+        @self._journaled("close_app", "app_name")
         async def close_app(app_name: str) -> dict:
             """Close a macOS application by name."""
             debug_live("tool_call", tool="close_app", app_name=app_name)
@@ -301,11 +362,18 @@ class ToolRegistry:
                 "reprends la lecture, play ou mets la musique en pause."
             ),
         )
+        @self._journaled("play_pause")
         async def play_pause() -> dict:
             """Toggle play/pause for the active supported media app."""
             debug_live("tool_call", tool="play_pause")
             async with self.media_lock:
-                result = await asyncio.to_thread(self.media.play_pause)
+                # Inside the lock so concurrent media calls keep their order.
+                preferred = await self._preferred_media_app()
+                result = await (
+                    asyncio.to_thread(self.media.play_pause, preferred)
+                    if preferred
+                    else asyncio.to_thread(self.media.play_pause)
+                )
             self._debug_tool_result("play_pause", result)
             return result.to_livekit_dict()
 
@@ -317,11 +385,18 @@ class ToolRegistry:
                 "suivante, le titre suivant ou de passer au prochain morceau."
             ),
         )
+        @self._journaled("next_track")
         async def next_track() -> dict:
             """Skip to the next track in the active supported media app."""
             debug_live("tool_call", tool="next_track")
             async with self.media_lock:
-                result = await asyncio.to_thread(self.media.next_track)
+                # Inside the lock so concurrent media calls keep their order.
+                preferred = await self._preferred_media_app()
+                result = await (
+                    asyncio.to_thread(self.media.next_track, preferred)
+                    if preferred
+                    else asyncio.to_thread(self.media.next_track)
+                )
             self._debug_tool_result("next_track", result)
             return result.to_livekit_dict()
 
@@ -333,11 +408,18 @@ class ToolRegistry:
                 "demande la chanson précédente ou de revenir en arrière."
             ),
         )
+        @self._journaled("previous_track")
         async def previous_track() -> dict:
             """Go back to the previous track in the active supported media app."""
             debug_live("tool_call", tool="previous_track")
             async with self.media_lock:
-                result = await asyncio.to_thread(self.media.previous_track)
+                # Inside the lock so concurrent media calls keep their order.
+                preferred = await self._preferred_media_app()
+                result = await (
+                    asyncio.to_thread(self.media.previous_track, preferred)
+                    if preferred
+                    else asyncio.to_thread(self.media.previous_track)
+                )
             self._debug_tool_result("previous_track", result)
             return result.to_livekit_dict()
 
@@ -406,6 +488,7 @@ class ToolRegistry:
                 "entiere entre 0 et 100, puis retourne la luminosite observee."
             ),
         )
+        @self._journaled("set_brightness")
         async def set_brightness(level: int) -> dict:
             """Set the main display brightness to a value between 0 and 100."""
             debug_live("tool_call", tool="set_brightness", level=level)
@@ -420,6 +503,7 @@ class ToolRegistry:
                 "quand l'utilisateur demande explicitement de verrouiller son Mac."
             ),
         )
+        @self._journaled("lock_screen")
         async def lock_screen() -> dict:
             """Lock the current Mac session."""
             debug_live("tool_call", tool="lock_screen")
@@ -448,6 +532,7 @@ class ToolRegistry:
                 "d'application, puis verifie l'etat observe."
             ),
         )
+        @self._journaled("focus_window", "app_name")
         async def focus_window(app_name: str) -> dict:
             """Focus a macOS application window."""
             debug_live("tool_call", tool="focus_window", app_name=app_name)
@@ -462,6 +547,7 @@ class ToolRegistry:
                 "si app_name est fourni, puis verifie l'etat observe."
             ),
         )
+        @self._journaled("minimize_window", "app_name")
         async def minimize_window(app_name: str | None = None) -> dict:
             """Minimize the active window or an app window."""
             debug_live("tool_call", tool="minimize_window", app_name=app_name)
@@ -477,6 +563,7 @@ class ToolRegistry:
                 "le plein ecran macOS."
             ),
         )
+        @self._journaled("maximize_window", "app_name")
         async def maximize_window(app_name: str | None = None) -> dict:
             """Maximize the active window or an app window without fullscreen."""
             debug_live("tool_call", tool="maximize_window", app_name=app_name)
@@ -492,6 +579,7 @@ class ToolRegistry:
                 "right, center ou fullscreen."
             ),
         )
+        @self._journaled("move_window", "app_name")
         async def move_window(position: str, app_name: str | None = None) -> dict:
             """Move the active window or an app window."""
             debug_live(
@@ -558,6 +646,7 @@ class ToolRegistry:
                 "par un tool Files."
             ),
         )
+        @self._journaled("open_file")
         async def open_file(path: str) -> dict:
             """Open a local file with macOS."""
             debug_live("tool_call", tool="open_file", path=path)
@@ -572,6 +661,7 @@ class ToolRegistry:
                 "idealement un chemin absolu retourne par un tool Files."
             ),
         )
+        @self._journaled("open_folder")
         async def open_folder(path: str) -> dict:
             """Open a local folder in Finder."""
             debug_live("tool_call", tool="open_folder", path=path)
@@ -586,6 +676,7 @@ class ToolRegistry:
                 "verifie son existence."
             ),
         )
+        @self._journaled("create_folder")
         async def create_folder(path: str) -> dict:
             """Create a local folder without overwriting."""
             debug_live("tool_call", tool="create_folder", path=path)
@@ -600,6 +691,7 @@ class ToolRegistry:
                 "existante, puis verifie le resultat."
             ),
         )
+        @self._journaled("rename_file")
         async def rename_file(path: str, new_name: str) -> dict:
             """Rename a local file or folder without overwriting."""
             debug_live(
@@ -625,6 +717,7 @@ class ToolRegistry:
                 "l'element y est alors place en gardant son nom."
             ),
         )
+        @self._journaled("move_file")
         async def move_file(source: str, destination: str) -> dict:
             """Move a local file or folder without overwriting."""
             debug_live(
@@ -981,6 +1074,7 @@ class ToolRegistry:
                 "command_executed ne prouve pas le succes de la recherche/navigation."
             ),
         )
+        @self._journaled("focus_app_ui_and_type", "app_name")
         async def focus_app_ui_and_type(
             app_name: str,
             text: str,
@@ -1018,6 +1112,7 @@ class ToolRegistry:
                 "pour ouvrir une app et mettre le curseur dans un champ nomme."
             ),
         )
+        @self._journaled("open_app_and_focus_ui", "app_name")
         async def open_app_and_focus_ui(
             app_name: str,
             query: str,
@@ -1080,6 +1175,7 @@ class ToolRegistry:
                 "envoyees, pas que l'application a traite la demande."
             ),
         )
+        @self._journaled("send_prompt_to_app", "app_name")
         async def send_prompt_to_app(
             app_name: str,
             text: str,
@@ -1140,6 +1236,7 @@ class ToolRegistry:
                 "send_prompt_to_app pour cela."
             ),
         )
+        @self._journaled("prepare_send_message", "app_name")
         async def prepare_send_message(
             app_name: str,
             text: str,
@@ -1161,7 +1258,18 @@ class ToolRegistry:
                     error_code="invalid_text",
                 ).to_livekit_dict()
 
+            recipient_from_memory = False
             if isinstance(recipient, str) and recipient.strip():
+                # Apply memory locally: "ma mere" -> stored contact name. The
+                # model never needs (nor receives) the stored name.
+                async with self.memory_lock:
+                    resolved = await asyncio.to_thread(
+                        self.memory.resolve_person, recipient,
+                    )
+                if resolved:
+                    recipient = resolved
+                    recipient_from_memory = True
+
                 verification = await asyncio.to_thread(
                     self.messaging.ensure_recipient,
                     app_name,
@@ -1208,14 +1316,150 @@ class ToolRegistry:
                 text_length=len(text),
                 query_length=len(query) if isinstance(query, str) else None,
                 recipient_verified=bool(isinstance(recipient, str) and recipient.strip()),
+                recipient_from_memory=recipient_from_memory,
             ).to_livekit_dict()
+
+        @function_tool(
+            name="remember",
+            description=(
+                "Enregistre un souvenir durable UNIQUEMENT quand l'utilisateur "
+                "demande explicitement de retenir quelque chose (souviens-toi, "
+                "retiens, note que...). kind : profile (infos sur l'utilisateur), "
+                "person (subject = surnom ou relation comme 'ma mere', content = "
+                "nom exact du contact dans les apps), preference (subject = "
+                "domaine comme 'musique', content = la preference, par exemple "
+                "'Spotify' ou 'Apple Music'), fact (autre "
+                "information utile). Un souvenir de meme kind et subject est mis "
+                "a jour. Pour une information que tu as seulement deduite, "
+                "utilise propose_memory. Les secrets sont toujours refuses."
+            ),
+        )
+        @self._journaled("remember")
+        async def remember(kind: str, subject: str, content: str) -> dict:
+            """Store an explicitly requested long-term memory."""
+            debug_live("tool_call", tool="remember", kind=kind)
+            async with self.memory_lock:
+                result = await asyncio.to_thread(
+                    self.memory.remember, kind, subject, content, "user",
+                )
+            self._debug_tool_result("remember", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="propose_memory",
+            description=(
+                "Propose de retenir une information que tu as DEDUITE sans que "
+                "l'utilisateur demande de la retenir (par exemple il corrige deux "
+                "fois le meme nom de contact). N'enregistre rien : renvoie un "
+                "token et requires_confirmation. Demande alors a l'utilisateur, "
+                "en une phrase, s'il veut que tu retiennes cette information ; "
+                "seulement apres un oui clair, appelle confirm_action(token). "
+                "Sinon cancel_action(token). Memes kind que remember."
+            ),
+        )
+        async def propose_memory(kind: str, subject: str, content: str) -> dict:
+            """Register an inferred memory that is stored only on confirmation."""
+            debug_live("tool_call", tool="propose_memory", kind=kind)
+            refusal = self.memory.check_proposal(kind, subject, content)
+            if refusal is not None:
+                return refusal.to_livekit_dict()
+
+            def _executor():
+                return self.memory.remember(kind, subject, content, "inferred")
+
+            async with self.confirmation_lock:
+                token = self.pending_actions.register("remember_inferred", _executor)
+
+            return ToolResult.success(
+                action="propose_memory",
+                message=(
+                    "Rien n'est enregistre. Demande a l'utilisateur s'il veut que "
+                    "tu retiennes cette information, puis confirm_action ou "
+                    "cancel_action."
+                ),
+                requires_confirmation=True,
+                token=token,
+            ).to_livekit_dict()
+
+        @function_tool(
+            name="recall",
+            description=(
+                "Cherche dans la memoire durable de l'utilisateur (profil, "
+                "personnes, preferences, faits). Utilise ce tool quand "
+                "l'utilisateur pose une question sur ce qu'il t'a demande de "
+                "retenir, ou quand une information personnelle manque pour "
+                "repondre (par exemple le nom de son dentiste). kind optionnel "
+                "pour filtrer. Ne reponds jamais 'je ne sais pas' sur un sujet "
+                "personnel sans avoir appele recall."
+            ),
+        )
+        async def recall(query: str, kind: str | None = None) -> dict:
+            """Search long-term memory."""
+            debug_live("tool_call", tool="recall", kind=kind)
+            async with self.memory_lock:
+                result = await asyncio.to_thread(self.memory.recall, query, kind)
+            self._debug_tool_result("recall", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="list_memories",
+            description=(
+                "Liste les souvenirs enregistres, eventuellement filtres par kind. "
+                "Utilise ce tool pour 'qu'est-ce que tu sais sur moi' ou 'quels "
+                "contacts tu connais'."
+            ),
+        )
+        async def list_memories(kind: str | None = None) -> dict:
+            """List stored memories."""
+            debug_live("tool_call", tool="list_memories", kind=kind)
+            async with self.memory_lock:
+                result = await asyncio.to_thread(self.memory.list_memories, kind)
+            self._debug_tool_result("list_memories", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="forget",
+            description=(
+                "Oublie definitivement un souvenir quand l'utilisateur le demande "
+                "(oublie que..., efface ce que tu sais sur...). Fournis memory_id "
+                "si tu le connais, sinon query. Si ambiguous_memory est retourne, "
+                "rien n'est efface : presente les candidats et demande lequel."
+            ),
+        )
+        @self._journaled("forget")
+        async def forget(memory_id: int | None = None, query: str | None = None) -> dict:
+            """Delete one memory by id or unambiguous query."""
+            debug_live("tool_call", tool="forget", memory_id=memory_id)
+            async with self.memory_lock:
+                result = await asyncio.to_thread(self.memory.forget, memory_id, query)
+            self._debug_tool_result("forget", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="recent_activity",
+            description=(
+                "Relit le journal des dernieres actions realisees par Jarvis "
+                "(ouvrir une app, changer le volume, preparer ou envoyer un "
+                "message, ouvrir un site...), avec l'heure et le resultat. Le "
+                "journal ne contient jamais le texte des messages ni le contenu "
+                "manipule. Utilise ce tool pour 'qu'est-ce que tu as fait', "
+                "'tu as bien envoye le message ?' ou 'refais comme tout a l'heure'."
+            ),
+        )
+        async def recent_activity(limit: int = 10) -> dict:
+            """Read the most recent journaled actions."""
+            debug_live("tool_call", tool="recent_activity", limit=limit)
+            async with self.memory_lock:
+                result = await asyncio.to_thread(self.memory.recent_activity, limit)
+            self._debug_tool_result("recent_activity", result)
+            return result.to_livekit_dict()
 
         @function_tool(
             name="confirm_action",
             description=(
-                "Execute reellement une action sortante preparee (par exemple un "
-                "envoi de message) en utilisant le token renvoye par un tool de "
-                "preparation comme prepare_send_message. N'appelle ce tool "
+                "Execute reellement une action preparee (envoi de message ou "
+                "souvenir deduit a enregistrer) en utilisant le token renvoye par "
+                "prepare_send_message ou propose_memory. N'appelle ce tool "
                 "qu'APRES une confirmation orale explicite de l'utilisateur. "
                 "N'invente jamais de token et ne l'appelle jamais sans preparation "
                 "prealable. Si aucune action n'est en attente, il retourne "
@@ -1241,7 +1485,9 @@ class ToolRegistry:
 
             result = await asyncio.to_thread(pending.executor)
             self._debug_interaction_result(f"confirm_action:{pending.action}", result)
-            return result.to_livekit_dict()
+            payload = result.to_livekit_dict()
+            await self._log_action(f"confirm_{pending.action}", None, payload)
+            return payload
 
         @function_tool(
             name="cancel_action",
@@ -1286,6 +1532,7 @@ class ToolRegistry:
                 "bien vers le domaine demande."
             ),
         )
+        @self._journaled("browse_open_url", "url", self._journal_host)
         async def browse_open_url(
             url: str,
             browser: str | None = None,
@@ -1318,6 +1565,7 @@ class ToolRegistry:
                 "resultats sont charges ; state_confirmed le fait."
             ),
         )
+        @self._journaled("browse_search_web")
         async def browse_search_web(
             query: str,
             browser: str | None = None,
@@ -1431,6 +1679,7 @@ class ToolRegistry:
                 "son chemin et sa taille."
             ),
         )
+        @self._journaled("capture_screen")
         async def capture_screen(
             path: str | None = None,
             display: int | None = None,
@@ -1457,6 +1706,7 @@ class ToolRegistry:
                 "=true seulement si le fichier a bien ete ecrit."
             ),
         )
+        @self._journaled("capture_region")
         async def capture_region(
             x: int,
             y: int,
@@ -1494,6 +1744,7 @@ class ToolRegistry:
                 "(active_window_mismatch)."
             ),
         )
+        @self._journaled("capture_window", "app_name")
         async def capture_window(
             app_name: str | None = None,
             path: str | None = None,
@@ -1629,6 +1880,12 @@ class ToolRegistry:
             prepare_send_message,
             confirm_action,
             cancel_action,
+            remember,
+            propose_memory,
+            recall,
+            list_memories,
+            forget,
+            recent_activity,
             browse_open_url,
             browse_search_web,
             browse_get_active_tab,
@@ -1795,6 +2052,24 @@ class ToolRegistry:
             )
 
     @staticmethod
+    def _journal_host(url) -> str | None:
+        """Bare host for the journal: no credentials, port, path or query."""
+        if not isinstance(url, str) or not url.strip():
+            return None
+
+        from urllib.parse import urlparse
+
+        text = url.strip()
+        parsed = urlparse(text if "://" in text else f"//{text}")
+        try:
+            host = parsed.hostname
+        except ValueError:
+            return None
+        if not host:
+            return None
+        return host[4:] if host.startswith("www.") else host
+
+    @staticmethod
     def _debug_host(url) -> str | None:
         if not isinstance(url, str) or not url:
             return None
@@ -1891,6 +2166,7 @@ def create_live_tools(
     screenshot_capability=None,
     vision_capability=None,
     messaging_capability=None,
+    memory_capability=None,
 ) -> list[Any]:
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -1997,4 +2273,5 @@ def create_live_tools(
         screenshot_capability=screenshot_capability,
         vision_capability=vision_capability,
         messaging_capability=messaging_capability,
+        memory_capability=memory_capability,
     ).livekit_tools()

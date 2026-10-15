@@ -1182,6 +1182,37 @@ class MacOSToolsTest(unittest.TestCase):
         self.assertIn('tell application "Music"', run.call_args_list[2].args[0][2])
         self.assertIn("playpause", run.call_args_list[2].args[0][2])
 
+    def test_play_pause_tries_preferred_media_app_first(self):
+        with patch(
+            "jarvis.tools.macos.subprocess.run",
+            side_effect=[
+                FakeCompletedProcess(stdout="true\n"),
+                FakeCompletedProcess(stdout="paused\nSong\nArtist\n"),
+                FakeCompletedProcess(stdout=""),
+                FakeCompletedProcess(stdout="playing\nSong\nArtist\n"),
+            ],
+        ) as run:
+            state = MacOSTools().play_pause("Spotify")
+
+        self.assertEqual(state["app"], "Spotify")
+        self.assertIn('application "Spotify" is running', run.call_args_list[0].args[0][2])
+        self.assertIn('tell application "Spotify"', run.call_args_list[2].args[0][2])
+
+    def test_unknown_preferred_media_app_keeps_default_order(self):
+        with patch(
+            "jarvis.tools.macos.subprocess.run",
+            side_effect=[
+                FakeCompletedProcess(stdout="true\n"),
+                FakeCompletedProcess(stdout="paused\nSong\nArtist\n"),
+                FakeCompletedProcess(stdout=""),
+                FakeCompletedProcess(stdout="playing\nSong\nArtist\n"),
+            ],
+        ) as run:
+            state = MacOSTools().play_pause("Deezer")
+
+        self.assertEqual(state["app"], "Music")
+        self.assertIn('application "Music" is running', run.call_args_list[0].args[0][2])
+
     def test_next_track_uses_active_supported_media_app(self):
         with patch(
             "jarvis.tools.macos.subprocess.run",

@@ -13,7 +13,7 @@ class MediaCapability:
         self.security = security if security is not None else SecurityManager()
         self.macos_tools = macos_tools if macos_tools is not None else MacOSTools()
 
-    def play_pause(self) -> ToolResult:
+    def play_pause(self, preferred_app: str | None = None) -> ToolResult:
         decision = self.security.evaluate(create_intent("play_pause"))
 
         if not decision.allowed:
@@ -29,7 +29,11 @@ class MediaCapability:
             )
 
         try:
-            state = self.macos_tools.play_pause()
+            state = (
+                self.macos_tools.play_pause(preferred_app)
+                if preferred_app
+                else self.macos_tools.play_pause()
+            )
         except Exception as error:
             return self._system_error_result("play_pause", error)
 
@@ -44,7 +48,7 @@ class MediaCapability:
             **state,
         )
 
-    def next_track(self) -> ToolResult:
+    def next_track(self, preferred_app: str | None = None) -> ToolResult:
         decision = self.security.evaluate(create_intent("next_track"))
 
         if not decision.allowed:
@@ -60,7 +64,11 @@ class MediaCapability:
             )
 
         try:
-            state = self.macos_tools.next_track()
+            state = (
+                self.macos_tools.next_track(preferred_app)
+                if preferred_app
+                else self.macos_tools.next_track()
+            )
         except Exception as error:
             return self._system_error_result("next_track", error)
 
@@ -74,7 +82,7 @@ class MediaCapability:
             **state,
         )
 
-    def previous_track(self) -> ToolResult:
+    def previous_track(self, preferred_app: str | None = None) -> ToolResult:
         decision = self.security.evaluate(create_intent("previous_track"))
 
         if not decision.allowed:
@@ -90,7 +98,11 @@ class MediaCapability:
             )
 
         try:
-            state = self.macos_tools.previous_track()
+            state = (
+                self.macos_tools.previous_track(preferred_app)
+                if preferred_app
+                else self.macos_tools.previous_track()
+            )
         except Exception as error:
             return self._system_error_result("previous_track", error)
 

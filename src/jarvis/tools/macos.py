@@ -1156,8 +1156,8 @@ class MacOSTools:
         if status != 0:
             raise RuntimeError("Reglage de la luminosite indisponible.")
 
-    def play_pause(self) -> dict:
-        app_name = self._active_media_app()
+    def play_pause(self, preferred_app: str | None = None) -> dict:
+        app_name = self._active_media_app(preferred_app)
 
         if app_name is None:
             raise RuntimeError("Aucune application media compatible active.")
@@ -1170,8 +1170,8 @@ class MacOSTools:
 
         return state
 
-    def next_track(self) -> dict:
-        app_name, before_state = self._active_media_context()
+    def next_track(self, preferred_app: str | None = None) -> dict:
+        app_name, before_state = self._active_media_context(preferred_app)
 
         if app_name is None:
             raise RuntimeError("Aucune application media compatible active.")
@@ -1187,8 +1187,8 @@ class MacOSTools:
 
         return state
 
-    def previous_track(self) -> dict:
-        app_name, before_state = self._active_media_context()
+    def previous_track(self, preferred_app: str | None = None) -> dict:
+        app_name, before_state = self._active_media_context(preferred_app)
 
         if app_name is None:
             raise RuntimeError("Aucune application media compatible active.")
@@ -1264,12 +1264,22 @@ class MacOSTools:
             "app": app_name,
         }
 
-    def _active_media_app(self) -> str | None:
-        app_name, _state = self._active_media_context()
+    def _active_media_app(self, preferred_app: str | None = None) -> str | None:
+        app_name, _state = self._active_media_context(preferred_app)
         return app_name
 
-    def _active_media_context(self) -> tuple[str | None, dict | None]:
-        for app_name in SUPPORTED_MEDIA_APPS:
+    def _active_media_context(
+        self,
+        preferred_app: str | None = None,
+    ) -> tuple[str | None, dict | None]:
+        # The user's preferred player (from memory) is tried first when
+        # several supported players are running; otherwise the fixed order.
+        order = list(SUPPORTED_MEDIA_APPS)
+        if preferred_app in order:
+            order.remove(preferred_app)
+            order.insert(0, preferred_app)
+
+        for app_name in order:
             if not self.is_app_running(app_name):
                 continue
 
