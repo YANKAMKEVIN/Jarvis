@@ -167,3 +167,146 @@ class OllamaPlannerModel:
                 "tool_name": message.get("name", ""),
             }
         return {"role": role, "content": message["content"]}
+
+
+# Google's OpenAI-compatibility endpoint: same request/response shape as OpenAI
+# Chat Completions, authenticated with GOOGLE_API_KEY (the key the voice already
+# uses). Free tier, no new provider.
+GEMINI_OPENAI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+DEFAULT_GEMINI_PLANNER_MODEL = "gemini-3.5-flash"
+DEFAULT_OPENAI_TIMEOUT = 120.0
+
+
+class OpenAIChatPlannerModel:
+    """Planner brain over any OpenAI-compatible Chat Completions endpoint.
+
+    The engine already emits OpenAI-style tool schemas and near-OpenAI messages,
+    so this adapter is a thin HTTP client (like the Ollama one) with an
+    injectable opener for tests. Used for the free Gemini backend via Google's
+    OpenAI-compatibility endpoint.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        base_url: str,
+        api_key: str | None,
+        timeout: float = DEFAULT_OPENAI_TIMEOUT,
+        opener=None,
+    ):
+        self.name = model
+        self.base_url = base_url
+        self.api_key = api_key
+        self.timeout = float(timeout)
+        self._open = opener or urllib.request.urlopen
+
+    def complete(self, messages: list[dict], tools: list[dict]) -> ModelTurn:
+        if not self.api_key:
+            raise PlannerModelError(
+                "Cle API absente pour le planificateur (GOOGLE_API_KEY).",
+                "model_api_key_missing",
+            )
+
+        payload = {
+            "model": self.name,
+            "messages": [self._to_openai(message) for message in messages],
+            "temperature": 0,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+        request = urllib.request.Request(
+            self.base_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+            },
+        )
+        try:
+            with self._open(request, timeout=self.timeout) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            raise PlannerModelError(
+                f"Erreur HTTP du planificateur ({error.code}).", "model_http_error",
+            ) from error
+        except urllib.error.URLError as error:
+            raise PlannerModelError(
+                f"Planificateur injoignable ({error}).", "model_unreachable",
+            ) from error
+        except (TimeoutError, json.JSONDecodeError) as error:
+            raise PlannerModelError(f"Reponse du planificateur invalide : {error}") from error
+
+        if "error" in body:
+            raise PlannerModelError(f"Erreur du planificateur : {body['error']}")
+
+        choices = body.get("choices") or []
+        if not choices:
+            return ModelTurn()
+        message = choices[0].get("message") or {}
+
+        calls = []
+        for index, raw in enumerate(message.get("tool_calls") or []):
+            function = raw.get("function") or {}
+            arguments = function.get("arguments") or {}
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError:
+                    arguments = {"__invalid_json__": arguments}
+            calls.append(
+                ToolCall(
+                    id=str(raw.get("id") or f"call_{index}"),
+                    name=str(function.get("name") or ""),
+                    arguments=arguments if isinstance(arguments, dict) else {},
+                )
+            )
+        return ModelTurn(text=(message.get("content") or "").strip(), tool_calls=calls)
+
+    @staticmethod
+    def _to_openai(message: dict) -> dict:
+        role = message["role"]
+        if role == "assistant":
+            converted: dict[str, Any] = {
+                "role": "assistant",
+                "content": message.get("content", "") or "",
+            }
+            if message.get("tool_calls"):
+                converted["tool_calls"] = [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments),
+                        },
+                    }
+                    for call in message["tool_calls"]
+                ]
+            return converted
+        if role == "tool":
+            return {
+                "role": "tool",
+                "tool_call_id": message.get("tool_call_id", ""),
+                "content": message["content"],
+            }
+        return {"role": role, "content": message["content"]}
+
+
+def build_planner_model(backend: str | None = None) -> PlannerModel:
+    """Select the planner brain from configuration. Default: local Ollama.
+
+    JARVIS_PLANNER_BACKEND = "ollama" (default, local and free) or "gemini"
+    (free via Google's OpenAI-compatible endpoint, reusing GOOGLE_API_KEY).
+    """
+    choice = (backend or os.environ.get("JARVIS_PLANNER_BACKEND") or "ollama").strip().lower()
+
+    if choice == "gemini":
+        return OpenAIChatPlannerModel(
+            model=os.environ.get("JARVIS_GEMINI_PLANNER_MODEL", DEFAULT_GEMINI_PLANNER_MODEL),
+            base_url=os.environ.get("JARVIS_PLANNER_BASE_URL", GEMINI_OPENAI_BASE),
+            api_key=os.environ.get("GOOGLE_API_KEY"),
+        )
+
+    return OllamaPlannerModel()

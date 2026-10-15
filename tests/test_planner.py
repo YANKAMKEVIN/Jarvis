@@ -8,14 +8,19 @@ import urllib.error
 from livekit.agents import function_tool
 
 from jarvis.live.registry import create_live_tools
+import os
+from unittest.mock import patch
+
 from jarvis.planner import (
     PLANNER_TOOL_NAMES,
     ModelTurn,
     OllamaPlannerModel,
+    OpenAIChatPlannerModel,
     PlannerEngine,
     PlannerModelError,
     ScriptedModel,
     ToolCall,
+    build_planner_model,
 )
 
 
@@ -324,6 +329,83 @@ class OllamaPlannerModelTest(unittest.TestCase):
         failing = self.make({"error": "model not found"})
         with self.assertRaises(PlannerModelError):
             failing.complete([], [])
+
+
+class OpenAIChatPlannerModelTest(unittest.TestCase):
+    def make(self, body=None, error=None, api_key="k"):
+        self.requests = []
+        self.headers = []
+
+        def opener(request, timeout):
+            self.requests.append(json.loads(request.data.decode("utf-8")))
+            self.headers.append(dict(request.headers))
+            if error is not None:
+                raise error
+            return FakeResponse(json.dumps(body).encode("utf-8"))
+
+        return OpenAIChatPlannerModel(
+            model="gemini-3.5-flash", base_url="http://x/v1/chat/completions",
+            api_key=api_key, opener=opener,
+        )
+
+    def test_parses_tool_calls_and_sends_tools_and_auth(self):
+        model = self.make({"choices": [{"message": {"content": "", "tool_calls": [
+            {"id": "c1", "function": {"name": "open_app", "arguments": '{"app_name": "Safari"}'}},
+            {"id": "c2", "function": {"name": "get_volume", "arguments": "{}"}},
+        ]}}]})
+        schema = [{"type": "function", "function": {"name": "open_app"}}]
+
+        turn = model.complete([{"role": "user", "content": "go"}], schema)
+
+        self.assertEqual([(c.name, c.arguments) for c in turn.tool_calls],
+                         [("open_app", {"app_name": "Safari"}), ("get_volume", {})])
+        self.assertEqual(self.requests[0]["tools"], schema)
+        self.assertEqual(self.requests[0]["tool_choice"], "auto")
+        self.assertEqual(self.headers[0]["Authorization"], "Bearer k")
+
+    def test_converts_assistant_and_tool_messages_to_openai(self):
+        model = self.make({"choices": [{"message": {"content": "fini"}}]})
+        history = [
+            {"role": "assistant", "content": "", "tool_calls": [call("open_app", app_name="Safari")]},
+            {"role": "tool", "name": "open_app", "tool_call_id": "c9", "content": "{}"},
+        ]
+
+        turn = model.complete(history, [])
+
+        self.assertEqual(turn.text, "fini")
+        sent = self.requests[0]["messages"]
+        self.assertEqual(sent[0]["tool_calls"][0]["function"]["name"], "open_app")
+        self.assertEqual(sent[0]["tool_calls"][0]["type"], "function")
+        self.assertEqual(sent[1], {"role": "tool", "tool_call_id": "c9", "content": "{}"})
+
+    def test_missing_api_key_refuses_before_any_request(self):
+        model = self.make(api_key=None)
+
+        with self.assertRaises(PlannerModelError) as ctx:
+            model.complete([{"role": "user", "content": "go"}], [])
+
+        self.assertEqual(ctx.exception.code, "model_api_key_missing")
+        self.assertEqual(self.requests, [])  # never called out
+
+
+class BuildPlannerModelTest(unittest.TestCase):
+    def test_default_is_local_ollama(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsInstance(build_planner_model(), OllamaPlannerModel)
+
+    def test_gemini_backend_uses_google_openai_endpoint_and_key(self):
+        with patch.dict(os.environ, {
+            "JARVIS_PLANNER_BACKEND": "gemini", "GOOGLE_API_KEY": "abc",
+        }, clear=True):
+            model = build_planner_model()
+
+        self.assertIsInstance(model, OpenAIChatPlannerModel)
+        self.assertIn("generativelanguage.googleapis.com", model.base_url)
+        self.assertEqual(model.api_key, "abc")
+
+    def test_explicit_backend_argument_wins(self):
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "abc"}, clear=True):
+            self.assertIsInstance(build_planner_model("gemini"), OpenAIChatPlannerModel)
 
 
 if __name__ == "__main__":

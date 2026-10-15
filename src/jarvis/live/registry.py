@@ -25,7 +25,7 @@ from jarvis.capabilities.windows import WindowCapability
 from jarvis.live.config import debug_live, get_vision_model, is_vision_enabled
 from jarvis.live.confirmation import PendingActionStore
 from jarvis.planner.engine import PlannerEngine, TaskOutcome
-from jarvis.planner.models import OllamaPlannerModel
+from jarvis.planner.models import build_planner_model
 from jarvis.planner.tasks import TaskManager, announcement_for
 from jarvis.tools.vision import VisionTools
 
@@ -1976,7 +1976,7 @@ class ToolRegistry:
         # The planner drives these very tools (same locks, journal and pending
         # action store), so a message it prepares is confirmable by voice.
         self.tasks = TaskManager(
-            lambda: PlannerEngine(self.planner_model or OllamaPlannerModel(), tools),
+            lambda: PlannerEngine(self.planner_model or build_planner_model(), tools),
             on_finished=self._on_task_finished,
         )
         return tools
