@@ -1,8 +1,14 @@
 import asyncio
+import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
+
+from jarvis.schedule.__main__ import main as schedule_main
 
 from jarvis.capabilities.results import ToolResult
 from jarvis.live.registry import create_live_registry
@@ -259,6 +265,38 @@ class ScheduleToolsTest(unittest.TestCase):
         result = asyncio.run(tools["cancel_scheduled_message"](999))
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "scheduled_message_not_found")
+
+
+class CLITest(unittest.TestCase):
+    def _env(self):
+        tmp = tempfile.mkdtemp()
+        return {"JARVIS_SCHEDULE_PATH": str(Path(tmp) / "scheduled.db")}
+
+    def test_install_prints_agent_without_touching_system(self):
+        out = StringIO()
+        with redirect_stdout(out):
+            code = schedule_main(["install"])
+        self.assertEqual(code, 0)
+        text = out.getvalue()
+        self.assertIn("com.jarvis.scheduler", text)
+        self.assertIn("launchctl load", text)
+
+    def test_list_empty_store(self):
+        with patch.dict(os.environ, self._env(), clear=False):
+            out = StringIO()
+            with redirect_stdout(out):
+                code = schedule_main(["list"])
+        self.assertEqual(code, 0)
+        self.assertIn("Aucun message", out.getvalue())
+
+    def test_deliver_empty_store_sends_nothing(self):
+        # No due rows => deliver_due never touches the GUI or the screen check.
+        with patch.dict(os.environ, self._env(), clear=False):
+            out = StringIO()
+            with redirect_stdout(out):
+                code = schedule_main(["deliver"])
+        self.assertEqual(code, 0)
+        self.assertIn("sent=0", out.getvalue())
 
 
 if __name__ == "__main__":
