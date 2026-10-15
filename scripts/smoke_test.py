@@ -18,6 +18,9 @@ import argparse
 import asyncio
 import ctypes
 import json
+import os
+import sqlite3
+import stat
 import shutil
 import subprocess
 import sys
@@ -69,15 +72,26 @@ def permissions() -> dict[str, bool]:
     return {
         "accessibility": bool(ax.AXIsProcessTrusted()),
         "screen_recording": bool(cg.CGPreflightScreenCaptureAccess()),
+        # Locked screen: keystrokes would land in the login window.
+        "screen_unlocked": _screen_unlocked(),
     }
+
+
+def _screen_unlocked() -> bool:
+    try:
+        return frontmost_app() != "loginwindow"
+    except Exception:
+        return False
 
 
 # Groups that cannot work without a given permission are skipped, so a
 # missing grant is never mistaken for a Jarvis regression.
 REQUIRES = {
-    "mouse": ("accessibility",),
-    "textedit": ("accessibility",),
-    "screenshot": ("screen_recording",),
+    "mouse": ("accessibility", "screen_unlocked"),
+    "textedit": ("accessibility", "screen_unlocked"),
+    "screenshot": ("screen_recording", "screen_unlocked"),
+    "apps": ("screen_unlocked",),
+    "safari": ("screen_unlocked",),
 }
 
 
@@ -241,7 +255,7 @@ def group_files(ctx: Context, step) -> None:
         expect((ctx.workdir / "hello.txt").exists() and not moved.exists(),
                "deplacement dans le dossier non constate")
 
-    step("create_folder", create)
+    step("create_folder", create, critical=True)
     step("list_files", list_)
     step("get_file_info", info)
     step("rename_file", rename)
@@ -310,7 +324,7 @@ def group_apps(ctx: Context, step) -> None:
         expect(wait_until(lambda: not app_running(app)), "Calculator tourne encore")
 
     try:
-        step("open_app Calculator", open_)
+        step("open_app Calculator", open_, critical=True)
         step("is_app_running Calculator", running)
         step("close_app Calculator", close)
     finally:
@@ -340,6 +354,8 @@ def group_textedit(ctx: Context, step) -> None:
         expect(result.get("target_app") == "TextEdit", f"fenetre active : {result.get('target_app')}")
 
     def type_():
+        # Re-check right before typing: never type into another app.
+        expect(frontmost_app() == "TextEdit", f"app au premier plan : {frontmost_app()}")
         call_ok(ctx, "type_text", SMOKE_TEXT)
         time.sleep(0.3)
         text = osascript('tell application "TextEdit" to text of front document', check=False)
@@ -364,8 +380,8 @@ def group_textedit(ctx: Context, step) -> None:
         expect(text.strip() == "", f"document non vide : {text!r}")
 
     try:
-        step("open_app TextEdit (focus)", setup_and_focus)
-        step("get_active_window", active_window)
+        step("open_app TextEdit (focus)", setup_and_focus, critical=True)
+        step("get_active_window", active_window, critical=True)
         step("type_text", type_)
         step("select_all_and_copy", copy)
         step("capture_window TextEdit", capture)
@@ -426,7 +442,7 @@ def group_safari(ctx: Context, step) -> None:
         expect(wait_until(lambda: "example.com" in current_url()), "retour non constate")
 
     try:
-        step("browse_open_url example.com", open_)
+        step("browse_open_url example.com", open_, critical=True)
         step("browse_get_active_tab", active)
         step("browse_list_tabs", list_)
         step("browse_activate_tab (index)", activate)
@@ -460,9 +476,63 @@ def group_messaging(ctx: Context, step) -> None:
         expect(result.get("error_code") == "no_pending_action",
                f"confirm apres annulation devrait echouer : {result}")
 
-    step("prepare_send_message (sans envoi)", prepare)
+    step("prepare_send_message (sans envoi)", prepare, critical=True)
     step("cancel_action", cancel)
     step("confirm_action refuse apres annulation", confirm_after_cancel)
+
+
+def group_memory(ctx: Context, step) -> None:
+    # Runs against the throwaway DB set in main() (JARVIS_MEMORY_PATH), never
+    # the user's real memory. Checked independently by reading SQLite directly.
+    db = Path(os.environ["JARVIS_MEMORY_PATH"])
+    state = {}
+
+    def rows(sql, *params):
+        with sqlite3.connect(db) as conn:
+            return conn.execute(sql, params).fetchall()
+
+    def remember():
+        result = call_ok(ctx, "remember", "fact", "dentiste", "Dr Martin a Lyon")
+        state["id"] = result["memory"]["id"]
+        expect(rows("SELECT content FROM memories WHERE id = ?", state["id"])
+               == [("Dr Martin a Lyon",)], "souvenir absent de la base")
+        expect(stat.S_IMODE(db.stat().st_mode) == 0o600, "base lisible par d'autres")
+
+    def recall():
+        result = call_ok(ctx, "recall", "comment s'appelle mon dentiste")
+        expect(result.get("count") == 1, f"recall : {result}")
+
+    def secret():
+        result = call(ctx, "remember", "fact", "wifi", "mot de passe hunter2")
+        expect(result.get("error_code") == "secret_refused", f"secret accepte : {result}")
+        expect(not rows("SELECT 1 FROM memories WHERE content LIKE '%hunter2%'"),
+               "secret ecrit en base")
+
+    def propose():
+        result = call_ok(ctx, "propose_memory", "person", "Marie", "Marie Dupont")
+        expect(not rows("SELECT 1 FROM memories WHERE subject = 'Marie'"),
+               "enregistre avant confirmation")
+        call_ok(ctx, "confirm_action", result["token"])
+        expect(rows("SELECT source FROM memories WHERE subject = 'Marie'") == [("inferred",)],
+               "non enregistre apres confirmation")
+
+    def forget():
+        call_ok(ctx, "forget", state["id"])
+        expect(not rows("SELECT 1 FROM memories WHERE id = ?", state["id"]), "toujours en base")
+
+    def journal():
+        result = call_ok(ctx, "recent_activity", 5)
+        tools = [e.get("tool") for e in result.get("episodes", [])]
+        expect("remember" in tools, f"journal : {tools}")
+        expect(not rows("SELECT 1 FROM episodes WHERE target LIKE '%Martin%'"),
+               "contenu du souvenir dans le journal")
+
+    step("remember", remember, critical=True)
+    step("recent_activity (journal)", journal)
+    step("recall", recall)
+    step("remember refuse un secret", secret)
+    step("propose_memory + confirm_action", propose)
+    step("forget", forget)
 
 
 GROUPS = {
@@ -476,6 +546,7 @@ GROUPS = {
     "textedit": group_textedit,
     "safari": group_safari,
     "messaging": group_messaging,
+    "memory": group_memory,
 }
 
 
@@ -483,9 +554,16 @@ GROUPS = {
 
 
 def run_group(ctx: Context, name: str) -> None:
-    def step(step_name: str, fn) -> None:
+    blocked: list[str] = []
+
+    def step(step_name: str, fn, critical: bool = False) -> None:
+        """Run one check. A failed critical step skips the rest of the group,
+        so later steps never act on a state that was not reached (e.g. typing
+        while the wrong app is frontmost)."""
         started = time.monotonic()
         try:
+            if blocked:
+                raise Skipped(f"etape prealable echouee : {blocked[0]}")
             fn()
             status, detail = "pass", ""
         except Skipped as skip:
@@ -494,6 +572,8 @@ def run_group(ctx: Context, name: str) -> None:
             status, detail = "fail", str(failure)
         except Exception as error:
             status, detail = "fail", f"{type(error).__name__}: {error}"
+        if status == "fail" and critical:
+            blocked.append(step_name)
         result = StepResult(name, step_name, status, detail,
                             int((time.monotonic() - started) * 1000))
         ctx.results.append(result)
@@ -505,7 +585,7 @@ def run_group(ctx: Context, name: str) -> None:
     missing = [p for p in REQUIRES.get(name, ()) if not ctx.perms.get(p)]
     if missing:
         step("(groupe)", lambda: (_ for _ in ()).throw(
-            Skipped(f"permission(s) manquante(s) : {', '.join(missing)}")))
+            Skipped(f"prerequis manquant(s) : {', '.join(missing)}")))
         return
     try:
         GROUPS[name](ctx, step)
@@ -531,12 +611,15 @@ def main() -> int:
 
     groups = args.group or list(GROUPS)
 
-    from jarvis.live.registry import create_live_tools
-
-    tools = {tool.info.name: tool for tool in create_live_tools()}
     # Must be inside $HOME (FilesCapability refuses anything outside).
     workdir = Path.home() / f"jarvis-smoke-{time.strftime('%Y%m%d-%H%M%S')}"
     workdir.mkdir()
+    # Never touch the user's real long-term memory.
+    os.environ["JARVIS_MEMORY_PATH"] = str(workdir / "memory.db")
+
+    from jarvis.live.registry import create_live_tools
+
+    tools = {tool.info.name: tool for tool in create_live_tools()}
     ctx = Context(tools=tools, workdir=workdir, perms=permissions())
     print("Permissions : " + ", ".join(
         f"{k}={'oui' if v else 'NON'}" for k, v in ctx.perms.items()))
