@@ -173,6 +173,9 @@ class ToolRegistry:
         # Set by the voice agent: async callable speaking an announcement.
         self.task_notifier = None
         self.tasks: TaskManager | None = None
+        # The planner's tool set (voice tools + planner-only web_answer); filled
+        # by livekit_tools().
+        self.planner_tools: list[Any] = []
         # Single-shot web search runs in the background so the voice model can
         # acknowledge at once and announce the result when it lands.
         self._web_task: asyncio.Task | None = None
@@ -1937,6 +1940,27 @@ class ToolRegistry:
             ).to_livekit_dict()
 
         @function_tool(
+            name="web_answer",
+            description=(
+                "Recherche une information a jour sur le web et renvoie une reponse "
+                "synthetisee avec ses sources. Outil reserve aux taches longues : il "
+                "BLOQUE le temps de la recherche (quelques secondes). Appuie-toi "
+                "uniquement sur sa reponse et ses sources, n'invente rien. question : "
+                "la question complete en francais."
+            ),
+        )
+        @self._journaled("web_answer")
+        async def web_answer(question: str) -> dict:
+            """Blocking web search for the planner (not exposed to the voice model)."""
+            debug_live(
+                "tool_call",
+                tool="web_answer",
+                question_length=len(question) if isinstance(question, str) else None,
+            )
+            result = await asyncio.to_thread(self.knowledge.answer, question)
+            return result.to_livekit_dict()
+
+        @function_tool(
             name="run_task",
             description=(
                 "Confie a Jarvis une TACHE LONGUE en plusieurs etapes qui demande "
@@ -2123,9 +2147,14 @@ class ToolRegistry:
         ]
 
         # The planner drives these very tools (same locks, journal and pending
-        # action store), so a message it prepares is confirmable by voice.
+        # action store), so a message it prepares is confirmable by voice. It
+        # also gets web_answer, a blocking web search kept out of the voice
+        # tool set (the voice uses the background search_the_web instead).
+        self.planner_tools = tools + [web_answer]
         self.tasks = TaskManager(
-            lambda: PlannerEngine(self.planner_model or build_planner_model(), tools),
+            lambda: PlannerEngine(
+                self.planner_model or build_planner_model(), self.planner_tools
+            ),
             on_finished=self._on_task_finished,
         )
         return tools

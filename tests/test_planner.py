@@ -247,15 +247,52 @@ class PlannerEngineTest(unittest.TestCase):
         self.assertTrue(content.endswith("(tronque)"))
 
     def test_real_registry_allowlist(self):
-        engine = PlannerEngine(ScriptedModel([]), create_live_tools())
-        exposed = set(engine.tools)
+        from jarvis.live.registry import create_live_registry
 
-        self.assertEqual(exposed, set(PLANNER_TOOL_NAMES))
+        registry = create_live_registry()
+        voice_tools = registry.livekit_tools()
+
+        # The voice tool set covers the allowlist except the planner-only
+        # web_answer, which is deliberately kept out of the voice model's reach
+        # (the voice uses the background search_the_web instead).
+        voice_exposed = set(PlannerEngine(ScriptedModel([]), voice_tools).tools)
+        self.assertEqual(voice_exposed, set(PLANNER_TOOL_NAMES) - {"web_answer"})
+        self.assertNotIn("web_answer", {tool.info.name for tool in voice_tools})
+
+        # The real planner engine (what TaskManager builds) gets the full
+        # allowlist, web_answer included.
+        planner_exposed = set(
+            PlannerEngine(ScriptedModel([]), registry.planner_tools).tools
+        )
+        self.assertEqual(planner_exposed, set(PLANNER_TOOL_NAMES))
+
         for forbidden in ("confirm_action", "cancel_action", "lock_screen", "click",
                           "type_text", "hotkey", "remember", "forget", "propose_memory"):
-            self.assertNotIn(forbidden, exposed)
-        names = [schema["function"]["name"] for schema in engine.schemas]
+            self.assertNotIn(forbidden, planner_exposed)
+        names = [
+            schema["function"]["name"]
+            for schema in PlannerEngine(ScriptedModel([]), registry.planner_tools).schemas
+        ]
         self.assertEqual(names, sorted(names))  # stable prompt prefix
+
+    def test_planner_can_call_web_answer(self):
+        self.assertIn("web_answer", PLANNER_TOOL_NAMES)
+        calls = []
+
+        @function_tool(name="web_answer", description="Recherche web.")
+        async def web_answer(question: str) -> dict:
+            calls.append(question)
+            return {"ok": True, "state_confirmed": True,
+                    "message": "Trois titres.", "source_count": 3}
+
+        model = ScriptedModel([
+            ModelTurn(tool_calls=[call("web_answer", question="les nouvelles")]),
+            ModelTurn(text="Voici les nouvelles."),
+        ])
+        outcome = run(PlannerEngine(model, [web_answer]), goal="donne les nouvelles")
+
+        self.assertEqual(outcome.status, "completed")
+        self.assertEqual(calls, ["les nouvelles"])
 
 
 class FakeResponse(io.BytesIO):

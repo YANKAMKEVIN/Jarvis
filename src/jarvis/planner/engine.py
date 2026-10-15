@@ -62,6 +62,7 @@ PLANNER_TOOL_NAMES = (
     "capture_window",
     "recall",
     "recent_activity",
+    "web_answer",
 )
 
 DEFAULT_MAX_STEPS = 25
@@ -76,6 +77,7 @@ Methode : decoupe l'objectif en etapes courtes ; appelle un tool ; lis son resul
 Verification : une etape n'a reussi que si ok=true. Si state_confirmed=false, l'effet n'est pas confirme : relis l'etat avec un tool de lecture (get_active_window, browse_get_active_tab, list_files...) avant d'en dependre.
 Correction : si une etape echoue, essaie une autre approche sure une seule fois (par exemple focaliser l'application ou le champ avant de taper). Si tu restes bloque, arrete-toi et explique pourquoi.
 N'invente jamais un chemin, un nom de contact, une URL ou un resultat. Utilise recall pour une information personnelle (un proche, une preference).
+Pour une information a jour que tu n'as pas (actualites, prix, meteo, faits recents, "qui est"), utilise web_answer avec la question ; appuie-toi uniquement sur sa reponse et ses sources, sans rien inventer.
 Messages : prepare_send_message prepare un envoi sans l'envoyer ; l'utilisateur confirmera lui-meme ensuite. Ne cherche jamais a envoyer autrement.
 Quand l'objectif est atteint ou impossible, reponds sans appeler de tool : une ou deux phrases en francais qui disent ce qui a ete fait, ce qui est confirme et ce qui ne l'est pas.
 """.strip()
