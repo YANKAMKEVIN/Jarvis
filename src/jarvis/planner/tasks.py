@@ -104,6 +104,23 @@ class TaskManager:
             "message": "Annulation demandee : la tache s'arrete avant l'etape suivante.",
         }
 
+    def last_completed(self) -> tuple[str, list[str]] | None:
+        """The last successfully completed task as (goal, ordered ok tool names).
+
+        Used to learn a reusable procedure from a task that just worked. Only
+        tool names are exposed — never arguments or content.
+        """
+        if (
+            self._outcome is not None
+            and self._outcome.status == "completed"
+            and isinstance(self._goal, str)
+            and self._goal.strip()
+        ):
+            tools = [step.tool for step in self._outcome.steps if step.ok]
+            if tools:
+                return self._goal, tools
+        return None
+
     async def wait(self) -> TaskOutcome | None:
         """Await the current task (tests and shutdown)."""
         if self._task is not None:

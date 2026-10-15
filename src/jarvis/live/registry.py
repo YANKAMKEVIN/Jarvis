@@ -1900,6 +1900,65 @@ class ToolRegistry:
             debug_live("tool_call", tool="cancel_task")
             return self.tasks.cancel()
 
+        @function_tool(
+            name="save_task_procedure",
+            description=(
+                "Retient la DERNIERE tache reussie comme procedure reutilisable "
+                "sous un nom (par exemple 'preparer ma reunion'), pour pouvoir "
+                "dire ensuite 'refais comme d'habitude'. N'enregistre que "
+                "l'enchainement des outils, jamais le contenu. Utilise ce tool "
+                "quand l'utilisateur dit 'retiens cette tache' ou 'garde ca comme "
+                "procedure'. S'il n'y a pas de tache reussie recente, dis-le."
+            ),
+        )
+        @self._journaled("save_task_procedure", target_arg="name")
+        async def save_task_procedure(name: str) -> dict:
+            """Learn the last successful task as a named, reusable procedure."""
+            debug_live("tool_call", tool="save_task_procedure")
+            last = self.tasks.last_completed()
+            if last is None:
+                return ToolResult.failure(
+                    action="save_task_procedure",
+                    message="Aucune tache recente reussie a retenir comme procedure.",
+                    error_code="no_completed_task",
+                ).to_livekit_dict()
+            _goal, tool_names = last
+            steps = [{"tool": name_, "target": None} for name_ in tool_names]
+            async with self.memory_lock:
+                result = await asyncio.to_thread(
+                    self.memory.save_procedure, name, steps, "user",
+                )
+            self._debug_tool_result("save_task_procedure", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="run_procedure",
+            description=(
+                "Rejoue une procedure enregistree par son nom (par exemple 'refais "
+                "comme d'habitude pour preparer ma reunion'). Charge l'enchainement "
+                "habituel et lance une tache en arriere-plan qui l'adapte et verifie "
+                "chaque etape. Si aucune procedure ne porte ce nom, dis-le sans rien "
+                "lancer."
+            ),
+        )
+        @self._journaled("run_procedure", target_arg="name")
+        async def run_procedure(name: str) -> dict:
+            """Replay a saved procedure as a background task seeded by its steps."""
+            debug_live("tool_call", tool="run_procedure")
+            async with self.memory_lock:
+                got = await asyncio.to_thread(self.memory.get_procedure, name)
+            if not got.ok:
+                return got.to_livekit_dict()
+            steps = got.data.get("procedure", {}).get("steps") or []
+            skeleton = ", ".join(
+                step["tool"] for step in steps if isinstance(step, dict) and step.get("tool")
+            )
+            goal = (
+                f"Refais la procedure habituelle « {name} ». Enchainement habituel "
+                f"des outils (adapte si besoin et verifie chaque etape) : {skeleton}."
+            )
+            return self.tasks.start(goal)
+
         tools = [
             set_volume,
             get_volume,
@@ -1971,6 +2030,8 @@ class ToolRegistry:
             run_task,
             task_status,
             cancel_task,
+            save_task_procedure,
+            run_procedure,
         ]
 
         # The planner drives these very tools (same locks, journal and pending

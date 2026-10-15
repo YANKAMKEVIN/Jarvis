@@ -10,6 +10,7 @@ from jarvis.live import agent
 from jarvis.live.registry import create_live_registry
 from jarvis.memory.store import MemoryStore
 from jarvis.planner import ModelTurn, PlannerEngine, ScriptedModel, TaskOutcome, ToolCall
+from jarvis.planner.engine import StepRecord
 from jarvis.planner.tasks import TaskManager, announcement_for
 
 
@@ -315,6 +316,101 @@ class AgentAnnouncementTest(unittest.TestCase):
         assistant = self.make_assistant(NoSession)
 
         asyncio.run(assistant.announce("Annonce"))  # must not raise
+
+
+class LastCompletedTest(unittest.TestCase):
+    def manager(self):
+        return TaskManager(lambda: PlannerEngine(ScriptedModel([]), []))
+
+    def test_returns_goal_and_ok_tool_names(self):
+        mgr = self.manager()
+        mgr._goal = "préparer réunion"
+        mgr._outcome = TaskOutcome("completed", "ok", steps=[
+            StepRecord("open_app", True),
+            StepRecord("get_volume", False),  # failed step dropped
+            StepRecord("browse_open_url", True),
+        ])
+
+        self.assertEqual(
+            mgr.last_completed(), ("préparer réunion", ["open_app", "browse_open_url"])
+        )
+
+    def test_none_when_last_task_failed(self):
+        mgr = self.manager()
+        mgr._goal = "x"
+        mgr._outcome = TaskOutcome("failed", "ko", steps=[StepRecord("open_app", True)])
+        self.assertIsNone(mgr.last_completed())
+
+    def test_none_when_no_ok_steps(self):
+        mgr = self.manager()
+        mgr._goal = "x"
+        mgr._outcome = TaskOutcome("completed", "ok", steps=[StepRecord("open_app", False)])
+        self.assertIsNone(mgr.last_completed())
+
+
+class ProcedureToolTest(unittest.TestCase):
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tempdir.cleanup()
+
+    def build(self, model=None):
+        model = model or ScriptedModel([ModelTurn(text="ok")])
+        registry, tools, memory = make_registry(model, self.tempdir.name)
+        return registry, tools, memory
+
+    def test_save_task_procedure_learns_last_task(self):
+        registry, tools, memory = self.build()
+        registry.tasks._goal = "préparer réunion"
+        registry.tasks._outcome = TaskOutcome("completed", "ok", steps=[
+            StepRecord("open_app", True),
+            StepRecord("browse_open_url", True),
+        ])
+
+        result = asyncio.run(tools["save_task_procedure"]("préparer réunion"))
+
+        self.assertTrue(result["ok"])
+        got = memory.get_procedure("preparer reunion")
+        self.assertEqual(
+            [s["tool"] for s in got.data["procedure"]["steps"]],
+            ["open_app", "browse_open_url"],
+        )
+
+    def test_save_without_completed_task_refuses(self):
+        _registry, tools, memory = self.build()
+
+        result = asyncio.run(tools["save_task_procedure"]("vide"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "no_completed_task")
+
+    def test_run_procedure_seeds_task_with_skeleton(self):
+        registry, tools, memory = self.build(ScriptedModel([ModelTurn(text="ok")]))
+        memory.save_procedure("préparer réunion", [
+            {"tool": "open_app", "target": None},
+            {"tool": "browse_open_url", "target": None},
+        ], source="user")
+
+        async def scenario():
+            started = await tools["run_procedure"]("préparer réunion")
+            await registry.tasks.wait()
+            return started
+
+        started = asyncio.run(scenario())
+
+        self.assertTrue(started["task_started"])
+        self.assertIn("open_app", registry.tasks._goal)
+        self.assertIn("browse_open_url", registry.tasks._goal)
+
+    def test_run_unknown_procedure_refuses_without_starting(self):
+        registry, tools, _memory = self.build()
+
+        result = asyncio.run(tools["run_procedure"]("inconnue"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "memory_not_found")
+        self.assertFalse(registry.tasks.running)
 
 
 if __name__ == "__main__":

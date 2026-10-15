@@ -93,6 +93,7 @@ Pour une question sur ce que tu as fait recemment ("qu'est-ce que tu as fait", "
 Taches longues : pour une demande qui exige de chercher, verifier et enchainer de nombreuses actions, appelle run_task avec l'objectif complet. Tout le reste (volume, media, ouvrir une app ou un site, envoyer un message, enchainement court) se fait directement avec tes tools, sans run_task. Apres run_task, dis simplement que tu t'en occupes ; ne promets aucun resultat avant l'annonce de fin.
 Pendant qu'une tache tourne, evite les actions sur l'interface (fenetres, saisie, navigation) qui pourraient la perturber ; si l'utilisateur en demande une, previens-le qu'une tache est en cours et propose d'attendre ou d'annuler. Pour l'avancement, utilise task_status ; pour arreter, cancel_task.
 Quand une tache se termine, annonce son resultat tel qu'il est rapporte. Si elle a prepare un message, annonce l'application, le destinataire et le contenu exact, puis attends un oui clair avant confirm_action avec le token fourni, comme pour tout envoi.
+Procedures : quand l'utilisateur veut garder une tache qui vient de reussir ("retiens cette tache", "garde ca comme procedure"), appelle save_task_procedure avec un nom court. Quand il veut la rejouer ("refais comme d'habitude", "refais la procedure X"), appelle run_procedure avec ce nom : ca relance une tache en arriere-plan basee sur l'enchainement habituel. Si run_procedure dit que la procedure est introuvable, propose de refaire la tache normalement via run_task.
 Si le tool échoue, informe l'utilisateur de l'échec.
 """.strip()
 
