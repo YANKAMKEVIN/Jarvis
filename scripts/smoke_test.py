@@ -690,6 +690,15 @@ def group_calendar(ctx: Context, step) -> None:
     step("list_calendar_events (lecture)", read_today)
 
 
+def group_privacy(ctx: Context, step) -> None:
+    def overview():
+        result = call_ok(ctx, "privacy_overview")
+        for key in ("memory_count", "scheduled_count", "reminder_count", "activity_count"):
+            expect(isinstance(result.get(key), int), f"{key} manquant")
+
+    step("privacy_overview", overview)
+
+
 def group_mail(ctx: Context, step) -> None:
     # Read-only: never creates a draft in the user's real Mail.
     def read_unread():
@@ -724,6 +733,7 @@ GROUPS = {
     "clipboard_rewrite": group_clipboard_rewrite,
     "calendar": group_calendar,
     "mail": group_mail,
+    "privacy": group_privacy,
 }
 
 

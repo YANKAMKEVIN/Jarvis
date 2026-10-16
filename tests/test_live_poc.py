@@ -94,6 +94,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "prepare_send_message",
     "press_key",
     "previous_track",
+    "privacy_overview",
     "propose_memory",
     "recall",
     "recent_activity",

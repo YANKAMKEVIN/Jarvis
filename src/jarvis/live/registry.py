@@ -2565,6 +2565,40 @@ class ToolRegistry:
                 reminder_id=reminder_id,
             ).to_livekit_dict()
 
+        @function_tool(
+            name="privacy_overview",
+            description=(
+                "Donne un apercu de ce que Jarvis garde sur l'utilisateur : nombre "
+                "de souvenirs, d'actions recentes au journal, de messages planifies "
+                "et de rappels en attente. Pour 'qu'est-ce que tu sais sur moi', "
+                "'qu'est-ce que tu gardes'. Pour voir le detail, utilise "
+                "list_memories, list_scheduled_messages, list_reminders ou "
+                "recent_activity ; pour effacer, forget."
+            ),
+        )
+        async def privacy_overview() -> dict:
+            """Aggregate what Jarvis stores, read-only."""
+            debug_live("tool_call", tool="privacy_overview")
+            async with self.memory_lock:
+                mem = await asyncio.to_thread(self.memory.list_memories)
+                act = await asyncio.to_thread(self.memory.recent_activity, 50)
+            scheduled = await asyncio.to_thread(self.schedule_store.list, "pending")
+            reminders = await asyncio.to_thread(self.reminder_store.list, "pending")
+            memory_count = mem.data.get("count", 0) if mem.ok else 0
+            activity_count = len(act.data.get("episodes", [])) if act.ok else 0
+            return ToolResult.success(
+                action="privacy_overview",
+                message=(
+                    f"Je garde {memory_count} souvenir(s), {len(scheduled)} message(s) "
+                    f"planifie(s) et {len(reminders)} rappel(s) en attente ; "
+                    f"{activity_count} action(s) recente(s) au journal."
+                ),
+                memory_count=memory_count,
+                activity_count=activity_count,
+                scheduled_count=len(scheduled),
+                reminder_count=len(reminders),
+            ).to_livekit_dict()
+
         tools = [
             set_volume,
             get_volume,
@@ -2648,6 +2682,7 @@ class ToolRegistry:
             set_reminder,
             list_reminders,
             cancel_reminder,
+            privacy_overview,
             run_task,
             task_status,
             cancel_task,
