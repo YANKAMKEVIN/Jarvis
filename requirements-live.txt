@@ -1,1 +1,6 @@
 livekit-agents[google]~=1.5
+
+# Optional: native, fast calendar reads via EventKit. Jarvis degrades to the
+# AppleScript reader if absent. Calendar access (TCC) only prompts from a
+# packaged .app with NSCalendarsUsageDescription, not a bare interpreter.
+pyobjc-framework-EventKit>=10.0

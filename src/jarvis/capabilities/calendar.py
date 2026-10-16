@@ -9,18 +9,48 @@ from jarvis.tools.calendar import CalendarError, CalendarTools
 
 
 class CalendarCapability:
-    def __init__(self, calendar_tools: CalendarTools | None = None):
+    def __init__(self, calendar_tools: CalendarTools | None = None, events_reader=None):
         self.calendar_tools = (
             calendar_tools if calendar_tools is not None else CalendarTools()
         )
+        # Built lazily on the first read (EventKit import + store init are heavy,
+        # and most sessions never read the calendar). An explicit reader (tests)
+        # is used as-is.
+        self._events_reader = events_reader
+        self._reader_ready = events_reader is not None
+
+    def _reader(self):
+        if not self._reader_ready:
+            try:
+                from jarvis.tools.eventkit_calendar import EventKitCalendarReader
+
+                self._events_reader = EventKitCalendarReader()
+            except Exception:
+                self._events_reader = None
+            self._reader_ready = True
+        return self._events_reader
 
     def list_today(self, day_offset: int = 0) -> ToolResult:
-        try:
-            state = self.calendar_tools.list_events_today(day_offset)
-        except CalendarError as error:
-            return self._failure("list_calendar_events", error)
-        except Exception as error:
-            return self._system_error("list_calendar_events", error)
+        state = None
+        reader = self._reader()
+        if reader is not None:
+            try:
+                state = reader.read_today(day_offset)
+            except CalendarError as error:
+                # Not authorized / EventKit missing: fall back to AppleScript.
+                if error.code not in ("calendar_not_authorized", "eventkit_unavailable"):
+                    return self._failure("list_calendar_events", error)
+                state = None
+            except Exception:
+                state = None
+
+        if state is None:
+            try:
+                state = self.calendar_tools.list_events_today(day_offset)
+            except CalendarError as error:
+                return self._failure("list_calendar_events", error)
+            except Exception as error:
+                return self._system_error("list_calendar_events", error)
 
         count = state.get("event_count", 0)
         if count:
