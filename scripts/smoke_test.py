@@ -628,6 +628,25 @@ def group_compute(ctx: Context, step) -> None:
     step("calculate rejette du code", rejects_code)
 
 
+def group_notes(ctx: Context, step) -> None:
+    # Writes to the throwaway notes dir set in main(), not the real Documents.
+    state = {}
+
+    def save():
+        result = call_ok(ctx, "save_note", "Acheter du pain et appeler le plombier.", "Courses")
+        expect(bool(result.get("path")), "chemin de note absent")
+        state["path"] = result["path"]
+        expect(Path(state["path"]).exists(), "le fichier de note n'existe pas")
+
+    def listed():
+        result = call_ok(ctx, "list_notes")
+        names = [n["name"] for n in result.get("notes", [])]
+        expect(any(Path(state["path"]).name == n for n in names), "note absente de la liste")
+
+    step("save_note", save, critical=True)
+    step("list_notes", listed)
+
+
 def group_storage(ctx: Context, step) -> None:
     def status():
         result = call_ok(ctx, "get_storage_status")
@@ -820,6 +839,7 @@ GROUPS = {
     "memory": group_memory,
     "knowledge": group_knowledge,
     "compute": group_compute,
+    "notes": group_notes,
     "storage": group_storage,
     "search": group_search,
     "reminders": group_reminders,
@@ -902,6 +922,7 @@ def main() -> int:
     os.environ["JARVIS_MEMORY_PATH"] = str(workdir / "memory.db")
     os.environ["JARVIS_SCHEDULE_PATH"] = str(workdir / "scheduled.db")
     os.environ["JARVIS_REMINDERS_PATH"] = str(workdir / "reminders.db")
+    os.environ["JARVIS_NOTES_DIR"] = str(workdir / "notes")
 
     from jarvis.live.registry import create_live_tools
 

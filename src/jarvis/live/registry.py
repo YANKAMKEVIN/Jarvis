@@ -21,6 +21,7 @@ from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.memory import MemoryCapability
 from jarvis.capabilities.messaging import MessagingCapability
 from jarvis.capabilities.mouse import MouseCapability
+from jarvis.capabilities.notes import NotesCapability
 from jarvis.capabilities.results import ToolResult
 from jarvis.capabilities.screenshot import ScreenshotCapability
 from jarvis.capabilities.system import SystemCapability
@@ -191,6 +192,7 @@ class ToolRegistry:
             else MailCapability()
         )
         self.compute = ComputeCapability()
+        self.notes = NotesCapability()
         self.document = (
             document_capability
             if document_capability is not None
@@ -686,6 +688,38 @@ class ToolRegistry:
                 self.compute.convert_units, value, from_unit, to_unit,
             )
             self._debug_tool_result("convert_units", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="save_note",
+            description=(
+                "Enregistre une note dictee par l'utilisateur dans un fichier local "
+                "('prends une note : ...', 'note que ...'). text : le contenu de la "
+                "note ; title : un titre court optionnel. La note est sauvegardee "
+                "dans le dossier Notes de Jarvis ; rien n'est envoye."
+            ),
+        )
+        @self._journaled("save_note")
+        async def save_note(text: str, title: str | None = None) -> dict:
+            """Save a dictated note to a local Markdown file."""
+            debug_live("tool_call", tool="save_note",
+                       char_count=len(text) if isinstance(text, str) else None)
+            result = await asyncio.to_thread(self.notes.save_note, text, title)
+            self._debug_tool_result("save_note", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="list_notes",
+            description=(
+                "Liste les notes recemment enregistrees (nom, chemin). Pour 'mes "
+                "notes', 'qu'est-ce que j'ai note'."
+            ),
+        )
+        async def list_notes(limit: int = 10) -> dict:
+            """List recent saved notes."""
+            debug_live("tool_call", tool="list_notes")
+            result = await asyncio.to_thread(self.notes.list_notes, limit)
+            self._debug_tool_result("list_notes", result)
             return result.to_livekit_dict()
 
         @function_tool(
@@ -2858,6 +2892,8 @@ class ToolRegistry:
             get_system_info,
             calculate,
             convert_units,
+            save_note,
+            list_notes,
             list_calendar_events,
             create_calendar_event,
             list_unread_emails,
