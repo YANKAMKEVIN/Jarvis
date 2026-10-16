@@ -33,6 +33,7 @@ from jarvis.capabilities.vision import VisionCapability
 from jarvis.capabilities.webread import WebReadCapability
 from jarvis.capabilities.windows import WindowCapability
 from jarvis.live.config import debug_live, get_vision_model, is_vision_enabled
+from jarvis.context_store import ContextError, ContextStore
 from jarvis.live.confirmation import PendingActionStore
 from jarvis.macros import MacroError, MacroStore
 from jarvis.planner.engine import PlannerEngine, TaskOutcome
@@ -77,6 +78,7 @@ class ToolRegistry:
         mail_capability=None,
         document_capability=None,
         macro_store=None,
+        context_store=None,
         pending_actions=None,
         planner_model=None,
     ):
@@ -201,6 +203,7 @@ class ToolRegistry:
         self.diagnostics = DiagnosticsCapability()
         self.shortcuts = ShortcutsCapability()
         self.macro_store = macro_store if macro_store is not None else MacroStore()
+        self.context_store = context_store if context_store is not None else ContextStore()
         self.webread = WebReadCapability(model=planner_model)
         self.document = (
             document_capability
@@ -2785,6 +2788,51 @@ class ToolRegistry:
             ).to_livekit_dict()
 
         @function_tool(
+            name="remember_context",
+            description=(
+                "Note en une phrase ce sur quoi vous travaillez, pour pouvoir "
+                "reprendre plus tard, meme dans une autre session ('retiens ou on "
+                "en est', ou de toi-meme a un point d'etape). text : un court resume "
+                "de l'etat d'avancement. Different de remember (faits durables) et "
+                "de save_note (notes dictees)."
+            ),
+        )
+        @self._journaled("remember_context")
+        async def remember_context(text: str) -> dict:
+            """Record a rolling conversation-context note."""
+            debug_live("tool_call", tool="remember_context")
+            try:
+                row = await asyncio.to_thread(self.context_store.add, text)
+            except ContextError as error:
+                return ToolResult.failure(
+                    action="remember_context", message=error.message, error_code=error.code,
+                ).to_livekit_dict()
+            return ToolResult.success(
+                action="remember_context", message="Contexte retenu.", context_id=row["id"],
+            ).to_livekit_dict()
+
+        @function_tool(
+            name="recall_context",
+            description=(
+                "Rappelle ce sur quoi vous travailliez recemment, pour reprendre le "
+                "fil ('reprends ou on en etait', 'on faisait quoi deja'). Renvoie les "
+                "dernieres notes de contexte."
+            ),
+        )
+        async def recall_context() -> dict:
+            """Return recent conversation-context notes."""
+            debug_live("tool_call", tool="recall_context")
+            rows = await asyncio.to_thread(self.context_store.recent)
+            entries = [r["text"] for r in rows]
+            if entries:
+                message = "Voici ou on en etait : " + " ; ".join(entries)
+            else:
+                message = "Je n'ai pas encore de contexte recent enregistre."
+            return ToolResult.success(
+                action="recall_context", message=message, context=entries, count=len(entries),
+            ).to_livekit_dict()
+
+        @function_tool(
             name="schedule_message",
             description=(
                 "PLANIFIE l'envoi d'un message a un destinataire a une date/heure "
@@ -3160,6 +3208,8 @@ class ToolRegistry:
             run_macro,
             list_macros,
             delete_macro,
+            remember_context,
+            recall_context,
         ]
 
         # The planner drives these very tools (same locks, journal and pending
@@ -3456,6 +3506,7 @@ def create_live_registry(
     mail_capability=None,
     document_capability=None,
     macro_store=None,
+    context_store=None,
     planner_model=None,
 ) -> "ToolRegistry":
     if audio_capability is None:
@@ -3572,5 +3623,6 @@ def create_live_registry(
         mail_capability=mail_capability,
         document_capability=document_capability,
         macro_store=macro_store,
+        context_store=context_store,
         planner_model=planner_model,
     )

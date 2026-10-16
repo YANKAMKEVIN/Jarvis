@@ -639,6 +639,19 @@ def group_webread(ctx: Context, step) -> None:
     step("summarize_url (reseau + modele)", summarize)
 
 
+def group_context(ctx: Context, step) -> None:
+    def remember():
+        call_ok(ctx, "remember_context", "on teste le smoke du contexte")
+
+    def recall():
+        result = call_ok(ctx, "recall_context")
+        expect("on teste le smoke du contexte" in result.get("context", []),
+               "le contexte retenu n'est pas rappele")
+
+    step("remember_context", remember, critical=True)
+    step("recall_context", recall)
+
+
 def group_shortcuts(ctx: Context, step) -> None:
     # Reads the shortcuts list (safe) and verifies an unknown shortcut is
     # refused. Never runs a real user shortcut (could do anything).
@@ -908,6 +921,7 @@ GROUPS = {
     "knowledge": group_knowledge,
     "compute": group_compute,
     "webread": group_webread,
+    "context": group_context,
     "shortcuts": group_shortcuts,
     "macros": group_macros,
     "diagnostics": group_diagnostics,
@@ -996,6 +1010,7 @@ def main() -> int:
     os.environ["JARVIS_REMINDERS_PATH"] = str(workdir / "reminders.db")
     os.environ["JARVIS_NOTES_DIR"] = str(workdir / "notes")
     os.environ["JARVIS_MACROS_PATH"] = str(workdir / "macros.db")
+    os.environ["JARVIS_CONTEXT_PATH"] = str(workdir / "context.db")
 
     from jarvis.live.registry import create_live_tools
 
