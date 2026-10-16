@@ -83,6 +83,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "lock_screen",
     "maximize_window",
     "minimize_window",
+    "morning_briefing",
     "move_file",
     "move_mouse",
     "move_window",

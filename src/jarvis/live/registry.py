@@ -224,6 +224,8 @@ class ToolRegistry:
         # The last retrieved web answer, kept verbatim so "envoie ça" sends
         # exactly what was found (not a paraphrase). Content only; never logged.
         self._last_web_result_text: str | None = None
+        # Morning briefing runs in the background like a web search.
+        self._briefing_task: asyncio.Task | None = None
 
     @staticmethod
     def _default_knowledge() -> KnowledgeCapability:
@@ -271,6 +273,50 @@ class ToolRegistry:
         await self._log_action("search_the_web", None, result)
         if self.task_notifier is not None:
             await self.task_notifier(web_announcement_for(result))
+
+    def _briefing_running(self) -> bool:
+        return self._briefing_task is not None and not self._briefing_task.done()
+
+    async def _run_briefing(self, topic: str | None) -> None:
+        from datetime import datetime
+
+        date_label = datetime.now().strftime("%A %d %B %Y")
+
+        # Agenda (best effort: a slow/locked calendar must not block the briefing).
+        try:
+            agenda = await asyncio.to_thread(self.calendar.list_today, 0)
+        except Exception:
+            agenda = None
+        if agenda is not None and agenda.ok:
+            count = agenda.data.get("event_count", 0)
+            agenda_line = (
+                f"{count} evenement(s) a l'agenda aujourd'hui" if count
+                else "aucun evenement a l'agenda aujourd'hui"
+            )
+        else:
+            agenda_line = "agenda non disponible"
+
+        # News (reliable).
+        question = topic.strip() if isinstance(topic, str) and topic.strip() else (
+            "principales actualites importantes aujourd'hui"
+        )
+        try:
+            news = await asyncio.to_thread(self.knowledge.answer, question)
+            news_text = news.message if news.ok else ""
+        except Exception:
+            news_text = ""
+
+        await self._log_action("morning_briefing", None, ToolResult.success(
+            action="morning_briefing", message="ok"))
+        if self.task_notifier is None:
+            return
+        announcement = (
+            "Le briefing est pret. Transmets-le a l'utilisateur de maniere naturelle "
+            f"et concise, sans lire d'URL : nous sommes {date_label} ; {agenda_line}. "
+            f"Actualites : {news_text or 'non disponibles pour le moment'}. "
+            "Termine en proposant d'aller plus loin sur un point si utile."
+        )
+        await self.task_notifier(announcement)
 
     @staticmethod
     def _format_web_result_for_send(result: ToolResult) -> str:
@@ -2226,6 +2272,38 @@ class ToolRegistry:
             ).to_livekit_dict()
 
         @function_tool(
+            name="morning_briefing",
+            description=(
+                "Prepare un point du jour parle : la date, un apercu de l'agenda et "
+                "les principales actualites. Pour 'fais-moi le point', 'briefing du "
+                "matin', 'quoi de neuf aujourd'hui'. Tourne en arriere-plan : des que "
+                "tu l'appelles, dis que tu prepares le point ; le resultat sera "
+                "annonce tout seul. topic : theme d'actualite optionnel."
+            ),
+        )
+        @self._journaled("morning_briefing")
+        async def morning_briefing(topic: str | None = None) -> dict:
+            """Start a background briefing (date + agenda + news), announced by voice."""
+            debug_live("tool_call", tool="morning_briefing")
+            if self._briefing_running():
+                return ToolResult.failure(
+                    action="morning_briefing",
+                    message="Un briefing est deja en cours de preparation.",
+                    error_code="briefing_running",
+                ).to_livekit_dict()
+            self._briefing_task = asyncio.get_running_loop().create_task(
+                self._run_briefing(topic)
+            )
+            return ToolResult.success(
+                action="morning_briefing",
+                message=(
+                    "Briefing en preparation. Dis a l'utilisateur que tu prepares le "
+                    "point du jour ; le resultat sera annonce dans un instant."
+                ),
+                briefing_started=True,
+            ).to_livekit_dict()
+
+        @function_tool(
             name="web_answer",
             description=(
                 "Recherche une information a jour sur le web et renvoie une reponse "
@@ -2703,6 +2781,7 @@ class ToolRegistry:
             ask_about_screen,
             ask_about_document,
             search_the_web,
+            morning_briefing,
             send_last_web_result,
             schedule_message,
             list_scheduled_messages,

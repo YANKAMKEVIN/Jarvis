@@ -690,6 +690,16 @@ def group_calendar(ctx: Context, step) -> None:
     step("list_calendar_events (lecture)", read_today)
 
 
+def group_briefing(ctx: Context, step) -> None:
+    # The briefing runs in the background and is announced by voice; from the
+    # tool call we can only confirm it started (its result is not returned here).
+    def start():
+        result = call_ok(ctx, "morning_briefing")
+        expect(result.get("briefing_started") is True, "briefing non demarre")
+
+    step("morning_briefing (demarrage)", start)
+
+
 def group_document(ctx: Context, step) -> None:
     def ask():
         doc = ctx.workdir / "smoke_doc.txt"
@@ -747,6 +757,7 @@ GROUPS = {
     "calendar": group_calendar,
     "mail": group_mail,
     "document": group_document,
+    "briefing": group_briefing,
     "privacy": group_privacy,
 }
 
