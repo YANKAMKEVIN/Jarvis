@@ -28,6 +28,7 @@ from jarvis.live.confirmation import PendingActionStore
 from jarvis.planner.engine import PlannerEngine, TaskOutcome
 from jarvis.planner.models import build_planner_model
 from jarvis.planner.tasks import TaskManager, announcement_for
+from jarvis.schedule.reminders import ReminderError, ReminderStore
 from jarvis.schedule.store import ScheduleError, ScheduledMessageStore, parse_due_at
 from jarvis.tools.vision import VisionTools
 
@@ -60,6 +61,7 @@ class ToolRegistry:
         memory_capability=None,
         knowledge_capability=None,
         schedule_store=None,
+        reminder_store=None,
         pending_actions=None,
         planner_model=None,
     ):
@@ -158,6 +160,11 @@ class ToolRegistry:
             schedule_store
             if schedule_store is not None
             else ScheduledMessageStore()
+        )
+        self.reminder_store = (
+            reminder_store
+            if reminder_store is not None
+            else ReminderStore()
         )
         self.pending_actions = (
             pending_actions
@@ -2311,6 +2318,92 @@ class ToolRegistry:
                 scheduled_id=message_id,
             ).to_livekit_dict()
 
+        @function_tool(
+            name="set_reminder",
+            description=(
+                "Programme un RAPPEL personnel qui declenchera une notification "
+                "macOS a l'heure dite ('rappelle-moi dans 20 minutes de sortir le "
+                "gateau', 'rappelle-moi demain a 8h d'appeler le dentiste'). Calcule "
+                "when comme une date/heure absolue ISO 8601 a partir de l'heure "
+                "actuelle. C'est une note a soi-meme (aucun envoi exterieur), donc "
+                "pas de confirmation : le rappel est enregistre directement. Il se "
+                "declenche si le Mac est allume a ce moment-la."
+            ),
+        )
+        @self._journaled("set_reminder")
+        async def set_reminder(text: str, when: str) -> dict:
+            """Store a personal reminder that fires a macOS notification."""
+            debug_live("tool_call", tool="set_reminder", text_length=len(text) if isinstance(text, str) else None)
+            if not isinstance(text, str) or not text.strip():
+                return ToolResult.failure(
+                    action="set_reminder",
+                    message="Le texte du rappel est obligatoire.",
+                    error_code="invalid_text",
+                ).to_livekit_dict()
+            try:
+                due_at = parse_due_at(when)
+            except ScheduleError as error:
+                return ToolResult.failure(
+                    action="set_reminder", message=error.message, error_code=error.code,
+                ).to_livekit_dict()
+            try:
+                row = await asyncio.to_thread(self.reminder_store.add, text, due_at)
+            except ReminderError as error:
+                return ToolResult.failure(
+                    action="set_reminder", message=error.message, error_code=error.code,
+                ).to_livekit_dict()
+            return ToolResult.success(
+                action="set_reminder",
+                message="Rappel enregistre.",
+                reminder_id=row["id"],
+                due_at=row["due_at"],
+            ).to_livekit_dict()
+
+        @function_tool(
+            name="list_reminders",
+            description=(
+                "Liste les rappels personnels en attente (id, heure, texte). Pour "
+                "'quels rappels j'ai', 'qu'est-ce que tu dois me rappeler'."
+            ),
+        )
+        async def list_reminders() -> dict:
+            """Return pending reminders."""
+            debug_live("tool_call", tool="list_reminders")
+            rows = await asyncio.to_thread(self.reminder_store.list, "pending")
+            reminders = [
+                {"id": r["id"], "due_at": r["due_at"], "text": r["text"]} for r in rows
+            ]
+            return ToolResult.success(
+                action="list_reminders",
+                message=f"{len(reminders)} rappel(s) en attente.",
+                reminders=reminders,
+                count=len(reminders),
+            ).to_livekit_dict()
+
+        @function_tool(
+            name="cancel_reminder",
+            description=(
+                "Annule un rappel par son id (obtenu via list_reminders). Pour "
+                "'annule le rappel du dentiste', 'oublie ce rappel'."
+            ),
+        )
+        @self._journaled("cancel_reminder")
+        async def cancel_reminder(reminder_id: int) -> dict:
+            """Cancel a pending reminder."""
+            debug_live("tool_call", tool="cancel_reminder")
+            cancelled = await asyncio.to_thread(self.reminder_store.cancel, reminder_id)
+            if not cancelled:
+                return ToolResult.failure(
+                    action="cancel_reminder",
+                    message="Aucun rappel en attente avec cet id.",
+                    error_code="reminder_not_found",
+                ).to_livekit_dict()
+            return ToolResult.success(
+                action="cancel_reminder",
+                message="Rappel annule.",
+                reminder_id=reminder_id,
+            ).to_livekit_dict()
+
         tools = [
             set_volume,
             get_volume,
@@ -2386,6 +2479,9 @@ class ToolRegistry:
             schedule_message,
             list_scheduled_messages,
             cancel_scheduled_message,
+            set_reminder,
+            list_reminders,
+            cancel_reminder,
             run_task,
             task_status,
             cancel_task,
@@ -2681,6 +2777,7 @@ def create_live_registry(
     memory_capability=None,
     knowledge_capability=None,
     schedule_store=None,
+    reminder_store=None,
     planner_model=None,
 ) -> "ToolRegistry":
     if audio_capability is None:
@@ -2791,5 +2888,6 @@ def create_live_registry(
         memory_capability=memory_capability,
         knowledge_capability=knowledge_capability,
         schedule_store=schedule_store,
+        reminder_store=reminder_store,
         planner_model=planner_model,
     )

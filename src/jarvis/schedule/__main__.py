@@ -18,6 +18,7 @@ from pathlib import Path
 
 import jarvis
 from jarvis.capabilities.messaging import MessagingCapability
+from jarvis.schedule.reminders import ReminderStore, deliver_reminders
 from jarvis.schedule.runner import deliver_due, macos_notifier, macos_screen_unlocked
 from jarvis.schedule.store import ScheduledMessageStore
 
@@ -40,9 +41,11 @@ def cmd_deliver() -> int:
         screen_unlocked=macos_screen_unlocked,
         notifier=macos_notifier,
     )
+    reminders = deliver_reminders(ReminderStore(), notifier=macos_notifier)
     print(
         f"deliver: sent={len(results['sent'])} "
-        f"deferred={len(results['deferred'])} failed={len(results['failed'])}"
+        f"deferred={len(results['deferred'])} failed={len(results['failed'])} "
+        f"reminders={len(reminders)}"
     )
     return 0
 
