@@ -65,6 +65,24 @@ class FilesCapability:
             **state,
         )
 
+    def search_content(self, query: str, limit: int | None = None) -> ToolResult:
+        try:
+            state = self.filesystem_tools.spotlight_search(query, limit)
+        except FileSystemError as error:
+            return self._filesystem_failure("search_content", error)
+        except Exception as error:
+            return self._system_error_result("search_content", error)
+
+        result_count = state.get("result_count", 0)
+        if result_count:
+            message = f"{result_count} fichier(s) trouve(s) par Spotlight."
+        else:
+            message = "Spotlight n'a trouve aucun fichier correspondant."
+        if state.get("truncated"):
+            message += " Les resultats sont tronques."
+
+        return ToolResult.success(action="search_content", message=message, **state)
+
     def get_file_info(self, path: str) -> ToolResult:
         try:
             state = self.filesystem_tools.get_file_info(path)

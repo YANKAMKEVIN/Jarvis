@@ -714,6 +714,23 @@ class ToolRegistry:
             return result.to_livekit_dict()
 
         @function_tool(
+            name="search_files_by_content",
+            description=(
+                "Recherche des fichiers locaux par CONTENU ou metadonnees via "
+                "Spotlight (rapide, tout le dossier personnel) : 'retrouve mon CV', "
+                "'le document qui parle du budget 2026', 'la facture EDF'. Pour une "
+                "recherche par nom de fichier precis dans un dossier, prefere "
+                "find_files."
+            ),
+        )
+        async def search_files_by_content(query: str) -> dict:
+            """Spotlight content/metadata search across the home folder."""
+            debug_live("tool_call", tool="search_files_by_content", query_length=len(query) if isinstance(query, str) else None)
+            result = await asyncio.to_thread(self.files.search_content, query)
+            self._debug_tool_result("search_files_by_content", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
             name="get_file_info",
             description=(
                 "Lit les informations actuelles d'un fichier ou dossier local : "
@@ -2301,6 +2318,7 @@ class ToolRegistry:
             move_window,
             list_files,
             find_files,
+            search_files_by_content,
             get_file_info,
             open_file,
             open_folder,

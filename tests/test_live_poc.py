@@ -98,6 +98,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "save_task_procedure",
     "schedule_message",
     "scroll",
+    "search_files_by_content",
     "search_the_web",
     "select_all_and_copy",
     "select_all_and_delete",

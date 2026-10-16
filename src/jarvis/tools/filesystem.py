@@ -6,7 +6,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 BUNDLE_SUFFIXES = {".app", ".bundle", ".pkg"}
@@ -282,6 +282,9 @@ class FileSystemTools:
     list_limit: int = 50
     find_limit: int = 20
     max_find_depth: int = 3
+    spotlight_limit: int = 20
+    # Injectable argv -> stdout runner, so Spotlight search is testable offline.
+    spotlight_runner: Callable[[list[str]], str] | None = None
 
     def list_files(self, path: str | Path | None = None) -> dict[str, Any]:
         directory = self.resolver.resolve_directory_or_home(path)
@@ -346,6 +349,61 @@ class FileSystemTools:
             "result_count": len(matches),
             "truncated": truncated,
         }
+
+    def spotlight_search(
+        self,
+        query: str,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """Content/metadata search via macOS Spotlight (mdfind), scoped to home.
+
+        Complements find_files (name-only, slow walk): Spotlight searches file
+        contents and metadata across the home folder, instantly.
+        """
+        query = self._validate_query(query)
+        cap = self.spotlight_limit if limit is None else max(1, min(int(limit), 100))
+        home = str(self.resolver.home)
+        output = self._run_spotlight(["mdfind", "-onlyin", home, query])
+
+        results: list[dict[str, Any]] = []
+        total = 0
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            total += 1
+            if len(results) >= cap:
+                continue
+            candidate = Path(line)
+            try:
+                results.append(path_info(candidate))
+            except Exception:
+                continue
+
+        return {
+            "query": query,
+            "path": home,
+            "results": results,
+            "result_count": len(results),
+            "truncated": total > len(results),
+        }
+
+    def _run_spotlight(self, argv: list[str]) -> str:
+        if self.spotlight_runner is not None:
+            return self.spotlight_runner(argv)
+        try:
+            completed = subprocess.run(
+                argv, capture_output=True, text=True, timeout=10,
+            )
+        except Exception as error:
+            raise FileSystemError(
+                f"Recherche Spotlight impossible : {error}", "spotlight_error"
+            )
+        if completed.returncode != 0:
+            raise FileSystemError(
+                "La recherche Spotlight a echoue.", "spotlight_error"
+            )
+        return completed.stdout
 
     def get_file_info(self, path: str | Path) -> dict[str, Any]:
         resolved = self.resolver.resolve_existing(
