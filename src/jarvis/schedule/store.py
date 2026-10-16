@@ -22,6 +22,9 @@ from typing import Any, Callable
 
 STATUSES = ("pending", "sent", "failed", "cancelled")
 
+# Recurrence period in seconds, by keyword. "none" = one-shot.
+RECURRENCES = {"daily": 86400.0, "weekly": 7 * 86400.0}
+
 MAX_TEXT_LENGTH = 4000
 MAX_RECIPIENT_LENGTH = 200
 MAX_APP_LENGTH = 80
@@ -38,7 +41,8 @@ CREATE TABLE IF NOT EXISTS scheduled (
     attempts INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
     created_at REAL NOT NULL,
-    sent_at REAL
+    sent_at REAL,
+    recurrence TEXT NOT NULL DEFAULT 'none'
 );
 
 CREATE INDEX IF NOT EXISTS scheduled_due ON scheduled(status, due_at);
@@ -102,7 +106,14 @@ class ScheduledMessageStore:
 
     # --- public API ----------------------------------------------------------
 
-    def add(self, app: str, recipient: str, text: str, due_at: float) -> dict[str, Any]:
+    def add(
+        self,
+        app: str,
+        recipient: str,
+        text: str,
+        due_at: float,
+        recurrence: str = "none",
+    ) -> dict[str, Any]:
         app = self._require(app, "app", MAX_APP_LENGTH, "invalid_app")
         recipient = self._require(
             recipient, "recipient", MAX_RECIPIENT_LENGTH, "invalid_recipient"
@@ -112,13 +123,16 @@ class ScheduledMessageStore:
             due = float(due_at)
         except (TypeError, ValueError):
             raise ScheduleError("La date d'envoi est invalide.", "invalid_due_at")
+        recurrence = (recurrence or "none").strip().lower()
+        if recurrence != "none" and recurrence not in RECURRENCES:
+            raise ScheduleError("Recurrence inconnue.", "invalid_recurrence")
 
         now = self._clock()
         with closing(self._connect()) as conn, conn:
             cursor = conn.execute(
                 "INSERT INTO scheduled (app, recipient, text, due_at, status, "
-                "attempts, created_at) VALUES (?, ?, ?, ?, 'pending', 0, ?)",
-                (app, recipient, text, due, now),
+                "attempts, created_at, recurrence) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)",
+                (app, recipient, text, due, now, recurrence),
             )
             row_id = cursor.lastrowid
         return self.get(row_id)
@@ -224,6 +238,13 @@ class ScheduledMessageStore:
 
         if not initialized:
             conn.executescript(_SCHEMA)
+            # Migrate older DBs that predate the recurrence column.
+            try:
+                conn.execute(
+                    "ALTER TABLE scheduled ADD COLUMN recurrence TEXT NOT NULL DEFAULT 'none'"
+                )
+            except sqlite3.OperationalError:
+                pass  # column already exists
             self._initialized_path = path
 
         return conn

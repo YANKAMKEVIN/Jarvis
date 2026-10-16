@@ -2342,7 +2342,8 @@ class ToolRegistry:
                 "destinataire, le contenu et l'heure, puis attends un oui clair avant "
                 "confirm_action(token). Le message partira tout seul a l'heure dite si "
                 "le Mac est allume, deverrouille et WhatsApp lance ; le destinataire "
-                "sera revérifie a ce moment-la. app_name par defaut WhatsApp."
+                "sera revérifie a ce moment-la. app_name par defaut WhatsApp. "
+                "repeat : 'none' (defaut), 'daily' ou 'weekly' pour un envoi recurrent."
             ),
         )
         @self._journaled("schedule_message", "app_name")
@@ -2351,6 +2352,7 @@ class ToolRegistry:
             text: str,
             when: str,
             app_name: str = "WhatsApp",
+            repeat: str = "none",
         ) -> dict:
             """Register a future send for confirmation; nothing is scheduled yet."""
             debug_live(
@@ -2379,6 +2381,13 @@ class ToolRegistry:
                     message=error.message,
                     error_code=error.code,
                 ).to_livekit_dict()
+            recurrence = (repeat or "none").strip().lower()
+            if recurrence not in ("none", "daily", "weekly"):
+                return ToolResult.failure(
+                    action="schedule_message",
+                    message="La recurrence doit etre none, daily ou weekly.",
+                    error_code="invalid_recurrence",
+                ).to_livekit_dict()
 
             # Apply memory locally: "ma mere" -> stored contact name.
             async with self.memory_lock:
@@ -2386,7 +2395,9 @@ class ToolRegistry:
             target_recipient = resolved or recipient.strip()
 
             def _executor():
-                row = self.schedule_store.add(app_name, target_recipient, text, due_at)
+                row = self.schedule_store.add(
+                    app_name, target_recipient, text, due_at, recurrence,
+                )
                 return ToolResult.success(
                     action="schedule_message",
                     message="Message planifie.",
@@ -2394,6 +2405,7 @@ class ToolRegistry:
                     recipient=row["recipient"],
                     due_at=row["due_at"],
                     app=row["app"],
+                    recurrence=row["recurrence"],
                 )
 
             async with self.confirmation_lock:
@@ -2409,6 +2421,7 @@ class ToolRegistry:
                 target_app=app_name,
                 due_at=due_at,
                 text_length=len(text),
+                recurrence=recurrence,
                 recipient_from_memory=bool(resolved),
             ).to_livekit_dict()
 

@@ -14,6 +14,8 @@ import subprocess
 import time
 from typing import Any, Callable
 
+from jarvis.schedule.store import RECURRENCES
+
 
 # How long after its due time a message keeps being retried while it cannot be
 # delivered (e.g. the Mac is locked), before it is marked failed.
@@ -67,10 +69,22 @@ def deliver_due(
             store.mark_sent(row_id)
             results["sent"].append(row_id)
             _notify(notifier, f"Message planifie envoye a {recipient}.")
+            _reschedule_recurring(store, row, moment)
         else:
             settle(getattr(sent, "error_code", None) or "echec d'envoi")
 
     return results
+
+
+def _reschedule_recurring(store, row: dict, now: float):
+    """Arm the next occurrence of a recurring message after a successful send."""
+    period = RECURRENCES.get((row.get("recurrence") or "none"))
+    if not period:
+        return None
+    nxt = row["due_at"] + period
+    while nxt <= now:  # catch up if the Mac was off across several periods
+        nxt += period
+    return store.add(row["app"], row["recipient"], row["text"], nxt, row["recurrence"])
 
 
 def _notify(notifier: Callable[[str], None] | None, message: str) -> None:

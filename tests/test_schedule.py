@@ -188,6 +188,47 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(messaging.sent, [])
 
 
+class RecurrenceTests(unittest.TestCase):
+    def test_add_stores_recurrence(self):
+        store = make_store(Clock())
+        row = store.add("WhatsApp", "A", "x", due_at=2000.0, recurrence="daily")
+        self.assertEqual(row["recurrence"], "daily")
+
+    def test_invalid_recurrence_rejected(self):
+        with self.assertRaises(ScheduleError):
+            make_store(Clock()).add("WhatsApp", "A", "x", due_at=2000.0, recurrence="hourly")
+
+    def test_successful_daily_send_arms_next_occurrence(self):
+        store = make_store(Clock(now=2000.0))
+        store.add("WhatsApp", "Marie", "coucou", due_at=1900.0, recurrence="daily")
+        messaging = FakeMessaging()
+
+        deliver_due(store, messaging, screen_unlocked=lambda: True, now=2000.0)
+
+        # Original marked sent, a new pending occurrence armed one day later.
+        pending = store.list("pending")
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["recurrence"], "daily")
+        self.assertEqual(pending[0]["due_at"], 1900.0 + 86400.0)
+
+    def test_recurrence_catches_up_past_periods(self):
+        store = make_store(Clock())
+        store.add("WhatsApp", "Marie", "x", due_at=1000.0, recurrence="daily")
+        messaging = FakeMessaging()
+        # now is 3 days after due: next occurrence must be in the future.
+        now = 1000.0 + 3 * 86400.0 + 10
+        deliver_due(store, messaging, screen_unlocked=lambda: True, now=now)
+
+        nxt = store.list("pending")[0]["due_at"]
+        self.assertGreater(nxt, now)
+
+    def test_one_shot_does_not_rearm(self):
+        store = make_store(Clock(now=2000.0))
+        store.add("WhatsApp", "Marie", "x", due_at=1900.0, recurrence="none")
+        deliver_due(store, FakeMessaging(), screen_unlocked=lambda: True, now=2000.0)
+        self.assertEqual(store.list("pending"), [])
+
+
 class ParseDueAtTests(unittest.TestCase):
     def test_future_iso_returns_epoch(self):
         epoch = parse_due_at("2999-01-01T09:00", now=1000.0)
