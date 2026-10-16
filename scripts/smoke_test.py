@@ -690,6 +690,20 @@ def group_calendar(ctx: Context, step) -> None:
     step("list_calendar_events (lecture)", read_today)
 
 
+def group_mail(ctx: Context, step) -> None:
+    # Read-only: never creates a draft in the user's real Mail.
+    def read_unread():
+        try:
+            result = call(ctx, "list_unread_emails", 5)
+        except Exception as error:
+            raise Skipped(f"messagerie indisponible : {error}")
+        if not result.get("ok"):
+            raise Skipped(f"mails non lisibles : {result.get('error_code')}")
+        expect("unread_count" in result, "unread_count manquant")
+
+    step("list_unread_emails (lecture)", read_unread)
+
+
 GROUPS = {
     "system": group_system,
     "volume": group_volume,
@@ -709,6 +723,7 @@ GROUPS = {
     "reminders": group_reminders,
     "clipboard_rewrite": group_clipboard_rewrite,
     "calendar": group_calendar,
+    "mail": group_mail,
 }
 
 

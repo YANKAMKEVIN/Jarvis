@@ -14,6 +14,7 @@ from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.knowledge import KnowledgeCapability, web_announcement_for
+from jarvis.capabilities.mail import MailCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.memory import MemoryCapability
 from jarvis.capabilities.messaging import MessagingCapability
@@ -66,6 +67,7 @@ class ToolRegistry:
         reminder_store=None,
         text_workshop_capability=None,
         calendar_capability=None,
+        mail_capability=None,
         pending_actions=None,
         planner_model=None,
     ):
@@ -179,6 +181,11 @@ class ToolRegistry:
             calendar_capability
             if calendar_capability is not None
             else CalendarCapability()
+        )
+        self.mail = (
+            mail_capability
+            if mail_capability is not None
+            else MailCapability()
         )
         self.pending_actions = (
             pending_actions
@@ -663,6 +670,39 @@ class ToolRegistry:
                 start=start_dt.isoformat(timespec="minutes"),
                 end=end_dt.isoformat(timespec="minutes"),
             ).to_livekit_dict()
+
+        @function_tool(
+            name="list_unread_emails",
+            description=(
+                "Lit les mails non lus de la boite de reception Apple Mail (sujet, "
+                "expediteur, date) : 'mes mails non lus', 'qu'est-ce que j'ai recu'. "
+                "limit : nombre maximum a remonter."
+            ),
+        )
+        async def list_unread_emails(limit: int = 10) -> dict:
+            """Read unread Apple Mail messages."""
+            debug_live("tool_call", tool="list_unread_emails")
+            result = await asyncio.to_thread(self.mail.list_unread, limit)
+            self._debug_tool_result("list_unread_emails", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="draft_email",
+            description=(
+                "Cree un BROUILLON de mail dans Apple Mail (NON envoye) : "
+                "'prepare un mail a ...', 'ecris un brouillon de reponse'. Le "
+                "brouillon est enregistre dans Mail pour que l'utilisateur le relise "
+                "et l'envoie lui-meme ; rien n'est envoye. recipient : adresse email ; "
+                "subject : objet ; body : contenu."
+            ),
+        )
+        @self._journaled("draft_email")
+        async def draft_email(recipient: str, subject: str, body: str) -> dict:
+            """Create an unsent Apple Mail draft."""
+            debug_live("tool_call", tool="draft_email", body_length=len(body) if isinstance(body, str) else None)
+            result = await asyncio.to_thread(self.mail.create_draft, recipient, subject, body)
+            self._debug_tool_result("draft_email", result)
+            return result.to_livekit_dict()
 
         @function_tool(
             name="get_brightness",
@@ -2527,6 +2567,8 @@ class ToolRegistry:
             get_system_info,
             list_calendar_events,
             create_calendar_event,
+            list_unread_emails,
+            draft_email,
             get_brightness,
             set_brightness,
             lock_screen,
@@ -2891,6 +2933,7 @@ def create_live_registry(
     reminder_store=None,
     text_workshop_capability=None,
     calendar_capability=None,
+    mail_capability=None,
     planner_model=None,
 ) -> "ToolRegistry":
     if audio_capability is None:
@@ -3004,5 +3047,6 @@ def create_live_registry(
         reminder_store=reminder_store,
         text_workshop_capability=text_workshop_capability,
         calendar_capability=calendar_capability,
+        mail_capability=mail_capability,
         planner_model=planner_model,
     )
