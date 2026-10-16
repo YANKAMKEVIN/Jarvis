@@ -275,6 +275,29 @@ class PlannerEngineTest(unittest.TestCase):
         ]
         self.assertEqual(names, sorted(names))  # stable prompt prefix
 
+    def test_ask_clarification_pauses_the_task(self):
+        model = ScriptedModel([
+            ModelTurn(tool_calls=[call("ask_clarification", question="Quel destinataire ?")]),
+        ])
+        outcome = run(PlannerEngine(model, FakeTools().tools), goal="envoie un message")
+        self.assertEqual(outcome.status, "needs_clarification")
+        self.assertEqual(outcome.pending["question"], "Quel destinataire ?")
+
+    def test_ask_clarification_schema_is_exposed(self):
+        engine = PlannerEngine(ScriptedModel([]), FakeTools().tools)
+        names = [s["function"]["name"] for s in engine.schemas]
+        self.assertIn("ask_clarification", names)
+
+    def test_clarification_announcement_asks_the_question(self):
+        from jarvis.planner.tasks import announcement_for
+        from jarvis.planner.engine import TaskOutcome
+
+        outcome = TaskOutcome("needs_clarification", "manque info",
+                              pending={"question": "Quel contact ?"})
+        text = announcement_for("un but", outcome)
+        self.assertIn("Quel contact ?", text)
+        self.assertIn("precision", text.lower())
+
     def test_planner_can_call_web_answer(self):
         self.assertIn("web_answer", PLANNER_TOOL_NAMES)
         calls = []

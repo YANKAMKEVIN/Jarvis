@@ -157,6 +157,13 @@ def announcement_for(goal: str, outcome: TaskOutcome) -> str:
             f"explicite. Seulement sur un oui clair, appelle confirm_action(token=\"{token}\") ; "
             f"sinon appelle cancel_action(token=\"{token}\")."
         )
+    if outcome.status == "needs_clarification":
+        question = (outcome.pending or {}).get("question") or outcome.summary
+        return (
+            "La tache en arriere-plan a besoin d'une precision pour continuer. "
+            f"Pose cette question a l'utilisateur, simplement : « {question} » "
+            "Quand il repond, relance la tache avec cette information (run_task)."
+        )
     if outcome.status == "completed":
         return (
             f"La tache « {goal} » est terminee. Resultat du planificateur : {outcome.summary} "

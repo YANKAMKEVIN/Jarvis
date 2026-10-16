@@ -76,6 +76,7 @@ Tu es le planificateur de Jarvis, l'assistant de l'utilisateur sur son Mac. Tu r
 Methode : decoupe l'objectif en etapes courtes ; appelle un tool ; lis son resultat ; continue seulement si l'etape a reussi.
 Verification : une etape n'a reussi que si ok=true. Si state_confirmed=false, l'effet n'est pas confirme : relis l'etat avec un tool de lecture (get_active_window, browse_get_active_tab, list_files...) avant d'en dependre.
 Correction : si une etape echoue, essaie une autre approche sure une seule fois (par exemple focaliser l'application ou le champ avant de taper). Si tu restes bloque, arrete-toi et explique pourquoi.
+Clarification : si une information ESSENTIELLE te manque pour continuer et que tu ne peux pas l'obtenir toi-meme avec un tool (par exemple le nom exact d'un destinataire, un choix ambigu), appelle ask_clarification(question) avec UNE question courte et precise. N'appelle ask_clarification qu'en dernier recours, jamais pour une information que tu peux recuperer (recall, lecture d'etat).
 N'invente jamais un chemin, un nom de contact, une URL ou un resultat. Utilise recall pour une information personnelle (un proche, une preference).
 Pour une information a jour que tu n'as pas (actualites, prix, meteo, faits recents, "qui est"), utilise web_answer avec la question ; appuie-toi uniquement sur sa reponse et ses sources, sans rien inventer.
 Messages : prepare_send_message prepare un envoi sans l'envoyer ; l'utilisateur confirmera lui-meme ensuite. Ne cherche jamais a envoyer autrement.
@@ -119,6 +120,24 @@ class TaskOutcome:
         return payload
 
 
+_ASK_CLARIFICATION_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "ask_clarification",
+        "description": (
+            "Pose UNE question courte a l'utilisateur quand une information "
+            "essentielle manque pour continuer et ne peut pas etre obtenue "
+            "autrement. La tache s'arrete en attendant sa reponse."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"question": {"type": "string"}},
+            "required": ["question"],
+        },
+    },
+}
+
+
 def tool_schema(tool) -> dict:
     from livekit.agents.llm.utils import build_legacy_openai_schema
 
@@ -142,8 +161,12 @@ class PlannerEngine:
         self.tools = {
             tool.info.name: tool for tool in tools if tool.info.name in allowed_set
         }
-        # Deterministic order keeps the prompt prefix stable (cache-friendly).
-        self.schemas = [tool_schema(self.tools[name]) for name in sorted(self.tools)]
+        # Synthetic tool: the engine intercepts it (not a real capability) to
+        # pause the task and have the voice layer ask the user one question.
+        schemas = [tool_schema(self.tools[name]) for name in self.tools]
+        schemas.append(_ASK_CLARIFICATION_SCHEMA)
+        # Deterministic sorted order keeps the prompt prefix stable (cache-friendly).
+        self.schemas = sorted(schemas, key=lambda s: s["function"]["name"])
         self.max_steps = max(1, int(max_steps))
         self.max_seconds = float(max_seconds)
         self.max_consecutive_failures = max(1, int(max_consecutive_failures))
@@ -194,6 +217,15 @@ class PlannerEngine:
                 stop = self._check_limits(cancel, started, steps)
                 if stop is not None:
                     return stop
+
+                if call.name == "ask_clarification":
+                    question = str(call.arguments.get("question") or "").strip()
+                    return TaskOutcome(
+                        "needs_clarification",
+                        question or "J'ai besoin d'une precision pour continuer.",
+                        steps,
+                        pending={"question": question},
+                    )
 
                 result = await self._execute(call)
                 record = StepRecord(
