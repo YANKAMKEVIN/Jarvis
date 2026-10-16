@@ -65,6 +65,11 @@ class MessagingCapability:
     """
 
     DEFAULT_SEARCH_SETTLE_SECONDS = 0.4
+    # Bringing an app frontmost and revealing its search field is timing-
+    # sensitive: a first pass can see the wrong window or a not-yet-ready field.
+    # Retrying the verify/navigate cycle a few times absorbs that.
+    DEFAULT_NAVIGATE_ATTEMPTS = 3
+    DEFAULT_RETRY_SETTLE_SECONDS = 0.6
 
     def __init__(
         self,
@@ -76,6 +81,8 @@ class MessagingCapability:
         composer_queries: dict[str, str] | None = None,
         search_queries: dict[str, str] | None = None,
         search_settle_seconds: float = DEFAULT_SEARCH_SETTLE_SECONDS,
+        navigate_attempts: int = DEFAULT_NAVIGATE_ATTEMPTS,
+        retry_settle_seconds: float = DEFAULT_RETRY_SETTLE_SECONDS,
         sleeper=None,
     ):
         self.windows = windows if windows is not None else WindowCapability()
@@ -111,6 +118,8 @@ class MessagingCapability:
             key.casefold(): value for key, value in DEFAULT_SEND_BUTTON_QUERIES.items()
         }
         self.search_settle_seconds = max(0.0, float(search_settle_seconds))
+        self.navigate_attempts = max(1, int(navigate_attempts))
+        self.retry_settle_seconds = max(0.0, float(retry_settle_seconds))
         self.sleeper = sleeper if sleeper is not None else time.sleep
 
     def search_query(self, app_name: str) -> str | None:
@@ -337,29 +346,35 @@ class MessagingCapability:
         recipient and verifies again. Returns a verified result, or a fail-safe
         refusal — the send is only prepared when this returns ok.
         """
-        verification = self.verify_recipient(app_name, expected_recipient)
-
-        if verification.ok:
-            return verification
+        last = self.verify_recipient(app_name, expected_recipient)
+        if last.ok:
+            return last
 
         resolvable = (
-            verification.error_code == "recipient_not_verified"
-            and verification.data.get("reason") in _NAVIGABLE_REASONS
+            last.error_code == "recipient_not_verified"
+            and last.data.get("reason") in _NAVIGABLE_REASONS
             and self.search_query(app_name) is not None
         )
-
         if not resolvable:
-            return verification
+            # A definitive wrong chat with no search path won't fix itself.
+            return last
 
-        navigation = self.navigate_to_recipient(app_name, expected_recipient)
+        # Bringing the app frontmost and revealing the search field is timing-
+        # sensitive (today's no_window / search_field_not_found were transient).
+        # Retry only when navigation itself FAILS; if it succeeds but opens the
+        # wrong chat, that is a real mismatch -- refuse at once without re-typing.
+        for attempt in range(self.navigate_attempts):
+            navigation = self.navigate_to_recipient(app_name, expected_recipient)
+            if navigation.ok:
+                # Re-verify against the header AFTER navigating: the safety net.
+                # If the wrong chat (or none) opened, this refuses; nothing is sent.
+                return self.verify_recipient(app_name, expected_recipient)
 
-        if not navigation.ok:
-            return navigation
+            last = navigation
+            if attempt < self.navigate_attempts - 1:
+                self.sleeper(self.retry_settle_seconds)
 
-        # Re-verify against the header AFTER navigating: this is the safety net.
-        # If navigation opened the wrong chat (or none), this refuses and nothing
-        # is ever sent to the wrong person.
-        return self.verify_recipient(app_name, expected_recipient)
+        return last
 
     def navigate_to_recipient(self, app_name: str, expected_recipient: str) -> ToolResult:
         """Open the app, search the recipient by name and open the top result.

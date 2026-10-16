@@ -278,6 +278,75 @@ class SendTextTest(unittest.TestCase):
         self.assertEqual(result.error_code, "invalid_text")
 
 
+class SequencedWindows:
+    """Windows whose active app and focus confirmation follow fixed sequences,
+    to simulate an app that is not frontmost at first then settles."""
+
+    def __init__(self, active_apps, focus_confirms):
+        self._active_apps = list(active_apps)
+        self._focus_confirms = list(focus_confirms)
+        self.calls = []
+
+    def get_active_window(self):
+        app = self._active_apps.pop(0) if self._active_apps else "WhatsApp"
+        return ToolResult.success(
+            action="get_active_window", message="ok", target_app=app,
+        )
+
+    def focus_window(self, app_name):
+        self.calls.append(("focus_window", app_name))
+        confirmed = self._focus_confirms.pop(0) if self._focus_confirms else True
+        return ToolResult.success(
+            action="focus_window", message="ok",
+            state_confirmed=confirmed, target_app=app_name,
+        )
+
+
+class EnsureRecipientRetryTest(unittest.TestCase):
+    def test_transient_not_frontmost_then_succeeds(self):
+        # 1st verify: WhatsApp not active (Finder) -> navigable mismatch.
+        # 1st navigate: focus_window not confirmed -> fails (no_window).
+        # 2nd navigate: focus confirmed; re-verify sees WhatsApp + right header.
+        windows = SequencedWindows(
+            active_apps=["Finder", "WhatsApp"],
+            focus_confirms=[False, True],
+        )
+        ui = FakeUI(elements=[header("Marie Curie")])
+        capability = MessagingCapability(
+            windows=windows,
+            ui_accessibility=ui,
+            apps=FakeApps(),
+            keyboard=FakeKeyboard(),
+            sleeper=lambda _seconds: None,
+        )
+
+        result = capability.ensure_recipient("WhatsApp", "Marie")
+
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["recipient_verified"])
+        self.assertEqual(len(windows.calls), 2)  # retried focus_window once
+
+    def test_gives_up_after_attempts_and_fails_safe(self):
+        windows = SequencedWindows(
+            active_apps=["Finder", "Finder", "Finder", "Finder"],
+            focus_confirms=[False, False, False],
+        )
+        ui = FakeUI(elements=[header("Marie Curie")])
+        capability = MessagingCapability(
+            windows=windows,
+            ui_accessibility=ui,
+            apps=FakeApps(),
+            keyboard=FakeKeyboard(),
+            navigate_attempts=3,
+            sleeper=lambda _seconds: None,
+        )
+
+        result = capability.ensure_recipient("WhatsApp", "Marie")
+
+        self.assertFalse(result.ok)  # never confirmed -> safe refusal
+        self.assertEqual(len(windows.calls), 3)  # tried the configured attempts
+
+
 class EnsureRecipientTest(unittest.TestCase):
     def test_already_open_match_does_not_navigate(self):
         ui = FakeUI(elements=[header("Joel Chinda")])
