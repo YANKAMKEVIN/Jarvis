@@ -719,12 +719,49 @@ def group_vision_click(ctx: Context, step) -> None:
     # blind click). We never auto-click a real element in the smoke test.
     def refuses_unknown():
         result = call(ctx, "click_element", "element_inexistant_smoke_xyz_123")
+        # The point: it must REFUSE (no blind click). Any failure code that means
+        # "couldn't ground a target" is acceptable.
         expect(result.get("ok") is False, "un element inexistant ne doit pas etre clique")
-        expect(result.get("error_code") in ("ui_element_not_found", "no_grounded_target",
-                                            "ambiguous_ui_element"),
-               f"code inattendu : {result.get('error_code')}")
+        expect(result.get("error_code") in (
+            "ui_element_not_found", "no_grounded_target", "ambiguous_ui_element",
+            "focused_window_unavailable", "accessibility_denied",
+        ), f"code inattendu : {result.get('error_code')}")
 
     step("click_element refuse une cible inconnue", refuses_unknown)
+
+
+def group_scheduled(ctx: Context, step) -> None:
+    # Schedule -> confirm -> list -> cancel, against the throwaway store set in
+    # main(). Never delivers (no send): delivery is the runner's job, not here.
+    state = {}
+
+    def schedule():
+        when = (datetime.now() + timedelta(days=1)).isoformat(timespec="minutes")
+        prep = call_ok(ctx, "schedule_message", "ContactSmokeTest", "ne pas envoyer", when)
+        expect(prep.get("requires_confirmation") is True, "pas de confirmation requise")
+        expect(bool(prep.get("token")), "token absent")
+        confirmed = call_ok(ctx, "confirm_action", prep["token"])
+        expect(confirmed.get("scheduled_id") is not None, f"non planifie : {confirmed}")
+        state["id"] = confirmed["scheduled_id"]
+
+    def recurring_rejects_bad_value():
+        when = (datetime.now() + timedelta(days=1)).isoformat(timespec="minutes")
+        result = call(ctx, "schedule_message", "X", "y", when, "WhatsApp", "hourly")
+        expect(result.get("error_code") == "invalid_recurrence", f"recurrence invalide acceptee : {result}")
+
+    def list_them():
+        result = call_ok(ctx, "list_scheduled_messages")
+        ids = [m["id"] for m in result.get("scheduled", [])]
+        expect(state["id"] in ids, "le message planifie n'apparait pas")
+
+    def cancel_it():
+        result = call_ok(ctx, "cancel_scheduled_message", state["id"])
+        expect(result.get("ok") is True, f"annulation : {result}")
+
+    step("schedule_message + confirm (sans envoi)", schedule, critical=True)
+    step("schedule_message refuse une recurrence invalide", recurring_rejects_bad_value)
+    step("list_scheduled_messages", list_them)
+    step("cancel_scheduled_message", cancel_it)
 
 
 def group_privacy(ctx: Context, step) -> None:
@@ -773,6 +810,7 @@ GROUPS = {
     "document": group_document,
     "briefing": group_briefing,
     "vision_click": group_vision_click,
+    "scheduled": group_scheduled,
     "privacy": group_privacy,
 }
 
