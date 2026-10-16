@@ -175,6 +175,39 @@ class WindowCapability:
             **state,
         )
 
+    def arrange_side_by_side(self, left_app: str, right_app: str) -> ToolResult:
+        """Tile two apps side by side: left_app on the left half, right_app on
+        the right half. Composes move_window; fails if either move fails."""
+        if not (isinstance(left_app, str) and left_app.strip()
+                and isinstance(right_app, str) and right_app.strip()):
+            return ToolResult.failure(
+                action="arrange_windows",
+                message="Indique les deux applications a placer cote a cote.",
+                error_code="invalid_app_name",
+            )
+        left = self.move_window("left", left_app.strip())
+        if not left.ok:
+            return ToolResult.failure(
+                action="arrange_windows",
+                message=f"Impossible de placer {left_app} a gauche.",
+                error_code=left.error_code or "move_failed",
+            )
+        right = self.move_window("right", right_app.strip())
+        if not right.ok:
+            return ToolResult.failure(
+                action="arrange_windows",
+                message=f"{left_app} placee a gauche, mais impossible de placer {right_app} a droite.",
+                error_code=right.error_code or "move_failed",
+            )
+        return ToolResult.success(
+            action="arrange_windows",
+            message=f"{left_app} a gauche et {right_app} a droite.",
+            left_app=left_app.strip(),
+            right_app=right_app.strip(),
+            left_confirmed=bool(left.data.get("state_confirmed")),
+            right_confirmed=bool(right.data.get("state_confirmed")),
+        )
+
     @staticmethod
     def _move_success_message(position: str) -> str:
         if position == "fullscreen":

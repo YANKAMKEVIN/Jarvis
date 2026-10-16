@@ -238,3 +238,28 @@ class WindowCapabilityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ArrangeWindowsTest(unittest.TestCase):
+    def test_tiles_two_apps_left_and_right(self):
+        security = RecordingSecurity()
+        tools = RecordingMacOSTools()
+        cap = WindowCapability(security=security, macos_tools=tools)
+
+        result = cap.arrange_side_by_side("Safari", "Notes")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(tools.move_calls, [("left", "Safari"), ("right", "Notes")])
+        self.assertEqual(result.data["left_app"], "Safari")
+        self.assertEqual(result.data["right_app"], "Notes")
+
+    def test_requires_both_apps(self):
+        cap = WindowCapability(security=RecordingSecurity(), macos_tools=RecordingMacOSTools())
+        self.assertFalse(cap.arrange_side_by_side("Safari", "  ").ok)
+        self.assertFalse(cap.arrange_side_by_side("", "Notes").ok)
+
+    def test_stops_if_left_move_fails(self):
+        security = RecordingSecurity(allowed=False)  # move blocked -> left fails
+        cap = WindowCapability(security=security, macos_tools=RecordingMacOSTools())
+        result = cap.arrange_side_by_side("Safari", "Notes")
+        self.assertFalse(result.ok)

@@ -986,6 +986,24 @@ class ToolRegistry:
             return result.to_livekit_dict()
 
         @function_tool(
+            name="arrange_windows",
+            description=(
+                "Place deux applications cote a cote : la premiere sur la moitie "
+                "gauche de l'ecran, la seconde sur la moitie droite ('mets Safari a "
+                "gauche et Notes a droite', 'range ces deux fenetres'). left_app et "
+                "right_app : les noms des applications."
+            ),
+        )
+        async def arrange_windows(left_app: str, right_app: str) -> dict:
+            """Tile two apps side by side."""
+            debug_live("tool_call", tool="arrange_windows")
+            result = await asyncio.to_thread(
+                self.windows.arrange_side_by_side, left_app, right_app,
+            )
+            self._debug_tool_result("arrange_windows", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
             name="list_files",
             description=(
                 "Liste les fichiers et dossiers d'un chemin local macOS. "
@@ -3031,6 +3049,7 @@ class ToolRegistry:
             minimize_window,
             maximize_window,
             move_window,
+            arrange_windows,
             list_files,
             find_files,
             search_files_by_content,
