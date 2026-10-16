@@ -405,6 +405,33 @@ class FileSystemTools:
             )
         return completed.stdout
 
+    def read_text(self, path: str | Path, max_chars: int = 12000) -> dict[str, Any]:
+        """Read a local text file's content (bounded), refusing binary files."""
+        resolved = self.resolver.resolve_existing(
+            path,
+            action="read_text",
+            expected_kind="file",
+            follow_symlink=True,
+        )
+        cap = max(200, min(int(max_chars), 40000))
+        try:
+            raw = resolved.read_bytes()[: cap * 4]  # a char is up to 4 UTF-8 bytes
+        except OSError as error:
+            raise FileSystemError(f"Lecture impossible : {error}", "read_failed")
+        if b"\x00" in raw[:4096]:
+            raise FileSystemError(
+                "Ce fichier ne semble pas etre du texte lisible.", "binary_file"
+            )
+        text = raw.decode("utf-8", errors="replace")
+        truncated = len(text) > cap
+        return {
+            "path": str(resolved),
+            "name": resolved.name,
+            "text": text[:cap],
+            "char_count": min(len(text), cap),
+            "truncated": truncated,
+        }
+
     def get_file_info(self, path: str | Path) -> dict[str, Any]:
         resolved = self.resolver.resolve_existing(
             path,

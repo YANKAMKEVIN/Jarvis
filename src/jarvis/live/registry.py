@@ -10,6 +10,7 @@ from jarvis.capabilities.audio import AudioCapability
 from jarvis.capabilities.browser import BrowserCapability
 from jarvis.capabilities.calendar import CalendarCapability
 from jarvis.capabilities.clipboard import ClipboardCapability
+from jarvis.capabilities.document import DocumentCapability
 from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
 from jarvis.capabilities.keyboard import KeyboardCapability
@@ -68,6 +69,7 @@ class ToolRegistry:
         text_workshop_capability=None,
         calendar_capability=None,
         mail_capability=None,
+        document_capability=None,
         pending_actions=None,
         planner_model=None,
     ):
@@ -186,6 +188,11 @@ class ToolRegistry:
             mail_capability
             if mail_capability is not None
             else MailCapability()
+        )
+        self.document = (
+            document_capability
+            if document_capability is not None
+            else DocumentCapability(self.files.filesystem_tools, model=planner_model)
         )
         self.pending_actions = (
             pending_actions
@@ -876,6 +883,26 @@ class ToolRegistry:
             debug_live("tool_call", tool="search_files_by_content", query_length=len(query) if isinstance(query, str) else None)
             result = await asyncio.to_thread(self.files.search_content, query)
             self._debug_tool_result("search_files_by_content", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="ask_about_document",
+            description=(
+                "Lit un document texte local et repond a une question a son sujet : "
+                "'resume ce fichier', 'que dit ce document sur le budget', 'quelles "
+                "sont les dates dans ce contrat'. path : le chemin du fichier (utilise "
+                "find_files ou search_files_by_content pour le retrouver d'abord si "
+                "besoin). Fonctionne sur du texte (txt, md, code, csv) ; pas les PDF "
+                "pour l'instant. La reponse se base uniquement sur le contenu du "
+                "document."
+            ),
+        )
+        @self._journaled("ask_about_document")
+        async def ask_about_document(path: str, question: str) -> dict:
+            """Answer a question about a local text document via the local model."""
+            debug_live("tool_call", tool="ask_about_document")
+            result = await asyncio.to_thread(self.document.ask, path, question)
+            self._debug_tool_result("ask_about_document", result)
             return result.to_livekit_dict()
 
         @function_tool(
@@ -2674,6 +2701,7 @@ class ToolRegistry:
             capture_window,
             describe_screen,
             ask_about_screen,
+            ask_about_document,
             search_the_web,
             send_last_web_result,
             schedule_message,
@@ -2982,6 +3010,7 @@ def create_live_registry(
     text_workshop_capability=None,
     calendar_capability=None,
     mail_capability=None,
+    document_capability=None,
     planner_model=None,
 ) -> "ToolRegistry":
     if audio_capability is None:
@@ -3096,5 +3125,6 @@ def create_live_registry(
         text_workshop_capability=text_workshop_capability,
         calendar_capability=calendar_capability,
         mail_capability=mail_capability,
+        document_capability=document_capability,
         planner_model=planner_model,
     )

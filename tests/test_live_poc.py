@@ -32,6 +32,7 @@ from jarvis.voice_mode import VoiceMode
 
 EXPECTED_LIVE_TOOL_NAMES = [
     "activate_ui_element",
+    "ask_about_document",
     "ask_about_screen",
     "browse_activate_tab",
     "browse_get_active_tab",

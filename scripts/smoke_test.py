@@ -690,6 +690,19 @@ def group_calendar(ctx: Context, step) -> None:
     step("list_calendar_events (lecture)", read_today)
 
 
+def group_document(ctx: Context, step) -> None:
+    def ask():
+        doc = ctx.workdir / "smoke_doc.txt"
+        doc.write_text("La reunion est prevue le 20 octobre 2026 a 14 heures.")
+        result = call(ctx, "ask_about_document", str(doc), "Quelle est la date de la reunion ?")
+        if result.get("error_code") == "model_error":
+            raise Skipped("modele local indisponible (Ollama)")
+        expect(result.get("ok") is True, f"ask -> {result.get('error_code')}")
+        expect(bool(result.get("message")), "reponse vide")
+
+    step("ask_about_document (modele local)", ask)
+
+
 def group_privacy(ctx: Context, step) -> None:
     def overview():
         result = call_ok(ctx, "privacy_overview")
@@ -733,6 +746,7 @@ GROUPS = {
     "clipboard_rewrite": group_clipboard_rewrite,
     "calendar": group_calendar,
     "mail": group_mail,
+    "document": group_document,
     "privacy": group_privacy,
 }
 
