@@ -8,6 +8,7 @@ from livekit.agents import function_tool
 from jarvis.capabilities.apps import AppCapability
 from jarvis.capabilities.audio import AudioCapability
 from jarvis.capabilities.browser import BrowserCapability
+from jarvis.capabilities.calendar import CalendarCapability
 from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
@@ -64,6 +65,7 @@ class ToolRegistry:
         schedule_store=None,
         reminder_store=None,
         text_workshop_capability=None,
+        calendar_capability=None,
         pending_actions=None,
         planner_model=None,
     ):
@@ -172,6 +174,11 @@ class ToolRegistry:
             text_workshop_capability
             if text_workshop_capability is not None
             else TextWorkshopCapability(self.clipboard, model=planner_model)
+        )
+        self.calendar = (
+            calendar_capability
+            if calendar_capability is not None
+            else CalendarCapability()
         )
         self.pending_actions = (
             pending_actions
@@ -584,6 +591,78 @@ class ToolRegistry:
             result = await asyncio.to_thread(self.system.get_storage_status)
             self._debug_tool_result("get_storage_status", result)
             return result.to_livekit_dict()
+
+        @function_tool(
+            name="list_calendar_events",
+            description=(
+                "Lit les evenements de l'agenda Apple pour un jour : "
+                "'qu'est-ce que j'ai aujourd'hui', 'mon agenda de demain'. "
+                "day_offset : 0 aujourd'hui, 1 demain, -1 hier."
+            ),
+        )
+        async def list_calendar_events(day_offset: int = 0) -> dict:
+            """Read Apple Calendar events for a day."""
+            debug_live("tool_call", tool="list_calendar_events", day_offset=day_offset)
+            result = await asyncio.to_thread(self.calendar.list_today, day_offset)
+            self._debug_tool_result("list_calendar_events", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="create_calendar_event",
+            description=(
+                "PREPARE la creation d'un evenement dans l'agenda Apple, sans le "
+                "creer tout de suite. Utilise ce tool pour 'ajoute un rendez-vous', "
+                "'cree un evenement'. start et end sont des date/heure ISO 8601 "
+                "absolues calculees depuis l'heure actuelle. Renvoie un token et "
+                "requires_confirmation : annonce le titre, le jour et l'heure, puis "
+                "confirm_action seulement sur un oui clair."
+            ),
+        )
+        @self._journaled("create_calendar_event")
+        async def create_calendar_event(title: str, start: str, end: str) -> dict:
+            """Prepare an Apple Calendar event for confirmation."""
+            debug_live("tool_call", tool="create_calendar_event")
+            # Validate eagerly so the user is not asked to confirm a bad event.
+            if not isinstance(title, str) or not title.strip():
+                return ToolResult.failure(
+                    action="create_calendar_event",
+                    message="Le titre de l'evenement est obligatoire.",
+                    error_code="invalid_title",
+                ).to_livekit_dict()
+            from jarvis.capabilities.calendar import _parse_iso
+            try:
+                start_dt = _parse_iso(start)
+                end_dt = _parse_iso(end)
+            except ValueError:
+                return ToolResult.failure(
+                    action="create_calendar_event",
+                    message="Les dates doivent etre au format ISO 8601.",
+                    error_code="invalid_datetime",
+                ).to_livekit_dict()
+            if end_dt <= start_dt:
+                return ToolResult.failure(
+                    action="create_calendar_event",
+                    message="La fin doit etre apres le debut.",
+                    error_code="invalid_range",
+                ).to_livekit_dict()
+
+            def _executor():
+                return self.calendar.create_event(title, start, end)
+
+            async with self.confirmation_lock:
+                token = self.pending_actions.register("create_calendar_event", _executor)
+            return ToolResult.success(
+                action="create_calendar_event",
+                message=(
+                    "Evenement a confirmer. Annonce le titre, le jour et l'heure, "
+                    "puis attends la confirmation avant confirm_action."
+                ),
+                requires_confirmation=True,
+                token=token,
+                title=title.strip(),
+                start=start_dt.isoformat(timespec="minutes"),
+                end=end_dt.isoformat(timespec="minutes"),
+            ).to_livekit_dict()
 
         @function_tool(
             name="get_brightness",
@@ -2446,6 +2525,8 @@ class ToolRegistry:
             get_battery_status,
             get_storage_status,
             get_system_info,
+            list_calendar_events,
+            create_calendar_event,
             get_brightness,
             set_brightness,
             lock_screen,
@@ -2809,6 +2890,7 @@ def create_live_registry(
     schedule_store=None,
     reminder_store=None,
     text_workshop_capability=None,
+    calendar_capability=None,
     planner_model=None,
 ) -> "ToolRegistry":
     if audio_capability is None:
@@ -2921,5 +3003,6 @@ def create_live_registry(
         schedule_store=schedule_store,
         reminder_store=reminder_store,
         text_workshop_capability=text_workshop_capability,
+        calendar_capability=calendar_capability,
         planner_model=planner_model,
     )

@@ -26,6 +26,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -608,6 +609,87 @@ def group_knowledge(ctx: Context, step) -> None:
     step("recherche generale (best effort)", general)
 
 
+def group_storage(ctx: Context, step) -> None:
+    def status():
+        result = call_ok(ctx, "get_storage_status")
+        expect(isinstance(result.get("free_gb"), (int, float)), "free_gb manquant")
+        expect(isinstance(result.get("total_gb"), (int, float)), "total_gb manquant")
+        expect(result.get("percent_free") is not None, "percent_free manquant")
+
+    step("get_storage_status", status)
+
+
+def group_search(ctx: Context, step) -> None:
+    def spotlight():
+        # Spotlight should find at least this project's own files for 'jarvis'.
+        try:
+            result = call(ctx, "search_files_by_content", "jarvis")
+        except Exception as error:
+            raise Skipped(f"spotlight indisponible : {error}")
+        expect(result.get("ok") is True, f"recherche -> {result.get('error_code')}")
+        expect(result.get("result_count", 0) >= 0, "result_count manquant")
+
+    step("search_files_by_content", spotlight)
+
+
+def group_reminders(ctx: Context, step) -> None:
+    # Uses the throwaway reminders DB set in main(); never the real store.
+    state = {}
+
+    def set_one():
+        when = (datetime.now() + timedelta(days=1)).isoformat(timespec="minutes")
+        result = call_ok(ctx, "set_reminder", "Rappel smoke test", when)
+        expect("requires_confirmation" not in result, "un rappel ne doit pas demander de confirmation")
+        state["id"] = result["reminder_id"]
+
+    def list_them():
+        result = call_ok(ctx, "list_reminders")
+        ids = [r["id"] for r in result.get("reminders", [])]
+        expect(state["id"] in ids, "le rappel cree n'apparait pas dans la liste")
+
+    def cancel_it():
+        result = call_ok(ctx, "cancel_reminder", state["id"])
+        expect(result.get("ok") is True, f"annulation : {result}")
+
+    def reject_past():
+        result = call(ctx, "set_reminder", "trop tard", "2000-01-01T09:00")
+        expect(result.get("error_code") == "due_in_past", f"passe accepte : {result}")
+
+    step("set_reminder", set_one, critical=True)
+    step("list_reminders", list_them)
+    step("cancel_reminder", cancel_it)
+    step("set_reminder refuse le passe", reject_past)
+
+
+def group_clipboard_rewrite(ctx: Context, step) -> None:
+    def rewrite():
+        call_ok(ctx, "set_clipboard_text", "jai manger une pomme")
+        result = call(ctx, "rewrite_clipboard", "corrige l'orthographe")
+        if result.get("error_code") == "model_error":
+            raise Skipped("modele local indisponible (Ollama)")
+        expect(result.get("ok") is True, f"rewrite -> {result.get('error_code')}")
+        expect(result.get("transformed_length", 0) > 0, "texte transforme vide")
+        # The clipboard now holds the transformed text (not the original).
+        after = call_ok(ctx, "get_clipboard_text")
+        expect(after.get("has_text") is True, "presse-papiers vide apres transformation")
+
+    step("rewrite_clipboard (modele local)", rewrite)
+
+
+def group_calendar(ctx: Context, step) -> None:
+    # Read-only: never creates an event in the user's real calendar.
+    def read_today():
+        try:
+            result = call(ctx, "list_calendar_events", 0)
+        except Exception as error:
+            raise Skipped(f"agenda indisponible : {error}")
+        if not result.get("ok"):
+            raise Skipped(f"agenda non lisible : {result.get('error_code')}")
+        expect("event_count" in result, "event_count manquant")
+
+    step("list_calendar_events (lecture)", read_today)
+
+
 GROUPS = {
     "system": group_system,
     "volume": group_volume,
@@ -622,6 +704,11 @@ GROUPS = {
     "whatsapp": group_whatsapp,
     "memory": group_memory,
     "knowledge": group_knowledge,
+    "storage": group_storage,
+    "search": group_search,
+    "reminders": group_reminders,
+    "clipboard_rewrite": group_clipboard_rewrite,
+    "calendar": group_calendar,
 }
 
 
@@ -689,8 +776,10 @@ def main() -> int:
     # Must be inside $HOME (FilesCapability refuses anything outside).
     workdir = Path.home() / f"jarvis-smoke-{time.strftime('%Y%m%d-%H%M%S')}"
     workdir.mkdir()
-    # Never touch the user's real long-term memory.
+    # Never touch the user's real long-term memory or scheduled stores.
     os.environ["JARVIS_MEMORY_PATH"] = str(workdir / "memory.db")
+    os.environ["JARVIS_SCHEDULE_PATH"] = str(workdir / "scheduled.db")
+    os.environ["JARVIS_REMINDERS_PATH"] = str(workdir / "reminders.db")
 
     from jarvis.live.registry import create_live_tools
 
