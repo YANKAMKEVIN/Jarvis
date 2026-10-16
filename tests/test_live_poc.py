@@ -49,6 +49,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "capture_screen",
     "capture_window",
     "clear_clipboard",
+    "clear_personal_data",
     "click",
     "click_element",
     "close_app",

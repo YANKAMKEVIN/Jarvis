@@ -648,8 +648,17 @@ def group_context(ctx: Context, step) -> None:
         expect("on teste le smoke du contexte" in result.get("context", []),
                "le contexte retenu n'est pas rappele")
 
+    def clear_confirmed():
+        prep = call_ok(ctx, "clear_personal_data", "context")
+        expect(prep.get("requires_confirmation") is True, "pas de confirmation")
+        done = call_ok(ctx, "confirm_action", prep["token"])
+        expect(done.get("total_cleared", 0) >= 1, f"rien efface : {done}")
+        after = call_ok(ctx, "recall_context")
+        expect(after.get("count") == 0, "le contexte n'a pas ete efface")
+
     step("remember_context", remember, critical=True)
     step("recall_context", recall)
+    step("clear_personal_data (context, confirme)", clear_confirmed)
 
 
 def group_shortcuts(ctx: Context, step) -> None:

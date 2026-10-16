@@ -72,6 +72,13 @@ class ContextStore:
             row_id = cursor.lastrowid
         return {"id": row_id, "text": trimmed, "at": now}
 
+    def clear(self) -> int:
+        """Delete all context entries. Returns how many were removed."""
+        with closing(self._connect()) as conn, conn:
+            before = conn.execute("SELECT COUNT(*) FROM context").fetchone()[0]
+            conn.execute("DELETE FROM context")
+            return int(before)
+
     def recent(self, limit: int = DEFAULT_RECENT) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), MAX_ENTRIES))
         with closing(self._connect()) as conn:

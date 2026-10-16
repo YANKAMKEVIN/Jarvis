@@ -268,6 +268,28 @@ class ToolRegistry:
         if self.task_notifier is not None:
             await self.task_notifier(announcement_for(goal, outcome))
 
+    def _purge_personal_data(self, scope: str) -> ToolResult:
+        counts: dict[str, int] = {}
+        if scope in ("context", "all"):
+            counts["context"] = self.context_store.clear()
+        if scope in ("reminders", "all"):
+            counts["reminders"] = sum(
+                1 for r in self.reminder_store.list("pending")
+                if self.reminder_store.cancel(r["id"])
+            )
+        if scope in ("scheduled", "all"):
+            counts["scheduled"] = sum(
+                1 for m in self.schedule_store.list("pending")
+                if self.schedule_store.cancel(m["id"])
+            )
+        total = sum(counts.values())
+        return ToolResult.success(
+            action="clear_personal_data",
+            message=f"{total} element(s) efface(s) ({', '.join(f'{k}: {v}' for k, v in counts.items())}).",
+            cleared=counts,
+            total_cleared=total,
+        )
+
     def _web_running(self) -> bool:
         return self._web_task is not None and not self._web_task.done()
 
@@ -3102,6 +3124,45 @@ class ToolRegistry:
                 reminder_count=len(reminders),
             ).to_livekit_dict()
 
+        @function_tool(
+            name="clear_personal_data",
+            description=(
+                "EFFACE des donnees que Jarvis garde, apres confirmation. scope : "
+                "'context' (notes de contexte de conversation), 'reminders' (rappels "
+                "en attente), 'scheduled' (messages planifies en attente), ou 'all' "
+                "(les trois). Renvoie un token et requires_confirmation : annonce ce "
+                "qui sera efface, puis confirm_action seulement sur un oui clair. Pour "
+                "effacer un souvenir precis, utilise plutot forget."
+            ),
+        )
+        @self._journaled("clear_personal_data", "scope")
+        async def clear_personal_data(scope: str = "all") -> dict:
+            """Prepare a confirmed purge of the data Jarvis stores."""
+            debug_live("tool_call", tool="clear_personal_data", scope=scope)
+            choice = (scope or "all").strip().lower()
+            if choice not in ("context", "reminders", "scheduled", "all"):
+                return ToolResult.failure(
+                    action="clear_personal_data",
+                    message="scope doit etre context, reminders, scheduled ou all.",
+                    error_code="invalid_scope",
+                ).to_livekit_dict()
+
+            def _executor():
+                return self._purge_personal_data(choice)
+
+            async with self.confirmation_lock:
+                token = self.pending_actions.register("clear_personal_data", _executor)
+            return ToolResult.success(
+                action="clear_personal_data",
+                message=(
+                    f"Effacement a confirmer ({choice}). Annonce ce qui sera efface, "
+                    "puis attends la confirmation avant confirm_action."
+                ),
+                requires_confirmation=True,
+                token=token,
+                scope=choice,
+            ).to_livekit_dict()
+
         tools = [
             set_volume,
             get_volume,
@@ -3210,6 +3271,7 @@ class ToolRegistry:
             delete_macro,
             remember_context,
             recall_context,
+            clear_personal_data,
         ]
 
         # The planner drives these very tools (same locks, journal and pending
