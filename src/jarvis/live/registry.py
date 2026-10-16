@@ -11,6 +11,7 @@ from jarvis.capabilities.browser import BrowserCapability
 from jarvis.capabilities.calendar import CalendarCapability
 from jarvis.capabilities.clipboard import ClipboardCapability
 from jarvis.capabilities.compute import ComputeCapability
+from jarvis.capabilities.diagnostics import DiagnosticsCapability
 from jarvis.capabilities.document import DocumentCapability
 from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
@@ -193,6 +194,7 @@ class ToolRegistry:
         )
         self.compute = ComputeCapability()
         self.notes = NotesCapability()
+        self.diagnostics = DiagnosticsCapability()
         self.document = (
             document_capability
             if document_capability is not None
@@ -654,6 +656,21 @@ class ToolRegistry:
             debug_live("tool_call", tool="get_storage_status")
             result = await asyncio.to_thread(self.system.get_storage_status)
             self._debug_tool_result("get_storage_status", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="self_check",
+            description=(
+                "Diagnostic : indique quelles capacites et permissions sont "
+                "disponibles (accessibilite, enregistrement d'ecran, vision, modele "
+                "local Ollama, IMAP) et ce qui manque, avec une piste de correction. "
+                "Pour 'fais un check', 'qu'est-ce qui fonctionne', 'tes permissions'."
+            ),
+        )
+        async def self_check() -> dict:
+            """Report available capabilities and permissions."""
+            debug_live("tool_call", tool="self_check")
+            result = await asyncio.to_thread(self.diagnostics.self_check)
             return result.to_livekit_dict()
 
         @function_tool(
@@ -2890,6 +2907,7 @@ class ToolRegistry:
             get_battery_status,
             get_storage_status,
             get_system_info,
+            self_check,
             calculate,
             convert_units,
             save_note,

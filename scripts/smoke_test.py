@@ -628,6 +628,17 @@ def group_compute(ctx: Context, step) -> None:
     step("calculate rejette du code", rejects_code)
 
 
+def group_diagnostics(ctx: Context, step) -> None:
+    def check():
+        result = call_ok(ctx, "self_check")
+        checks = result.get("checks", {})
+        for name in ("accessibility", "vision", "local_model", "imap_mail"):
+            expect(name in checks, f"verification {name} absente")
+            expect("ok" in checks[name], f"{name} sans champ ok")
+
+    step("self_check", check)
+
+
 def group_notes(ctx: Context, step) -> None:
     # Writes to the throwaway notes dir set in main(), not the real Documents.
     state = {}
@@ -839,6 +850,7 @@ GROUPS = {
     "memory": group_memory,
     "knowledge": group_knowledge,
     "compute": group_compute,
+    "diagnostics": group_diagnostics,
     "notes": group_notes,
     "storage": group_storage,
     "search": group_search,
