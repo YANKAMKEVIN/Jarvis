@@ -147,6 +147,21 @@ class KeylessWebProvider:
 
     # -- transport --------------------------------------------------------
 
+    def fetch_text(self, url: str, max_chars: int = 8000) -> str:
+        """Fetch a web page and return its readable text (bounded, HTML stripped).
+
+        Raises SearXNGError on a bad URL or an unreachable page.
+        """
+        if not isinstance(url, str) or not url.strip():
+            raise SearXNGError("URL vide.")
+        parsed = urllib.parse.urlparse(url.strip())
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise SearXNGError("URL invalide (http/https attendu).")
+        body = self._fetch(url.strip())
+        text = _strip_html(body.decode("utf-8", errors="replace"))
+        cap = max(200, min(int(max_chars), 40000))
+        return text[:cap]
+
     def _fetch(self, url: str) -> bytes:
         request = urllib.request.Request(
             url,

@@ -628,6 +628,17 @@ def group_compute(ctx: Context, step) -> None:
     step("calculate rejette du code", rejects_code)
 
 
+def group_webread(ctx: Context, step) -> None:
+    def summarize():
+        result = call(ctx, "summarize_url", "https://example.com", "de quoi parle cette page ?")
+        if result.get("error_code") in ("fetch_failed", "model_error"):
+            raise Skipped(f"reseau ou modele indisponible : {result.get('error_code')}")
+        expect(result.get("ok") is True, f"summarize -> {result.get('error_code')}")
+        expect(bool(result.get("message")), "resume vide")
+
+    step("summarize_url (reseau + modele)", summarize)
+
+
 def group_diagnostics(ctx: Context, step) -> None:
     def check():
         result = call_ok(ctx, "self_check")
@@ -850,6 +861,7 @@ GROUPS = {
     "memory": group_memory,
     "knowledge": group_knowledge,
     "compute": group_compute,
+    "webread": group_webread,
     "diagnostics": group_diagnostics,
     "notes": group_notes,
     "storage": group_storage,

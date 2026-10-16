@@ -126,6 +126,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "set_clipboard_text",
     "set_reminder",
     "set_volume",
+    "summarize_url",
     "task_status",
     "type_text",
 ]

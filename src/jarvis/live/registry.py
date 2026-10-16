@@ -29,6 +29,7 @@ from jarvis.capabilities.system import SystemCapability
 from jarvis.capabilities.text_workshop import TextWorkshopCapability
 from jarvis.capabilities.ui_accessibility import UIAccessibilityCapability
 from jarvis.capabilities.vision import VisionCapability
+from jarvis.capabilities.webread import WebReadCapability
 from jarvis.capabilities.windows import WindowCapability
 from jarvis.live.config import debug_live, get_vision_model, is_vision_enabled
 from jarvis.live.confirmation import PendingActionStore
@@ -195,6 +196,7 @@ class ToolRegistry:
         self.compute = ComputeCapability()
         self.notes = NotesCapability()
         self.diagnostics = DiagnosticsCapability()
+        self.webread = WebReadCapability(model=planner_model)
         self.document = (
             document_capability
             if document_capability is not None
@@ -2462,6 +2464,24 @@ class ToolRegistry:
             ).to_livekit_dict()
 
         @function_tool(
+            name="summarize_url",
+            description=(
+                "Lit une page web dont l'utilisateur donne l'adresse et la resume ou "
+                "repond a une question a son sujet : 'resume cette page', 'que dit "
+                "cet article sur ...'. url : l'adresse http/https ; question : une "
+                "demande precise optionnelle. N'utilise que des URL fournies par "
+                "l'utilisateur."
+            ),
+        )
+        @self._journaled("summarize_url")
+        async def summarize_url(url: str, question: str | None = None) -> dict:
+            """Fetch a user-provided URL and summarize/answer from its content."""
+            debug_live("tool_call", tool="summarize_url")
+            result = await asyncio.to_thread(self.webread.summarize_url, url, question)
+            self._debug_tool_result("summarize_url", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
             name="morning_briefing",
             description=(
                 "Prepare un point du jour parle : la date, un apercu de l'agenda et "
@@ -2978,6 +2998,7 @@ class ToolRegistry:
             ask_about_document,
             read_whatsapp_conversation,
             search_the_web,
+            summarize_url,
             morning_briefing,
             send_last_web_result,
             schedule_message,
