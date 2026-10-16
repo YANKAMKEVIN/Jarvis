@@ -610,6 +610,24 @@ def group_knowledge(ctx: Context, step) -> None:
     step("recherche generale (best effort)", general)
 
 
+def group_compute(ctx: Context, step) -> None:
+    def calc():
+        result = call_ok(ctx, "calculate", "(12 + 8) * 3")
+        expect(result.get("result") == 60, f"calcul faux : {result.get('result')}")
+
+    def convert():
+        result = call_ok(ctx, "convert_units", 10, "km", "mi")
+        expect(abs(result.get("result", 0) - 6.2137) < 0.01, f"conversion fausse : {result}")
+
+    def rejects_code():
+        result = call(ctx, "calculate", "__import__('os')")
+        expect(result.get("ok") is False, "expression dangereuse acceptee")
+
+    step("calculate", calc)
+    step("convert_units", convert)
+    step("calculate rejette du code", rejects_code)
+
+
 def group_storage(ctx: Context, step) -> None:
     def status():
         result = call_ok(ctx, "get_storage_status")
@@ -801,6 +819,7 @@ GROUPS = {
     "whatsapp": group_whatsapp,
     "memory": group_memory,
     "knowledge": group_knowledge,
+    "compute": group_compute,
     "storage": group_storage,
     "search": group_search,
     "reminders": group_reminders,

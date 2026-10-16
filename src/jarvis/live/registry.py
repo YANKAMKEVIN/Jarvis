@@ -10,6 +10,7 @@ from jarvis.capabilities.audio import AudioCapability
 from jarvis.capabilities.browser import BrowserCapability
 from jarvis.capabilities.calendar import CalendarCapability
 from jarvis.capabilities.clipboard import ClipboardCapability
+from jarvis.capabilities.compute import ComputeCapability
 from jarvis.capabilities.document import DocumentCapability
 from jarvis.capabilities.files import FilesCapability
 from jarvis.capabilities.interaction import InteractionCapability
@@ -189,6 +190,7 @@ class ToolRegistry:
             if mail_capability is not None
             else MailCapability()
         )
+        self.compute = ComputeCapability()
         self.document = (
             document_capability
             if document_capability is not None
@@ -650,6 +652,40 @@ class ToolRegistry:
             debug_live("tool_call", tool="get_storage_status")
             result = await asyncio.to_thread(self.system.get_storage_status)
             self._debug_tool_result("get_storage_status", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="calculate",
+            description=(
+                "Calcule une expression arithmetique en local (de maniere sure) : "
+                "'combien font 15% de 240', '(12+8)*3', 'racine de 2'. expression : "
+                "l'expression mathematique (nombres, + - * / %, puissance **, "
+                "parentheses, fonctions sqrt/log/sin/cos/min/max, constantes pi/e)."
+            ),
+        )
+        async def calculate(expression: str) -> dict:
+            """Evaluate a safe arithmetic expression locally."""
+            debug_live("tool_call", tool="calculate")
+            result = await asyncio.to_thread(self.compute.calculate, expression)
+            self._debug_tool_result("calculate", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="convert_units",
+            description=(
+                "Convertit une valeur entre unites (longueur, masse, volume, "
+                "temperature) en local : 'convertis 10 km en miles', '180 livres en "
+                "kg', '72 F en C'. value : le nombre ; from_unit et to_unit : les "
+                "unites (km, mi, kg, lb, l, gal, C, F, K...). Pas de devises."
+            ),
+        )
+        async def convert_units(value: float, from_unit: str, to_unit: str) -> dict:
+            """Convert a value between units locally."""
+            debug_live("tool_call", tool="convert_units")
+            result = await asyncio.to_thread(
+                self.compute.convert_units, value, from_unit, to_unit,
+            )
+            self._debug_tool_result("convert_units", result)
             return result.to_livekit_dict()
 
         @function_tool(
@@ -2820,6 +2856,8 @@ class ToolRegistry:
             get_battery_status,
             get_storage_status,
             get_system_info,
+            calculate,
+            convert_units,
             list_calendar_events,
             create_calendar_event,
             list_unread_emails,
