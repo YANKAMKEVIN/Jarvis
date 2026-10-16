@@ -46,6 +46,23 @@ class ReminderStoreTests(unittest.TestCase):
         with self.assertRaises(ReminderError):
             make_store(Clock()).add("   ", due_at=2000.0)
 
+    def test_recurrence_stored_and_validated(self):
+        store = make_store(Clock())
+        row = store.add("vitamines", due_at=2000.0, recurrence="daily")
+        self.assertEqual(row["recurrence"], "daily")
+        with self.assertRaises(ReminderError):
+            store.add("x", due_at=2000.0, recurrence="hourly")
+
+    def test_recurring_reminder_rearms_next(self):
+        store = make_store(Clock(now=2000.0))
+        store.add("vitamines", due_at=1900.0, recurrence="daily")
+        notes = []
+        deliver_reminders(store, now=2000.0, notifier=notes.append)
+        pending = store.list("pending")
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["recurrence"], "daily")
+        self.assertEqual(pending[0]["due_at"], 1900.0 + 86400.0)
+
     def test_deliver_fires_and_marks_done(self):
         store = make_store(Clock(now=2000.0))
         row = store.add("appeler le dentiste", due_at=1900.0)

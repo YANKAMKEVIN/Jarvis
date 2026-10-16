@@ -3013,11 +3013,12 @@ class ToolRegistry:
                 "when comme une date/heure absolue ISO 8601 a partir de l'heure "
                 "actuelle. C'est une note a soi-meme (aucun envoi exterieur), donc "
                 "pas de confirmation : le rappel est enregistre directement. Il se "
-                "declenche si le Mac est allume a ce moment-la."
+                "declenche si le Mac est allume a ce moment-la. repeat : 'none' "
+                "(defaut), 'daily' ou 'weekly' pour un rappel recurrent."
             ),
         )
         @self._journaled("set_reminder")
-        async def set_reminder(text: str, when: str) -> dict:
+        async def set_reminder(text: str, when: str, repeat: str = "none") -> dict:
             """Store a personal reminder that fires a macOS notification."""
             debug_live("tool_call", tool="set_reminder", text_length=len(text) if isinstance(text, str) else None)
             if not isinstance(text, str) or not text.strip():
@@ -3033,7 +3034,7 @@ class ToolRegistry:
                     action="set_reminder", message=error.message, error_code=error.code,
                 ).to_livekit_dict()
             try:
-                row = await asyncio.to_thread(self.reminder_store.add, text, due_at)
+                row = await asyncio.to_thread(self.reminder_store.add, text, due_at, repeat)
             except ReminderError as error:
                 return ToolResult.failure(
                     action="set_reminder", message=error.message, error_code=error.code,
@@ -3043,6 +3044,7 @@ class ToolRegistry:
                 message="Rappel enregistre.",
                 reminder_id=row["id"],
                 due_at=row["due_at"],
+                recurrence=row["recurrence"],
             ).to_livekit_dict()
 
         @function_tool(

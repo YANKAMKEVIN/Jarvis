@@ -25,11 +25,15 @@ CREATE TABLE IF NOT EXISTS reminders (
     due_at REAL NOT NULL,
     status TEXT NOT NULL,
     created_at REAL NOT NULL,
-    done_at REAL
+    done_at REAL,
+    recurrence TEXT NOT NULL DEFAULT 'none'
 );
 
 CREATE INDEX IF NOT EXISTS reminders_due ON reminders(status, due_at);
 """
+
+# Recurrence period in seconds (shared shape with scheduled messages).
+RECURRENCES = {"daily": 86400.0, "weekly": 7 * 86400.0}
 
 
 class ReminderError(Exception):
@@ -56,7 +60,7 @@ class ReminderStore:
     def path(self) -> Path:
         return self._path if self._path is not None else default_reminders_path()
 
-    def add(self, text: str, due_at: float) -> dict[str, Any]:
+    def add(self, text: str, due_at: float, recurrence: str = "none") -> dict[str, Any]:
         if not isinstance(text, str) or not text.strip():
             raise ReminderError("Le texte du rappel est obligatoire.", "invalid_text")
         text = text.strip()
@@ -66,12 +70,15 @@ class ReminderStore:
             due = float(due_at)
         except (TypeError, ValueError):
             raise ReminderError("La date du rappel est invalide.", "invalid_due_at")
+        recurrence = (recurrence or "none").strip().lower()
+        if recurrence != "none" and recurrence not in RECURRENCES:
+            raise ReminderError("Recurrence inconnue.", "invalid_recurrence")
 
         with closing(self._connect()) as conn, conn:
             cursor = conn.execute(
-                "INSERT INTO reminders (text, due_at, status, created_at) "
-                "VALUES (?, ?, 'pending', ?)",
-                (text, due, self._clock()),
+                "INSERT INTO reminders (text, due_at, status, created_at, recurrence) "
+                "VALUES (?, ?, 'pending', ?, ?)",
+                (text, due, self._clock(), recurrence),
             )
             row_id = cursor.lastrowid
         return self.get(row_id)
@@ -136,6 +143,12 @@ class ReminderStore:
         conn.row_factory = sqlite3.Row
         if not initialized:
             conn.executescript(_SCHEMA)
+            try:
+                conn.execute(
+                    "ALTER TABLE reminders ADD COLUMN recurrence TEXT NOT NULL DEFAULT 'none'"
+                )
+            except sqlite3.OperationalError:
+                pass  # column already exists
             self._initialized_path = path
         return conn
 
@@ -147,6 +160,9 @@ def deliver_reminders(
     notifier: Callable[[str], None] | None = None,
 ) -> list[int]:
     """Fire a notification for each due reminder and mark it done."""
+    import time as _time
+
+    moment = _time.time() if now is None else float(now)
     fired: list[int] = []
     for row in store.due(now):
         if notifier is not None:
@@ -156,4 +172,11 @@ def deliver_reminders(
                 pass
         store.mark_done(row["id"])
         fired.append(row["id"])
+        # Re-arm the next occurrence of a recurring reminder (catch up).
+        period = RECURRENCES.get((row.get("recurrence") or "none"))
+        if period:
+            nxt = row["due_at"] + period
+            while nxt <= moment:
+                nxt += period
+            store.add(row["text"], nxt, row["recurrence"])
     return fired
