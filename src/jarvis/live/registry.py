@@ -25,6 +25,7 @@ from jarvis.capabilities.mouse import MouseCapability
 from jarvis.capabilities.notes import NotesCapability
 from jarvis.capabilities.results import ToolResult
 from jarvis.capabilities.screenshot import ScreenshotCapability
+from jarvis.capabilities.shortcuts import ShortcutsCapability
 from jarvis.capabilities.system import SystemCapability
 from jarvis.capabilities.text_workshop import TextWorkshopCapability
 from jarvis.capabilities.ui_accessibility import UIAccessibilityCapability
@@ -198,6 +199,7 @@ class ToolRegistry:
         self.compute = ComputeCapability()
         self.notes = NotesCapability()
         self.diagnostics = DiagnosticsCapability()
+        self.shortcuts = ShortcutsCapability()
         self.macro_store = macro_store if macro_store is not None else MacroStore()
         self.webread = WebReadCapability(model=planner_model)
         self.document = (
@@ -683,6 +685,39 @@ class ToolRegistry:
             """Report available capabilities and permissions."""
             debug_live("tool_call", tool="self_check")
             result = await asyncio.to_thread(self.diagnostics.self_check)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="run_shortcut",
+            description=(
+                "Lance un Raccourci (Shortcuts) macOS par son nom : 'active Ne pas "
+                "deranger', 'lance mon raccourci Focus travail'. C'est le moyen "
+                "fiable d'activer des automatisations que l'utilisateur a creees "
+                "(Focus/DND, luminosite, etc.). name : le nom exact du raccourci. "
+                "Utilise list_shortcuts si tu n'es pas sur du nom."
+            ),
+        )
+        @self._journaled("run_shortcut", "name")
+        async def run_shortcut(name: str) -> dict:
+            """Run a macOS Shortcut by name."""
+            debug_live("tool_call", tool="run_shortcut")
+            result = await asyncio.to_thread(self.shortcuts.run_shortcut, name)
+            self._debug_tool_result("run_shortcut", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="list_shortcuts",
+            description=(
+                "Liste les Raccourcis (Shortcuts) macOS disponibles, par leur nom. "
+                "Pour 'quels raccourcis j'ai', ou pour trouver le bon nom avant "
+                "run_shortcut."
+            ),
+        )
+        async def list_shortcuts() -> dict:
+            """List available macOS Shortcuts."""
+            debug_live("tool_call", tool="list_shortcuts")
+            result = await asyncio.to_thread(self.shortcuts.list_shortcuts)
+            self._debug_tool_result("list_shortcuts", result)
             return result.to_livekit_dict()
 
         @function_tool(
@@ -3033,6 +3068,8 @@ class ToolRegistry:
             get_storage_status,
             get_system_info,
             self_check,
+            run_shortcut,
+            list_shortcuts,
             calculate,
             convert_units,
             save_note,

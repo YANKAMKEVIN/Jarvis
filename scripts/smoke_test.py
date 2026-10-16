@@ -639,6 +639,26 @@ def group_webread(ctx: Context, step) -> None:
     step("summarize_url (reseau + modele)", summarize)
 
 
+def group_shortcuts(ctx: Context, step) -> None:
+    # Reads the shortcuts list (safe) and verifies an unknown shortcut is
+    # refused. Never runs a real user shortcut (could do anything).
+    def listed():
+        try:
+            result = call(ctx, "list_shortcuts")
+        except Exception as error:
+            raise Skipped(f"shortcuts indisponible : {error}")
+        if not result.get("ok"):
+            raise Skipped(f"liste indisponible : {result.get('error_code')}")
+        expect("count" in result, "count manquant")
+
+    def run_unknown():
+        result = call(ctx, "run_shortcut", "RaccourciInexistantSmokeXYZ")
+        expect(result.get("ok") is False, "un raccourci inexistant ne doit pas reussir")
+
+    step("list_shortcuts", listed)
+    step("run_shortcut (inconnu -> refus)", run_unknown)
+
+
 def group_macros(ctx: Context, step) -> None:
     # Save/list/delete against the throwaway store; never runs a macro (that
     # would launch a real planner task driving the Mac).
@@ -888,6 +908,7 @@ GROUPS = {
     "knowledge": group_knowledge,
     "compute": group_compute,
     "webread": group_webread,
+    "shortcuts": group_shortcuts,
     "macros": group_macros,
     "diagnostics": group_diagnostics,
     "notes": group_notes,
