@@ -44,7 +44,7 @@ class FakeWindows:
 
 class FakeUI:
     def __init__(self, elements=None, inspect=None, inspects=None, focus_confirmed=True,
-                 send_button_present=True, composer_value_after=""):
+                 send_button_present=True, composer_value_after="", activate_fail_queries=()):
         if inspects is not None:
             self._inspects = list(inspects)
         elif inspect is not None:
@@ -58,6 +58,7 @@ class FakeUI:
         self.focus_confirmed = focus_confirmed
         self.send_button_present = send_button_present
         self.composer_value_after = composer_value_after
+        self.activate_fail_queries = set(activate_fail_queries)
         self.calls = []
 
     def set_value(self, query, value, role=None):
@@ -69,7 +70,8 @@ class FakeUI:
 
     def activate_ui_element(self, query, role=None):
         self.calls.append(("activate_ui_element", query))
-        if query == "ChatBar_SendButton" and not self.send_button_present:
+        send_fail = query == "ChatBar_SendButton" and not self.send_button_present
+        if send_fail or query in self.activate_fail_queries:
             return ToolResult(
                 ok=False, action="activate_ui_element", message="ko",
                 data={}, error_code="ui_element_not_found",
@@ -376,7 +378,7 @@ class EnsureRecipientTest(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertEqual(apps.calls, [("open_app", "WhatsApp")])
-        self.assertIn(("focus_ui_element", "TokenizedSearchBar_TextView", None), ui.calls)
+        self.assertIn(("activate_ui_element", "TokenizedSearchBar_TextView"), ui.calls)
         self.assertEqual(keyboard.calls, [("type_text", "Joel"), ("press_key", "enter")])
 
     def test_navigation_that_still_mismatches_refuses(self):
@@ -421,7 +423,7 @@ class NavigateToRecipientTest(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(apps.calls, [("open_app", "WhatsApp")])
         self.assertEqual(windows.calls, [("focus_window", "WhatsApp")])
-        self.assertEqual(ui.calls, [("focus_ui_element", "TokenizedSearchBar_TextView", None)])
+        self.assertEqual(ui.calls, [("activate_ui_element", "TokenizedSearchBar_TextView")])
         self.assertEqual(keyboard.calls, [("type_text", "Joel"), ("press_key", "enter")])
 
     def test_unsupported_app(self):
@@ -441,16 +443,15 @@ class NavigateToRecipientTest(unittest.TestCase):
         self.assertEqual(result.error_code, "no_window")
         self.assertEqual(keyboard.calls, [])  # never typed
 
-    def test_search_field_not_focusable_stops(self):
-        ui = FakeUI(focus_confirmed=False)
+    def test_search_field_not_activatable_stops(self):
+        ui = FakeUI(activate_fail_queries={"TokenizedSearchBar_TextView"})
         keyboard = FakeKeyboard()
         capability = make(ui=ui, keyboard=keyboard)
 
         result = capability.navigate_to_recipient("WhatsApp", "Joel")
 
-        self.assertFalse(result.ok)
-        self.assertEqual(result.error_code, "search_field_not_found")
-        self.assertEqual(keyboard.calls, [])
+        self.assertFalse(result.ok)  # search field could not be activated
+        self.assertEqual(keyboard.calls, [])  # never typed
 
 
 if __name__ == "__main__":

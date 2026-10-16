@@ -410,15 +410,20 @@ class MessagingCapability:
                 error_code=focused.error_code or "no_window",
             )
 
-        search = self.ui_accessibility.focus_ui_element(query)
+        # Focus the search field by AXPress, not AXSetFocused: like the WhatsApp
+        # composer, the search field never confirms programmatic focus, but it
+        # honors a press and then real keystrokes land in it. Correctness is
+        # still guaranteed by the caller re-verifying the conversation header.
+        search = self.ui_accessibility.activate_ui_element(query)
 
-        if not search.ok or search.data.get("state_confirmed") is not True:
+        if not search.ok:
             return ToolResult.failure(
                 action="navigate_to_recipient",
-                message="Le champ de recherche n'a pas pu etre focalise.",
+                message="Le champ de recherche n'a pas pu etre active.",
                 error_code=search.error_code or "search_field_not_found",
             )
 
+        self.sleeper(self.search_settle_seconds)
         typed = self.keyboard.type_text(expected_recipient)
 
         if typed.data.get("command_executed") is not True:
