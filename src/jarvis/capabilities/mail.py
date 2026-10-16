@@ -7,16 +7,42 @@ from jarvis.tools.mail import MailError, MailTools
 
 
 class MailCapability:
-    def __init__(self, mail_tools: MailTools | None = None):
+    def __init__(self, mail_tools: MailTools | None = None, imap_reader=None):
         self.mail_tools = mail_tools if mail_tools is not None else MailTools()
+        if imap_reader is not None:
+            self.imap_reader = imap_reader
+        else:
+            # Fast IMAP reads when the user has configured credentials; otherwise
+            # fall back to the (slower) AppleScript reader. Construction is cheap
+            # and opens no connection.
+            try:
+                from jarvis.tools.imap_mail import ImapMailReader
+
+                self.imap_reader = ImapMailReader()
+            except Exception:
+                self.imap_reader = None
 
     def list_unread(self, limit: int = 10) -> ToolResult:
+        # Prefer IMAP when configured (fast, reliable); its errors are surfaced
+        # (bad credentials shouldn't silently fall back to a 12s AppleScript read).
+        if self.imap_reader is not None and self.imap_reader.configured():
+            try:
+                state = self.imap_reader.list_unread(limit)
+            except MailError as error:
+                return self._failure("list_unread_emails", error)
+            except Exception as error:
+                return self._system_error("list_unread_emails", error)
+            return self._unread_result(state)
+
         try:
             state = self.mail_tools.list_unread(limit)
         except MailError as error:
             return self._failure("list_unread_emails", error)
         except Exception as error:
             return self._system_error("list_unread_emails", error)
+        return self._unread_result(state)
+
+    def _unread_result(self, state: dict) -> ToolResult:
 
         count = state.get("unread_count", 0)
         message = (
