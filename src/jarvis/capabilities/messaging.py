@@ -70,6 +70,10 @@ class MessagingCapability:
     # Retrying the verify/navigate cycle a few times absorbs that.
     DEFAULT_NAVIGATE_ATTEMPTS = 3
     DEFAULT_RETRY_SETTLE_SECONDS = 0.6
+    # WhatsApp sometimes hasn't rendered the conversation pane (composer) yet,
+    # or the window is too narrow to show it; retry focusing the composer while
+    # bringing the app frontmost and, as a fallback, widening the window.
+    DEFAULT_COMPOSER_WAIT_ATTEMPTS = 4
 
     def __init__(
         self,
@@ -83,6 +87,7 @@ class MessagingCapability:
         search_settle_seconds: float = DEFAULT_SEARCH_SETTLE_SECONDS,
         navigate_attempts: int = DEFAULT_NAVIGATE_ATTEMPTS,
         retry_settle_seconds: float = DEFAULT_RETRY_SETTLE_SECONDS,
+        composer_wait_attempts: int = DEFAULT_COMPOSER_WAIT_ATTEMPTS,
         sleeper=None,
     ):
         self.windows = windows if windows is not None else WindowCapability()
@@ -120,6 +125,7 @@ class MessagingCapability:
         self.search_settle_seconds = max(0.0, float(search_settle_seconds))
         self.navigate_attempts = max(1, int(navigate_attempts))
         self.retry_settle_seconds = max(0.0, float(retry_settle_seconds))
+        self.composer_wait_attempts = max(1, int(composer_wait_attempts))
         self.sleeper = sleeper if sleeper is not None else time.sleep
 
     def search_query(self, app_name: str) -> str | None:
@@ -175,18 +181,31 @@ class MessagingCapability:
                 error_code="composer_unsupported",
             )
 
-        # Clear any residual draft so exactly `text` is sent.
-        self.ui_accessibility.set_value(composer, "")
+        # Bring WhatsApp frontmost first: keystrokes go to the frontmost app, so
+        # focusing only the composer element is not enough -- the window must be
+        # key for the typing to land.
+        self.windows.focus_window(app_name)
+        self.sleeper(self.search_settle_seconds)
 
-        focus = self.ui_accessibility.activate_ui_element(composer)
+        # Ensure the composer is present and focused. WhatsApp sometimes hasn't
+        # rendered the conversation pane, or the window is too narrow to show it,
+        # so retry while bringing the app frontmost and then widening the window.
+        focus = self._focus_composer(app_name, composer)
         if not focus.ok:
             return ToolResult(
                 ok=False,
                 action="send_text",
-                message="Le champ de saisie n'a pas pu etre active.",
+                message=(
+                    "Le champ de saisie de la conversation n'est pas visible. Ouvre "
+                    "la conversation ou agrandis la fenetre, puis reessaie."
+                ),
                 data=dict(focus.data),
-                error_code=focus.error_code or "composer_not_focused",
+                error_code="composer_not_visible",
             )
+
+        # Clear any residual draft so exactly `text` is sent, then re-focus.
+        self.ui_accessibility.set_value(composer, "")
+        self.ui_accessibility.activate_ui_element(composer)
 
         typed = self.keyboard.type_text(text)
         if not typed.ok:
@@ -452,6 +471,21 @@ class MessagingCapability:
             target_app=app_name,
             recipient_length=len(expected_recipient),
         )
+
+    def _focus_composer(self, app_name: str, composer: str) -> ToolResult:
+        """Focus the composer, retrying while bringing the app frontmost and,
+        from the second miss, widening the window so the pane is rendered."""
+        focus = self.ui_accessibility.activate_ui_element(composer)
+        for attempt in range(1, self.composer_wait_attempts):
+            if focus.ok:
+                return focus
+            self.windows.focus_window(app_name)
+            if attempt >= 2:
+                # The pane may be hidden because the window is too narrow.
+                self.windows.maximize_window(app_name)
+            self.sleeper(self.retry_settle_seconds)
+            focus = self.ui_accessibility.activate_ui_element(composer)
+        return focus
 
     def _header_elements(self, elements: Any) -> list[dict[str, Any]]:
         if not isinstance(elements, list):

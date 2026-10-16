@@ -41,10 +41,17 @@ class FakeWindows:
             state_confirmed=self.focus_confirmed, target_app=app_name,
         )
 
+    def maximize_window(self, app_name=None):
+        self.calls.append(("maximize_window", app_name))
+        return ToolResult.success(
+            action="maximize_window", message="ok", state_confirmed=True,
+        )
+
 
 class FakeUI:
     def __init__(self, elements=None, inspect=None, inspects=None, focus_confirmed=True,
-                 send_button_present=True, composer_value_after="", activate_fail_queries=()):
+                 send_button_present=True, composer_value_after="", activate_fail_queries=(),
+                 composer_misses=0):
         if inspects is not None:
             self._inspects = list(inspects)
         elif inspect is not None:
@@ -59,6 +66,7 @@ class FakeUI:
         self.send_button_present = send_button_present
         self.composer_value_after = composer_value_after
         self.activate_fail_queries = set(activate_fail_queries)
+        self._composer_misses = composer_misses
         self.calls = []
 
     def set_value(self, query, value, role=None):
@@ -70,6 +78,12 @@ class FakeUI:
 
     def activate_ui_element(self, query, role=None):
         self.calls.append(("activate_ui_element", query))
+        if query == "ChatBar_ComposerTextView" and self._composer_misses > 0:
+            self._composer_misses -= 1
+            return ToolResult(
+                ok=False, action="activate_ui_element", message="ko",
+                data={}, error_code="ui_element_not_found",
+            )
         send_fail = query == "ChatBar_SendButton" and not self.send_button_present
         if send_fail or query in self.activate_fail_queries:
             return ToolResult(
@@ -243,11 +257,12 @@ class SendTextTest(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertTrue(result.data["state_confirmed"])  # composer emptied
-        # Clear, focus the composer by press, (type), press send, verify empty.
-        self.assertEqual(ui.calls[0], ("set_value", "ChatBar_ComposerTextView", ""))
-        self.assertEqual(ui.calls[1], ("activate_ui_element", "ChatBar_ComposerTextView"))
-        self.assertEqual(ui.calls[2], ("activate_ui_element", "ChatBar_SendButton"))
-        self.assertEqual(ui.calls[3], ("read_value", "ChatBar_ComposerTextView"))
+        # Focus composer (present), clear, re-focus, (type), press send, verify empty.
+        self.assertEqual(ui.calls[0], ("activate_ui_element", "ChatBar_ComposerTextView"))
+        self.assertEqual(ui.calls[1], ("set_value", "ChatBar_ComposerTextView", ""))
+        self.assertEqual(ui.calls[2], ("activate_ui_element", "ChatBar_ComposerTextView"))
+        self.assertEqual(ui.calls[3], ("activate_ui_element", "ChatBar_SendButton"))
+        self.assertEqual(ui.calls[4], ("read_value", "ChatBar_ComposerTextView"))
         self.assertEqual(keyboard.calls, [("type_text", "Salut")])  # real keystrokes
 
     def test_missing_send_button_means_text_did_not_register_and_sends_nothing(self):
@@ -266,6 +281,24 @@ class SendTextTest(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertTrue(result.data["command_executed"])
         self.assertFalse(result.data["state_confirmed"])
+
+    def test_waits_for_composer_then_sends(self):
+        # Composer missing on the first two tries (pane not rendered / narrow
+        # window), then appears: send should succeed after retrying.
+        ui = FakeUI(send_button_present=True, composer_value_after="", composer_misses=2)
+        windows = FakeWindows()
+        result = make(ui=ui, windows=windows, keyboard=FakeKeyboard()).send_text("WhatsApp", "Salut")
+
+        self.assertTrue(result.ok)
+        self.assertIn(("focus_window", "WhatsApp"), windows.calls)
+        self.assertIn(("maximize_window", "WhatsApp"), windows.calls)  # widened to reveal pane
+
+    def test_composer_never_appears_fails_safe(self):
+        ui = FakeUI(composer_misses=99)  # never appears
+        result = make(ui=ui, windows=FakeWindows(), keyboard=FakeKeyboard()).send_text("WhatsApp", "Salut")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "composer_not_visible")
 
     def test_unsupported_app_refuses(self):
         result = make().send_text("Claude", "Salut")
