@@ -20,6 +20,7 @@ from jarvis.capabilities.mouse import MouseCapability
 from jarvis.capabilities.results import ToolResult
 from jarvis.capabilities.screenshot import ScreenshotCapability
 from jarvis.capabilities.system import SystemCapability
+from jarvis.capabilities.text_workshop import TextWorkshopCapability
 from jarvis.capabilities.ui_accessibility import UIAccessibilityCapability
 from jarvis.capabilities.vision import VisionCapability
 from jarvis.capabilities.windows import WindowCapability
@@ -62,6 +63,7 @@ class ToolRegistry:
         knowledge_capability=None,
         schedule_store=None,
         reminder_store=None,
+        text_workshop_capability=None,
         pending_actions=None,
         planner_model=None,
     ):
@@ -165,6 +167,11 @@ class ToolRegistry:
             reminder_store
             if reminder_store is not None
             else ReminderStore()
+        )
+        self.text_workshop = (
+            text_workshop_capability
+            if text_workshop_capability is not None
+            else TextWorkshopCapability(self.clipboard, model=planner_model)
         )
         self.pending_actions = (
             pending_actions
@@ -917,6 +924,28 @@ class ToolRegistry:
                     self.clipboard.clear_clipboard,
                 )
             self._debug_clipboard_result("clear_clipboard", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="rewrite_clipboard",
+            description=(
+                "Transforme le texte actuellement dans le presse-papiers selon une "
+                "instruction (reformuler, corriger les fautes, traduire, resumer, "
+                "changer le ton) et remet le resultat dans le presse-papiers pour "
+                "que l'utilisateur le colle : 'corrige ce que j'ai copie', 'traduis "
+                "ca en anglais', 'reformule plus poliment'. instruction : ce qu'il "
+                "faut faire du texte."
+            ),
+        )
+        @self._journaled("rewrite_clipboard")
+        async def rewrite_clipboard(instruction: str) -> dict:
+            """Transform the clipboard text with the local model."""
+            debug_live("tool_call", tool="rewrite_clipboard")
+            async with self.clipboard_lock:
+                result = await asyncio.to_thread(
+                    self.text_workshop.rewrite_clipboard, instruction,
+                )
+            self._debug_tool_result("rewrite_clipboard", result)
             return result.to_livekit_dict()
 
         @function_tool(
@@ -2437,6 +2466,7 @@ class ToolRegistry:
             get_clipboard_text,
             set_clipboard_text,
             clear_clipboard,
+            rewrite_clipboard,
             type_text,
             press_key,
             hotkey,
@@ -2778,6 +2808,7 @@ def create_live_registry(
     knowledge_capability=None,
     schedule_store=None,
     reminder_store=None,
+    text_workshop_capability=None,
     planner_model=None,
 ) -> "ToolRegistry":
     if audio_capability is None:
@@ -2889,5 +2920,6 @@ def create_live_registry(
         knowledge_capability=knowledge_capability,
         schedule_store=schedule_store,
         reminder_store=reminder_store,
+        text_workshop_capability=text_workshop_capability,
         planner_model=planner_model,
     )

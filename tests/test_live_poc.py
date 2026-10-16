@@ -95,6 +95,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "recent_activity",
     "remember",
     "rename_file",
+    "rewrite_clipboard",
     "right_click",
     "run_procedure",
     "run_task",
