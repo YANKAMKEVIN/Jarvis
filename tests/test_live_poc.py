@@ -64,6 +64,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "get_file_info",
     "get_media_state",
     "get_mouse_position",
+    "get_storage_status",
     "get_system_info",
     "get_volume",
     "hotkey",

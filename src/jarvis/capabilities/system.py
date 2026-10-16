@@ -1,7 +1,12 @@
+import shutil
+
 from jarvis.capabilities.results import ToolResult
 from jarvis.intents import create_intent
 from jarvis.security import SecurityManager
 from jarvis.tools.macos import MacOSTools
+
+
+LOW_SPACE_PERCENT = 10
 
 
 class SystemCapability:
@@ -9,9 +14,45 @@ class SystemCapability:
         self,
         security=None,
         macos_tools=None,
+        disk_usage=None,
     ):
         self.security = security if security is not None else SecurityManager()
         self.macos_tools = macos_tools if macos_tools is not None else MacOSTools()
+        self._disk_usage = disk_usage if disk_usage is not None else shutil.disk_usage
+
+    def get_storage_status(self, path: str = "/") -> ToolResult:
+        try:
+            usage = self._disk_usage(path)
+        except Exception as error:
+            return self._system_error_result("get_storage_status", error)
+
+        total = int(usage.total)
+        free = int(usage.free)
+        used = total - free
+        free_gb = round(free / 1e9, 1)
+        total_gb = round(total / 1e9, 1)
+        percent_free = round(free / total * 100) if total else 0
+        low = percent_free < LOW_SPACE_PERCENT
+
+        if low:
+            message = (
+                f"Attention, il ne reste que {free_gb} Go libres sur {total_gb} Go "
+                f"({percent_free} %)."
+            )
+        else:
+            message = f"Il reste {free_gb} Go libres sur {total_gb} Go ({percent_free} %)."
+
+        return ToolResult.success(
+            action="get_storage_status",
+            message=message,
+            free_bytes=free,
+            used_bytes=used,
+            total_bytes=total,
+            free_gb=free_gb,
+            total_gb=total_gb,
+            percent_free=percent_free,
+            low_space=low,
+        )
 
     def get_battery_status(self) -> ToolResult:
         try:

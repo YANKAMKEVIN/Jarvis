@@ -557,6 +557,21 @@ class ToolRegistry:
             return result.to_livekit_dict()
 
         @function_tool(
+            name="get_storage_status",
+            description=(
+                "Lit l'espace disque reel du Mac (libre, utilise, total) et signale "
+                "si l'espace est faible. Utilise ce tool pour 'combien de place il me "
+                "reste', 'mon disque est-il plein'."
+            ),
+        )
+        async def get_storage_status() -> dict:
+            """Read current disk space."""
+            debug_live("tool_call", tool="get_storage_status")
+            result = await asyncio.to_thread(self.system.get_storage_status)
+            self._debug_tool_result("get_storage_status", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
             name="get_brightness",
             description=(
                 "Lit la luminosite actuelle de l'ecran principal du Mac. "
@@ -2307,6 +2322,7 @@ class ToolRegistry:
             previous_track,
             get_media_state,
             get_battery_status,
+            get_storage_status,
             get_system_info,
             get_brightness,
             set_brightness,
