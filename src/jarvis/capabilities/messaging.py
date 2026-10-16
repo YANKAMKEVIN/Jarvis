@@ -442,6 +442,11 @@ class MessagingCapability:
                 error_code=search.error_code or "search_field_not_found",
             )
 
+        # Clear any residual search text first, then re-focus, so the contact
+        # query is exactly `expected_recipient` and not corrupted by leftovers.
+        self.ui_accessibility.set_value(query, "")
+        self.ui_accessibility.activate_ui_element(query)
+
         self.sleeper(self.search_settle_seconds)
         typed = self.keyboard.type_text(expected_recipient)
 

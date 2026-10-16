@@ -456,7 +456,12 @@ class NavigateToRecipientTest(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(apps.calls, [("open_app", "WhatsApp")])
         self.assertEqual(windows.calls, [("focus_window", "WhatsApp")])
-        self.assertEqual(ui.calls, [("activate_ui_element", "TokenizedSearchBar_TextView")])
+        # Focus search, clear residual text, re-focus, then type + Enter.
+        self.assertEqual(ui.calls, [
+            ("activate_ui_element", "TokenizedSearchBar_TextView"),
+            ("set_value", "TokenizedSearchBar_TextView", ""),
+            ("activate_ui_element", "TokenizedSearchBar_TextView"),
+        ])
         self.assertEqual(keyboard.calls, [("type_text", "Joel"), ("press_key", "enter")])
 
     def test_unsupported_app(self):
