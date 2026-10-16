@@ -98,6 +98,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "previous_track",
     "privacy_overview",
     "propose_memory",
+    "read_whatsapp_conversation",
     "recall",
     "recent_activity",
     "remember",

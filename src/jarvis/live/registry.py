@@ -2225,6 +2225,40 @@ class ToolRegistry:
             return result.to_livekit_dict()
 
         @function_tool(
+            name="read_whatsapp_conversation",
+            description=(
+                "Lit et resume la conversation WhatsApp actuellement OUVERTE en la "
+                "regardant (vision). Opt-in : utilise ce tool uniquement quand "
+                "l'utilisateur demande explicitement de lire/resumer ses messages "
+                "WhatsApp ('lis ma conversation', 'qu'est-ce qu'on m'a ecrit sur "
+                "WhatsApp', 'resume cette discussion'). Il met WhatsApp au premier "
+                "plan puis analyse l'ecran ; rapporte seulement ce qui est lu, sans "
+                "inventer. Pour repondre ensuite, utilise prepare_send_message (envoi "
+                "confirme). question : une question precise optionnelle sur la "
+                "conversation."
+            ),
+        )
+        @self._journaled("read_whatsapp_conversation")
+        async def read_whatsapp_conversation(question: str | None = None) -> dict:
+            """Read the open WhatsApp conversation via vision (opt-in)."""
+            guard = self._vision_guard("read_whatsapp_conversation")
+            if guard is not None:
+                return guard
+            debug_live("tool_call", tool="read_whatsapp_conversation")
+            await asyncio.to_thread(self.windows.focus_window, "WhatsApp")
+            await asyncio.sleep(self.messaging.search_settle_seconds)
+            prompt = question.strip() if isinstance(question, str) and question.strip() else (
+                "Resume la conversation WhatsApp ouverte : indique avec qui, et les "
+                "derniers messages echanges. Rapporte seulement ce qui est lisible."
+            )
+            async with self.vision_lock:
+                result = await asyncio.to_thread(
+                    self.vision.ask_about_screen, prompt, "window", "WhatsApp",
+                )
+            self._debug_vision_result("read_whatsapp_conversation", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
             name="search_the_web",
             description=(
                 "Cherche une information a jour sur le web et la synthetise a voix "
@@ -2780,6 +2814,7 @@ class ToolRegistry:
             describe_screen,
             ask_about_screen,
             ask_about_document,
+            read_whatsapp_conversation,
             search_the_web,
             morning_briefing,
             send_last_web_result,
