@@ -33,6 +33,7 @@ from jarvis.capabilities.webread import WebReadCapability
 from jarvis.capabilities.windows import WindowCapability
 from jarvis.live.config import debug_live, get_vision_model, is_vision_enabled
 from jarvis.live.confirmation import PendingActionStore
+from jarvis.macros import MacroError, MacroStore
 from jarvis.planner.engine import PlannerEngine, TaskOutcome
 from jarvis.planner.models import build_planner_model
 from jarvis.planner.tasks import TaskManager, announcement_for
@@ -74,6 +75,7 @@ class ToolRegistry:
         calendar_capability=None,
         mail_capability=None,
         document_capability=None,
+        macro_store=None,
         pending_actions=None,
         planner_model=None,
     ):
@@ -196,6 +198,7 @@ class ToolRegistry:
         self.compute = ComputeCapability()
         self.notes = NotesCapability()
         self.diagnostics = DiagnosticsCapability()
+        self.macro_store = macro_store if macro_store is not None else MacroStore()
         self.webread = WebReadCapability(model=planner_model)
         self.document = (
             document_capability
@@ -2651,6 +2654,84 @@ class ToolRegistry:
             return self.tasks.start(goal)
 
         @function_tool(
+            name="save_macro",
+            description=(
+                "Enregistre une MACRO : un workflow reutilisable defini a l'avance "
+                "par un nom et un objectif en langage naturel ('enregistre une macro "
+                "reunion : ouvre Zoom et prepare un message a l'equipe'). name : le "
+                "nom court ; goal : l'objectif complet. Pour la lancer ensuite, "
+                "run_macro. Differe des procedures (apprises apres une tache reussie)."
+            ),
+        )
+        @self._journaled("save_macro", "name")
+        async def save_macro(name: str, goal: str) -> dict:
+            """Save a named goal macro."""
+            debug_live("tool_call", tool="save_macro")
+            try:
+                row = await asyncio.to_thread(self.macro_store.save, name, goal)
+            except MacroError as error:
+                return ToolResult.failure(
+                    action="save_macro", message=error.message, error_code=error.code,
+                ).to_livekit_dict()
+            return ToolResult.success(
+                action="save_macro", message=f"Macro « {row['name']} » enregistree.",
+                name=row["name"],
+            ).to_livekit_dict()
+
+        @function_tool(
+            name="run_macro",
+            description=(
+                "Lance une macro enregistree par son nom ('lance la macro reunion'). "
+                "Demarre une tache en arriere-plan avec l'objectif de la macro. Si "
+                "aucune macro ne porte ce nom, le dit sans rien lancer."
+            ),
+        )
+        @self._journaled("run_macro", "name")
+        async def run_macro(name: str) -> dict:
+            """Run a saved macro as a background planner task."""
+            debug_live("tool_call", tool="run_macro")
+            macro = await asyncio.to_thread(self.macro_store.get, name)
+            if macro is None:
+                return ToolResult.failure(
+                    action="run_macro",
+                    message=f"Aucune macro nommee « {name} ».",
+                    error_code="macro_not_found",
+                ).to_livekit_dict()
+            return self.tasks.start(macro["goal"])
+
+        @function_tool(
+            name="list_macros",
+            description="Liste les macros enregistrees (nom et objectif).",
+        )
+        async def list_macros() -> dict:
+            """List saved macros."""
+            debug_live("tool_call", tool="list_macros")
+            rows = await asyncio.to_thread(self.macro_store.list)
+            macros = [{"name": r["name"], "goal": r["goal"]} for r in rows]
+            return ToolResult.success(
+                action="list_macros", message=f"{len(macros)} macro(s) enregistree(s).",
+                macros=macros, count=len(macros),
+            ).to_livekit_dict()
+
+        @function_tool(
+            name="delete_macro",
+            description="Supprime une macro enregistree par son nom.",
+        )
+        @self._journaled("delete_macro", "name")
+        async def delete_macro(name: str) -> dict:
+            """Delete a saved macro."""
+            debug_live("tool_call", tool="delete_macro")
+            deleted = await asyncio.to_thread(self.macro_store.delete, name)
+            if not deleted:
+                return ToolResult.failure(
+                    action="delete_macro", message=f"Aucune macro nommee « {name} ».",
+                    error_code="macro_not_found",
+                ).to_livekit_dict()
+            return ToolResult.success(
+                action="delete_macro", message=f"Macro « {name} » supprimee.", name=name,
+            ).to_livekit_dict()
+
+        @function_tool(
             name="schedule_message",
             description=(
                 "PLANIFIE l'envoi d'un message a un destinataire a une date/heure "
@@ -3019,6 +3100,10 @@ class ToolRegistry:
             cancel_task,
             save_task_procedure,
             run_procedure,
+            save_macro,
+            run_macro,
+            list_macros,
+            delete_macro,
         ]
 
         # The planner drives these very tools (same locks, journal and pending
@@ -3314,6 +3399,7 @@ def create_live_registry(
     calendar_capability=None,
     mail_capability=None,
     document_capability=None,
+    macro_store=None,
     planner_model=None,
 ) -> "ToolRegistry":
     if audio_capability is None:
@@ -3429,5 +3515,6 @@ def create_live_registry(
         calendar_capability=calendar_capability,
         mail_capability=mail_capability,
         document_capability=document_capability,
+        macro_store=macro_store,
         planner_model=planner_model,
     )

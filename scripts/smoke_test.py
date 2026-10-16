@@ -639,6 +639,32 @@ def group_webread(ctx: Context, step) -> None:
     step("summarize_url (reseau + modele)", summarize)
 
 
+def group_macros(ctx: Context, step) -> None:
+    # Save/list/delete against the throwaway store; never runs a macro (that
+    # would launch a real planner task driving the Mac).
+    def save():
+        result = call_ok(ctx, "save_macro", "SmokeMacro", "ouvre Safari")
+        expect(result.get("name") == "SmokeMacro", f"macro non enregistree : {result}")
+
+    def listed():
+        result = call_ok(ctx, "list_macros")
+        names = [m["name"] for m in result.get("macros", [])]
+        expect("SmokeMacro" in names, "macro absente de la liste")
+
+    def run_unknown():
+        result = call(ctx, "run_macro", "macro_inexistante_smoke")
+        expect(result.get("error_code") == "macro_not_found", f"macro inconnue acceptee : {result}")
+
+    def delete():
+        result = call_ok(ctx, "delete_macro", "SmokeMacro")
+        expect(result.get("ok") is True, f"suppression : {result}")
+
+    step("save_macro", save, critical=True)
+    step("list_macros", listed)
+    step("run_macro (inconnue -> refus)", run_unknown)
+    step("delete_macro", delete)
+
+
 def group_diagnostics(ctx: Context, step) -> None:
     def check():
         result = call_ok(ctx, "self_check")
@@ -862,6 +888,7 @@ GROUPS = {
     "knowledge": group_knowledge,
     "compute": group_compute,
     "webread": group_webread,
+    "macros": group_macros,
     "diagnostics": group_diagnostics,
     "notes": group_notes,
     "storage": group_storage,
@@ -947,6 +974,7 @@ def main() -> int:
     os.environ["JARVIS_SCHEDULE_PATH"] = str(workdir / "scheduled.db")
     os.environ["JARVIS_REMINDERS_PATH"] = str(workdir / "reminders.db")
     os.environ["JARVIS_NOTES_DIR"] = str(workdir / "notes")
+    os.environ["JARVIS_MACROS_PATH"] = str(workdir / "macros.db")
 
     from jarvis.live.registry import create_live_tools
 
