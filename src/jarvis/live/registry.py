@@ -1027,9 +1027,8 @@ class ToolRegistry:
                 "'resume ce fichier', 'que dit ce document sur le budget', 'quelles "
                 "sont les dates dans ce contrat'. path : le chemin du fichier (utilise "
                 "find_files ou search_files_by_content pour le retrouver d'abord si "
-                "besoin). Fonctionne sur du texte (txt, md, code, csv) ; pas les PDF "
-                "pour l'instant. La reponse se base uniquement sur le contenu du "
-                "document."
+                "besoin). Fonctionne sur du texte (txt, md, code, csv) et les PDF. "
+                "La reponse se base uniquement sur le contenu du document."
             ),
         )
         @self._journaled("ask_about_document")

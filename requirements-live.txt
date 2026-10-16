@@ -4,3 +4,7 @@ livekit-agents[google]~=1.5
 # AppleScript reader if absent. Calendar access (TCC) only prompts from a
 # packaged .app with NSCalendarsUsageDescription, not a bare interpreter.
 pyobjc-framework-EventKit>=10.0
+
+# Optional: PDF text extraction for ask_about_document. Without it, PDFs report
+# pdf_unsupported and text files still work.
+pypdf>=4.0
