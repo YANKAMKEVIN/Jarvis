@@ -874,6 +874,17 @@ class AccessibilityTools:
         finally:
             self.backend.release(element)
 
+    def locate(self, query: str, role: str | None = None) -> dict[str, Any]:
+        """Resolve one element and return its snapshot (role, actions, position,
+        size) WITHOUT acting on it. For deciding AXPress vs an AX-grounded click."""
+        element, candidate = self._resolve_one(
+            query, role, max_depth=MAX_UI_DEPTH, max_elements=MAX_UI_ELEMENTS,
+        )
+        try:
+            return {"candidate": candidate}
+        finally:
+            self.backend.release(element)
+
     def read_value(self, query: str, role: str | None = None) -> dict[str, Any]:
         """Read an element's own AXValue (e.g. the composer draft)."""
         element, candidate = self._resolve_one(

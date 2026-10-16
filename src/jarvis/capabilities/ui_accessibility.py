@@ -145,6 +145,15 @@ class UIAccessibilityCapability:
 
         return ToolResult.success(action="set_value", message=message, **state)
 
+    def locate(self, query: str, role: str | None = None) -> ToolResult:
+        try:
+            state = self.accessibility_tools.locate(query, role)
+        except AccessibilityError as error:
+            return self._accessibility_failure("locate", error)
+        except Exception as error:
+            return self._system_error_result("locate", error)
+        return ToolResult.success(action="locate", message="Element localise.", **state)
+
     def read_value(self, query: str, role: str | None = None) -> ToolResult:
         try:
             state = self.accessibility_tools.read_value(query, role)

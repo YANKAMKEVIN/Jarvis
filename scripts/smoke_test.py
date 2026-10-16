@@ -94,6 +94,7 @@ REQUIRES = {
     "apps": ("screen_unlocked",),
     "safari": ("screen_unlocked",),
     "whatsapp": ("accessibility", "screen_unlocked"),
+    "vision_click": ("accessibility", "screen_unlocked"),
 }
 
 
@@ -713,6 +714,19 @@ def group_document(ctx: Context, step) -> None:
     step("ask_about_document (modele local)", ask)
 
 
+def group_vision_click(ctx: Context, step) -> None:
+    # Safe check: a nonexistent target must be refused (no coordinates -> no
+    # blind click). We never auto-click a real element in the smoke test.
+    def refuses_unknown():
+        result = call(ctx, "click_element", "element_inexistant_smoke_xyz_123")
+        expect(result.get("ok") is False, "un element inexistant ne doit pas etre clique")
+        expect(result.get("error_code") in ("ui_element_not_found", "no_grounded_target",
+                                            "ambiguous_ui_element"),
+               f"code inattendu : {result.get('error_code')}")
+
+    step("click_element refuse une cible inconnue", refuses_unknown)
+
+
 def group_privacy(ctx: Context, step) -> None:
     def overview():
         result = call_ok(ctx, "privacy_overview")
@@ -758,6 +772,7 @@ GROUPS = {
     "mail": group_mail,
     "document": group_document,
     "briefing": group_briefing,
+    "vision_click": group_vision_click,
     "privacy": group_privacy,
 }
 

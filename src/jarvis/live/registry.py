@@ -1390,6 +1390,75 @@ class ToolRegistry:
             return result.to_livekit_dict()
 
         @function_tool(
+            name="click_element",
+            description=(
+                "Clique sur un element de l'ecran decrit par l'utilisateur ('clique "
+                "sur Valider', 'clique sur le bouton bleu Envoyer'), en combinant ce "
+                "qui est affiche et l'Accessibility. Les coordonnees viennent "
+                "TOUJOURS de l'Accessibility, jamais devinees depuis l'image : si "
+                "l'element n'est pas expose par Accessibility, Jarvis refuse plutot "
+                "que de cliquer a l'aveugle. Il utilise AXPress quand c'est possible, "
+                "sinon un clic au centre de la position Accessibility de l'element. "
+                "Pour voir ce qui est affiche/cliquable, describe_screen ou "
+                "inspect_ui. query : description de l'element."
+            ),
+        )
+        @self._journaled("click_element")
+        async def click_element(query: str, role: str | None = None) -> dict:
+            """Click an element by its Accessibility-grounded position (never blind)."""
+            debug_live("tool_call", tool="click_element",
+                       query_length=len(query) if isinstance(query, str) else None)
+            located = await asyncio.to_thread(self.ui_accessibility.locate, query, role)
+            if not located.ok:
+                return located.to_livekit_dict()
+            candidate = located.data.get("candidate") or {}
+            actions = candidate.get("actions") or []
+
+            if "AXPress" in actions:
+                async with self.ui_lock:
+                    result = await asyncio.to_thread(
+                        self.ui_accessibility.activate_ui_element, query, role,
+                    )
+                self._debug_ui_result("click_element", result)
+                return result.to_livekit_dict()
+
+            position = candidate.get("position")
+            size = candidate.get("size")
+            if not (isinstance(position, dict) and isinstance(size, dict)):
+                return ToolResult.failure(
+                    action="click_element",
+                    message=(
+                        "Cet element n'expose ni action ni position via Accessibility ; "
+                        "je ne clique pas a l'aveugle."
+                    ),
+                    error_code="no_grounded_target",
+                ).to_livekit_dict()
+
+            center_x = int(position["x"] + size["width"] / 2)
+            center_y = int(position["y"] + size["height"] / 2)
+            async with self.mouse_lock:
+                move = await asyncio.to_thread(self.mouse.move_mouse, center_x, center_y)
+                if not move.ok or move.data.get("state_confirmed") is not True:
+                    return ToolResult.failure(
+                        action="click_element",
+                        message="Impossible de positionner le pointeur sur l'element.",
+                        error_code="move_failed",
+                    ).to_livekit_dict()
+                await asyncio.to_thread(self.mouse.click)
+            return ToolResult.success(
+                action="click_element",
+                message=(
+                    "Clic envoye au centre de l'element (coordonnees Accessibility). "
+                    "L'effet applicatif n'est pas confirme."
+                ),
+                command_executed=True,
+                state_confirmed=False,
+                x=center_x,
+                y=center_y,
+                grounded="accessibility",
+            ).to_livekit_dict()
+
+        @function_tool(
             name="select_all_and_copy",
             description=(
                 "Selectionne tout puis copie dans la fenetre active avec une "
@@ -2782,6 +2851,7 @@ class ToolRegistry:
             get_mouse_position,
             move_mouse,
             click,
+            click_element,
             double_click,
             right_click,
             scroll,

@@ -48,6 +48,7 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "capture_window",
     "clear_clipboard",
     "click",
+    "click_element",
     "close_app",
     "confirm_action",
     "create_calendar_event",
