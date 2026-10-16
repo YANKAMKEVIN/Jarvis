@@ -36,17 +36,25 @@ class FakeCalendar:
 
 
 class FakeMemory:
+    def __init__(self, preferred_news=None):
+        self._preferred_news = preferred_news
+
     def log_action(self, *a, **k):
+        return None
+
+    def preferred(self, subject):
+        if subject in ("actualites", "actualités") and self._preferred_news:
+            return self._preferred_news
         return None
 
 
 class BriefingTest(unittest.TestCase):
-    def _run(self, calendar, knowledge):
+    def _run(self, calendar, knowledge, memory=None):
         async def scenario():
             registry = create_live_registry(
                 knowledge_capability=knowledge,
                 calendar_capability=calendar,
-                memory_capability=FakeMemory(),
+                memory_capability=memory or FakeMemory(),
             )
             spoken = []
 
@@ -74,6 +82,12 @@ class BriefingTest(unittest.TestCase):
         self.assertTrue(ack["ok"])
         self.assertIn("agenda non disponible", spoken[0])
         self.assertIn("Trois grands titres", spoken[0])
+
+    def test_briefing_applies_preferred_news_domain(self):
+        knowledge = FakeKnowledge()
+        self._run(FakeCalendar(ok=True), knowledge, memory=FakeMemory(preferred_news="tech"))
+        # The news question reflects the learned preference.
+        self.assertTrue(any("tech" in q for q in knowledge.calls))
 
 
 if __name__ == "__main__":

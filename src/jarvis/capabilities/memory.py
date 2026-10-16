@@ -211,6 +211,17 @@ class MemoryCapability:
                 return min(positions, key=positions.get)
         return None
 
+    def preferred(self, subject: str) -> str | None:
+        """Content of a stored preference by subject (e.g. 'actualites' -> 'tech'),
+        applied locally by tools. Never raises."""
+        if not isinstance(subject, str) or not subject.strip():
+            return None
+        try:
+            memory = self.store.find_by_subject("preference", subject)
+        except Exception:
+            return None
+        return memory.content if memory is not None else None
+
     def resolve_person(self, name: str) -> str | None:
         """Contact name stored for an alias ("ma mere" -> "Maman"), else None.
 

@@ -304,10 +304,17 @@ class ToolRegistry:
         else:
             agenda_line = "agenda non disponible"
 
-        # News (reliable).
-        question = topic.strip() if isinstance(topic, str) and topic.strip() else (
-            "principales actualites importantes aujourd'hui"
-        )
+        # News (reliable). With no explicit topic, apply a learned preference
+        # ("actualites" -> e.g. "tech") locally if the user has set one.
+        if isinstance(topic, str) and topic.strip():
+            question = topic.strip()
+        else:
+            async with self.memory_lock:
+                preferred = await asyncio.to_thread(self.memory.preferred, "actualites")
+            question = (
+                f"principales actualites {preferred} aujourd'hui" if preferred
+                else "principales actualites importantes aujourd'hui"
+            )
         try:
             news = await asyncio.to_thread(self.knowledge.answer, question)
             news_text = news.message if news.ok else ""
