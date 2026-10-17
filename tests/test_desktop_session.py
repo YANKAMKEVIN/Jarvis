@@ -94,3 +94,18 @@ def test_crafted_intent_cannot_downgrade_unknown_action():
     executor = CommandExecutor(brain=object(), tools=object(), knowledge_service=object())
     result = executor.execute_intent(Intent("run_arbitrary_shell", "rm", RiskLevel.SAFE), confirmed=True)
     assert "pas autorisee" in result.message
+
+
+def test_voice_transcripts_keep_chronology_and_never_become_commands():
+    session = DesktopSession()
+    session.record_voice('assistant', 'Bonjour')
+    session.record_voice('user', 'Ouvre Safari')
+    session.record_voice('assistant', 'Je vais…', interrupted=True)
+    assert len(session.turns) == 2
+    assert session.turns[-1].command == 'Ouvre Safari'
+    assert session.turns[-1].reply == 'Je vais…'
+    assert session.turns[-1].interrupted
+    assert not session.busy and session.pending is None
+    job = session.begin('Puis une question écrite')
+    assert session.turns[-1].channel == 'text'
+    assert job.id > session.turns[-2].id

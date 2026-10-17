@@ -49,6 +49,7 @@ QPushButton:focus { border: 1px solid #83cfff; }
 QPushButton:disabled { color: #647b90; background: #152030; }
 QPushButton#primary:hover { background: #b8e4ff; }
 QPushButton#primary { background: #82caff; color: #081421; border: 0; font-weight: 600; }
+QPushButton#primary:disabled { background: #223247; color: #8096ab; }
 QPushButton#nav { text-align: left; background: transparent; border: 0; padding: 13px; color: #91a9c1; }
 QPushButton#nav:checked { color: #e0f1ff; background: #22354b; }
 QScrollArea { background: transparent; border: 0; }
@@ -233,6 +234,7 @@ class ExecutionThread(QThread):
 class Controller(QObject):
     changed = Signal()
     draft_changed = Signal(str)
+    exit_ready = Signal()
 
     def __init__(self, demo=False, executor=None):
         super().__init__()
@@ -241,6 +243,11 @@ class Controller(QObject):
         self.executor = executor
         self.workers = set()
         self.reduced_motion = False
+        self.voice_worker = None
+        self.voice_state = "off"
+        self.voice_mic_open = False
+        self.voice_error = ""
+        self.quit_after_voice = False
 
     def execute(self, job):
         if self.demo:
@@ -262,7 +269,7 @@ class Controller(QObject):
         self.draft_changed.emit(text)
 
     def submit(self):
-        if self.session.busy or self.session.pending or not self.session.draft.strip():
+        if self.voice_worker is not None or self.session.busy or self.session.pending or not self.session.draft.strip():
             return
         self.dispatch(self.session.begin(self.session.draft))
         self.draft_changed.emit("")
@@ -292,9 +299,61 @@ class Controller(QObject):
         self.changed.emit()
 
     def clear(self):
+        if self.voice_worker is not None:
+            return
         self.session.clear()
         self.draft_changed.emit("")
         self.changed.emit()
+
+    def start_voice(self):
+        if self.demo or self.voice_worker is not None or self.session.busy or self.session.pending:
+            return
+        from jarvis.desktop.live_worker import LiveWorker
+        self.voice_state, self.voice_error, self.voice_mic_open = "starting", "", False
+        worker = LiveWorker(self)
+        self.voice_worker = worker
+        worker.event.connect(self.voice_event)
+        worker.finished.connect(lambda: self.voice_finished(worker))
+        self.changed.emit()
+        worker.start()
+
+    def stop_voice(self):
+        if self.voice_worker is not None:
+            self.voice_state = "stopping"
+            self.voice_worker.stop()
+            self.changed.emit()
+
+    def voice_event(self, event):
+        if event.get("type") == "transcript":
+            self.session.record_voice(event["role"], event["text"], event.get("interrupted", False))
+        elif event.get("type") == "state":
+            # Never regress from a requested stop to a late listening event.
+            state = event["state"]
+            if self.voice_state != "stopping" or state in {"stopping", "error", "off"}:
+                self.voice_state = state
+            self.voice_mic_open = event.get("mic_open", False)
+            self.voice_error = event.get("message", "")
+        self.changed.emit()
+
+    def voice_finished(self, worker):
+        if self.voice_worker is worker:
+            self.voice_worker = None
+            self.voice_mic_open = False
+            if self.voice_state != "error":
+                self.voice_state = "off"
+            self.changed.emit()
+        worker.deleteLater()
+        if self.quit_after_voice:
+            self.exit_ready.emit()
+
+    def toggle_microphone(self):
+        if self.voice_worker and self.voice_state not in {"starting", "stopping"}:
+            self.voice_worker.set_muted(self.voice_mic_open)
+
+    def interrupt_voice(self):
+        if self.voice_worker and self.voice_state not in {"starting", "stopping"}:
+            self.voice_worker.interrupt()
+
 
 
 class Conversation(QWidget):
@@ -355,11 +414,29 @@ class Conversation(QWidget):
         self.send = button("Envoyer ↑", controller.submit, True)
         row.addWidget(self.send)
         layout.addWidget(composer)
+        voice_controls = QHBoxLayout()
+        self.voice_button = button("Activer le vocal", self.toggle_voice)
+        self.voice_button.setAccessibleName("Activer ou arrêter Gemini Live")
+        voice_controls.addWidget(self.voice_button)
+        self.mic_button = button("Couper le micro", controller.toggle_microphone)
+        voice_controls.addWidget(self.mic_button)
+        self.interrupt_button = button("Interrompre", controller.interrupt_voice)
+        self.interrupt_button.setToolTip("Interrompre la réponse orale, sans annuler les actions système déjà lancées")
+        voice_controls.addWidget(self.interrupt_button)
+        layout.addLayout(voice_controls)
+        self.voice_notice = label("", "subtitle")
+        layout.addWidget(self.voice_notice)
         self.footnote = label("DÉMO · aucune action réelle" if controller.demo else "Session privée · Réponses écrites", "subtitle")
         layout.addWidget(self.footnote)
         controller.changed.connect(self.render)
         controller.draft_changed.connect(self.sync_draft)
         self.render()
+
+    def toggle_voice(self):
+        if self.controller.voice_worker:
+            self.controller.stop_voice()
+        else:
+            self.controller.start_voice()
 
     def sync_draft(self, text):
         if self.input.text() != text:
@@ -367,7 +444,9 @@ class Conversation(QWidget):
 
     def render(self):
         session = self.controller.session
-        self.orb.busy = session.busy
+        voice_active = self.controller.voice_worker is not None
+        voice_state = self.controller.voice_state
+        self.orb.busy = session.busy or voice_state in {"thinking", "speaking"}
         self.orb.pending = bool(session.pending)
         self.orb.error = bool(session.turns and session.turns[-1].status == "error")
         self.orb.set_motion(not self.controller.reduced_motion)
@@ -375,8 +454,30 @@ class Conversation(QWidget):
                             "Votre accord est nécessaire" if session.pending else "À votre disposition")
         self.status.setStyleSheet("color: #e8c18b;" if session.pending else
                                   "color: #e5a0aa;" if self.orb.error else "color: #a4cbe7;")
-        self.input.setEnabled(not session.busy and not session.pending)
-        self.send.setEnabled(not session.busy and not session.pending)
+        if voice_active or voice_state == "error":
+            states = {"starting": "Connexion Gemini…", "listening": "Gemini Live · à l’écoute",
+                      "thinking": "Gemini Live · réflexion", "speaking": "Jarvis vous répond",
+                      "muted": "Micro coupé", "stopping": "Fermeture du vocal…", "error": "Vocal indisponible"}
+            self.status.setText(states.get(voice_state, "Gemini Live"))
+        self.input.setEnabled(not session.busy and not session.pending and not voice_active)
+        self.send.setEnabled(not session.busy and not session.pending and not voice_active)
+        self.voice_button.setText("Arrêt en cours…" if voice_state == "stopping" and voice_active else
+                                  "Arrêter le vocal" if voice_active else "Activer le vocal")
+        self.voice_button.setEnabled(not self.controller.demo and not session.busy and not session.pending
+                                     and voice_state != "stopping")
+        self.mic_button.setVisible(voice_active)
+        self.interrupt_button.setVisible(voice_active)
+        for control in (self.mic_button, self.interrupt_button):
+            control.setEnabled(voice_active and voice_state not in {"starting", "stopping"})
+        self.mic_button.setText("Couper le micro" if self.controller.voice_mic_open else "Réactiver le micro")
+        self.voice_notice.setText(self.controller.voice_error or
+            ("Micro ouvert · voix envoyée à Gemini" if self.controller.voice_mic_open else
+             "Micro fermé · aucune capture vocale" if voice_active else
+             "Le vocal transmet votre voix à Gemini." if not self.controller.demo else
+             "Le micro reste désactivé en mode démo."))
+        self.voice_notice.setStyleSheet("color: #e5a0aa;" if self.controller.voice_error else "color: #91a9c1;")
+        self.footnote.setText("DÉMO · aucune action réelle" if self.controller.demo else
+                              "Gemini Live · confirmations vocales" if voice_active else "Texte · Ollama local")
         while self.messages.count():
             item = self.messages.takeAt(0)
             if item.widget():
@@ -409,11 +510,16 @@ class Conversation(QWidget):
                 intro.addLayout(suggestions)
             self.messages.addWidget(welcome)
         for turn in turns:
-            self.messages.addWidget(message_bubble(f"VOUS · {turn.time}", turn.command, user=True))
+            if turn.command:
+                channel = " · VOCAL" if turn.channel == "voice" else ""
+                self.messages.addWidget(message_bubble(f"VOUS{channel} · {turn.time}", turn.command, user=True))
             if turn.status != "confirmation" and (turn.reply or turn.status == "running"):
                 headings = {"running": "JARVIS · EN COURS", "response": "JARVIS",
                             "error": "DEMANDE NON TERMINÉE", "cancelled": "ACTION ANNULÉE"}
-                self.messages.addWidget(message_bubble(headings[turn.status],
+                title = "JARVIS · VOCAL" if turn.channel == "voice" else headings[turn.status]
+                if turn.interrupted:
+                    title += " · INTERROMPU"
+                self.messages.addWidget(message_bubble(title,
                     "Je m’en occupe…" if turn.status == "running" else turn.reply,
                     error=turn.status == "error"))
         if session.pending:
@@ -451,7 +557,7 @@ class Conversation(QWidget):
         QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum()))
 
     def use_suggestion(self, text):
-        if self.controller.session.busy or self.controller.session.pending:
+        if self.controller.voice_worker or self.controller.session.busy or self.controller.session.pending:
             return
         self.controller.set_draft(text)
         self.input.setFocus()
@@ -492,8 +598,8 @@ class DesktopWindow(QMainWindow):
                 self.nav.append(b)
                 nav.addWidget(b)
             nav.addStretch()
-            nav.addWidget(label("●  SESSION PRIVÉE", "eyebrow"))
-            nav.addWidget(label("Vos échanges restent dans cette session.", "subtitle"))
+            nav.addWidget(label("HISTORIQUE DE SESSION", "eyebrow"))
+            nav.addWidget(label("Conservé en mémoire par l’interface.", "subtitle"))
             row.addWidget(sidebar)
         workspace = QVBoxLayout()
         workspace.setContentsMargins(22 if compact else 32, 22, 22 if compact else 32, 22)
@@ -517,7 +623,7 @@ class DesktopWindow(QMainWindow):
             settings_layout.setContentsMargins(0, 0, 0, 0)
             settings_layout.addWidget(card("CONNEXION AU MOTEUR",
                 "Mode démo : aucune action système." if controller.demo else
-                "Moteur texte existant · Ollama sur localhost:11434.\nLe mode Gemini Live reste indépendant."))
+                "Texte : Ollama local. Vocal : Gemini Live.\nLe micro reste fermé jusqu’à l’activation du vocal. Les confirmations des outils Live restent vocales."))
             settings_layout.addWidget(card("CONFIDENTIALITÉ",
                 "Cette interface garde les échanges en mémoire jusqu’à sa fermeture. "
                 "Effacer la session réinitialise aussi le contexte du moteur texte. "
@@ -528,7 +634,7 @@ class DesktopWindow(QMainWindow):
             self.clear_button = button("Effacer la session…", self.clear_session)
             settings_layout.addWidget(self.clear_button)
             settings_layout.addWidget(label("⌘⇧Espace : mode compact (lorsque Jarvis est actif).\n"
-                "Le vocal, les routines et l’arrêt d’une action en cours seront intégrés ensuite.", "subtitle"))
+                "Interrompre coupe la réponse vocale ; une action système déjà lancée peut continuer.", "subtitle"))
             settings_layout.addStretch()
             self.pages.addWidget(settings)
             controller.changed.connect(self.render_activity)
@@ -548,13 +654,15 @@ class DesktopWindow(QMainWindow):
         if not self.compact:
             return
         session = self.controller.session
-        if not session.turns:
-            height = 360
+        if self.controller.voice_worker is not None:
+            height = 670 if session.turns else 510
+        elif not session.turns:
+            height = 470
         elif session.pending:
-            height = 610
+            height = 680
         else:
             text_length = len(session.turns[-1].command) + len(session.turns[-1].reply)
-            height = min(680, 440 + (text_length // 65) * 20)
+            height = min(730, 510 + (text_length // 65) * 20)
         available = self.screen().availableGeometry()
         height = min(height, available.height() - 48)
         height = max(height, self.minimumHeight())
@@ -588,7 +696,7 @@ class DesktopWindow(QMainWindow):
 
     def render_activity(self):
         session = self.controller.session
-        self.clear_button.setEnabled(not session.busy and not session.pending)
+        self.clear_button.setEnabled(not session.busy and not session.pending and self.controller.voice_worker is None)
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 4, 0)
@@ -596,7 +704,8 @@ class DesktopWindow(QMainWindow):
             layout.addWidget(card("ACTIVITÉ DE CETTE SESSION", "Vos demandes et leurs réponses apparaîtront ici."))
         statuses = {"running": "En cours", "confirmation": "Accord attendu", "response": "Réponse reçue", "error": "Non terminée", "cancelled": "Annulée"}
         for turn in reversed(session.turns):
-            layout.addWidget(card(f"{turn.time} · {statuses[turn.status]}", turn.command))
+            channel = " · Vocal" if turn.channel == "voice" else ""
+            layout.addWidget(card(f"{turn.time}{channel} · {statuses[turn.status]}", turn.command or turn.reply))
         layout.addStretch()
         old = self.activity.takeWidget()
         if old:
@@ -607,6 +716,9 @@ class DesktopWindow(QMainWindow):
         if self.shell.has_tray:
             event.ignore()
             self.hide()
+        elif self.controller.voice_worker:
+            event.ignore()
+            self.shell.quit()
         elif self.controller.session.busy or self.controller.workers:
             event.ignore()
             QMessageBox.information(self, "Demande en cours", "Attendez la fin du traitement avant de quitter.")
@@ -620,6 +732,7 @@ class DesktopShell:
         self.app = app
         self.controller = controller
         self.has_tray = QSystemTrayIcon.isSystemTrayAvailable()
+        controller.exit_ready.connect(app.quit)
         self.full = DesktopWindow(controller, self)
         self.compact = DesktopWindow(controller, self, compact=True)
         self.tray = None
@@ -667,6 +780,10 @@ class DesktopShell:
         self.show_full() if self.compact.isVisible() else self.show_compact()
 
     def quit(self):
+        if self.controller.voice_worker:
+            self.controller.quit_after_voice = True
+            self.controller.stop_voice()
+            return
         if self.controller.session.busy or self.controller.workers:
             QMessageBox.information(self.full if self.full.isVisible() else self.compact,
                 "Demande en cours", "Attendez la fin du traitement avant de quitter. L’arrêt forcé n’est pas encore disponible.")

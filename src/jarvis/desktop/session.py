@@ -25,6 +25,8 @@ class Turn:
     reply: str = ""
     action: str = ""
     target: str = ""
+    channel: str = "text"
+    interrupted: bool = False
 
 
 class DesktopSession:
@@ -94,6 +96,22 @@ class DesktopSession:
             self.turns[-1].status = "cancelled"
             self.turns[-1].reply = "Action annulée avant exécution."
             self.pending = None
+
+    def record_voice(self, role, text, interrupted=False):
+        """Append final transcripts in chronological order, without executing text."""
+        if self.busy or self.pending:
+            raise ValueError("Le moteur texte doit être au repos avant le vocal.")
+        if role not in {"user", "assistant"} or not text.strip():
+            return
+        if (role == "assistant" and self.turns and self.turns[-1].channel == "voice"
+                and self.turns[-1].command and not self.turns[-1].reply):
+            self.turns[-1].reply = text
+            self.turns[-1].interrupted = interrupted
+        else:
+            self._next_id += 1
+            self.turns.append(Turn(self._next_id, text if role == "user" else "",
+                status="response", reply=text if role == "assistant" else "",
+                channel="voice", interrupted=interrupted))
 
     def clear(self):
         if self.busy or self.pending:

@@ -17,11 +17,11 @@ python -m pip install -r requirements-desktop.txt
 PYTHONPATH=src python -m jarvis.desktop
 ```
 
-Ollama doit être lancé avec le modèle configuré par `JARVIS_LLM_MODEL`
-(`granite4:3b` par défaut). L’interface utilise le **moteur texte existant**,
-pas le registre complet des tools Gemini Live. Elle ne prétend donc pas encore
-exposer toutes les capacités décrites dans le README. Les permissions macOS
-requises dépendent des actions demandées.
+Pour le texte, Ollama doit être lancé avec le modèle configuré par
+`JARVIS_LLM_MODEL` (`granite4:3b` par défaut). Le bouton **Activer le vocal**
+utilise Gemini Live et le registre complet de ses outils, dans une session
+séparée. Voir [le guide vocal](desktop-voice.md) pour l’installation et la clé.
+Les permissions macOS requises dépendent des actions demandées.
 
 ### Sans terminal au quotidien
 
@@ -35,14 +35,15 @@ open ~/Applications/Jarvis.app
 Ensuite, double-cliquer sur `Jarvis.app` depuis Finder, ou la garder dans le Dock.
 Ce lanceur de développement référence le **chemin absolu du dépôt et du Python
 actuel** : ne pas déplacer/supprimer le dépôt ou `.venv`. Ce n’est pas encore une
-application autonome signée, distribuable sur un autre Mac. Si une application
-existe déjà à la destination, le script refuse de la remplacer. Pour reconstruire,
-choisir `--destination ~/Applications/Jarvis-UI.app`.
+application autonome signée, distribuable sur un autre Mac. Pour actualiser un
+lanceur Jarvis existant et ajouter sa description d’accès au microphone :
+`python scripts/build_desktop_app.py --update`. Les autres fichiers du bundle
+sont conservés ; une application d’une autre identité n’est jamais remplacée.
 
-L’environnement de Finder n’hérite pas des exports du terminal : les variables
-personnalisées de modèle/recherche ne sont pas reprises automatiquement. Le
-lanceur utilise alors les valeurs par défaut. La configuration persistante fera
-partie du packaging suivant.
+Finder n’hérite pas des exports du terminal. Le vocal charge sa configuration
+depuis `~/Library/Application Support/Jarvis/desktop.env`, puis le `.env` du
+projet, sans remplacer les valeurs déjà exportées. Le modèle texte/recherche
+utilise encore sa configuration d’environnement habituelle.
 
 ### Découvrir sans action réelle
 
@@ -82,12 +83,10 @@ moteur. L’historique de session ne remplace pas le journal durable du moteur.
 
 ## Prochaines tranches
 
-1. Adaptateur Gemini Live : flux vocal, état micro, interruption de réponse.
-2. Événements structurés par capacité : étapes, erreurs et effets confirmés.
-3. Arrêt coopératif des tâches : pas d’arrêt forcé d’un thread système.
-4. Vues mémoire/rappels/routines connectées aux stores existants, avec leurs
+1. Événements structurés par capacité : étapes, erreurs et effets confirmés.
+2. Vues mémoire/rappels/routines connectées aux stores existants, avec leurs
    règles de confirmation ; elles ne sont pas dupliquées dans cette tranche.
-5. Raccourci global, préférences persistantes, puis packaging macOS autonome,
+3. Raccourci global, préférences persistantes, puis packaging macOS autonome,
    permissions et signature.
 
 ## Vérifications
@@ -132,7 +131,7 @@ Qt for Python : [QSystemTrayIcon](https://doc.qt.io/qtforpython-6/PySide6/QtWidg
   confirmation avec intitulé lisible et cible exacte.
 - Accueil avec salutation horaire et trois suggestions. Cliquer prépare le
   brouillon ; seul Envoyer ou Entrée exécute la demande.
-- Panneau compact de 360 px au repos, agrandi selon le contenu et limité à
+- Panneau compact de 470 px au repos (avec commandes vocales), agrandi selon le contenu et limité à
   l’espace disponible de l’écran. Les longs contenus restent défilables.
 - Fondu des réponses et redimensionnement doux. Le réglage de réduction des
   animations supprime ces transitions et arrête l’orbe ; les orbes cachés ne

@@ -10,6 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project.optional-dependencies]
 desktop = ["PySide6>=6.8,<7"]
+live = ["livekit-agents[google]>=1.8.8,<1.9", "sounddevice>=0.5,<1", "python-dotenv>=1,<2"]
 
 [project.scripts]
 jarvis-desktop = "jarvis.desktop.__main__:main"

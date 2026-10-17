@@ -81,3 +81,60 @@ def test_cancel_and_clear_are_reflected_in_both_views(app, monkeypatch):
     assert shell.full.conversation.fade.state().name == "Stopped"
     shell.full.hide()
     shell.compact.hide()
+
+
+def test_voice_controls_share_state_and_block_text_execution(app, monkeypatch):
+    from threading import Event
+    from PySide6.QtCore import QThread, Signal
+    from jarvis.desktop import live_worker
+
+    class SimulatedVoiceWorker(QThread):
+        event = Signal(object)
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.stop_flag = Event()
+            self.muted = False
+            self.interrupts = 0
+        def run(self):
+            self.event.emit({"type": "state", "state": "listening", "mic_open": True})
+            self.event.emit({"type": "transcript", "role": "user", "text": "Bonjour"})
+            self.event.emit({"type": "transcript", "role": "assistant", "text": "Bonsoir !"})
+            self.stop_flag.wait(3)
+            self.event.emit({"type": "state", "state": "off", "mic_open": False})
+        def stop(self): self.stop_flag.set()
+        def set_muted(self, muted):
+            self.muted = muted
+            self.event.emit({"type": "state", "state": "muted" if muted else "listening", "mic_open": not muted})
+        def interrupt(self): self.interrupts += 1
+
+    class NoTextExecutor:
+        def execute(self, command):
+            raise AssertionError('Text must not execute during Live')
+
+    monkeypatch.setattr(live_worker, 'LiveWorker', SimulatedVoiceWorker)
+    monkeypatch.setattr("jarvis.desktop.app.QSystemTrayIcon.isSystemTrayAvailable", lambda: False)
+    controller = Controller(executor=NoTextExecutor())
+    shell = DesktopShell(app, controller)
+    shell.show_full()
+    assert controller.voice_worker is None
+    controller.start_voice()
+    wait_until(app, lambda: controller.voice_mic_open and bool(controller.session.turns))
+    worker = controller.voice_worker
+    assert not shell.full.conversation.input.isEnabled()
+    controller.set_draft('Never execute this')
+    controller.submit()
+    assert not controller.workers
+    shell.show_compact()
+    assert shell.compact.conversation.mic_button.isVisible()
+    controller.toggle_microphone()
+    wait_until(app, lambda: not controller.voice_mic_open)
+    assert worker.muted
+    controller.interrupt_voice()
+    assert worker.interrupts == 1
+    controller.stop_voice()
+    wait_until(app, lambda: controller.voice_worker is None)
+    assert not controller.voice_mic_open
+    assert shell.compact.conversation.input.isEnabled()
+    assert controller.session.turns[-1].reply == 'Bonsoir !'
+    shell.full.hide()
+    shell.compact.hide()

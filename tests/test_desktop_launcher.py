@@ -27,3 +27,19 @@ def test_launcher_quotes_paths_and_never_overwrites(tmp_path):
         launcher.build_app(app, python, source)
     with pytest.raises(ValueError):
         launcher.build_app(tmp_path / "not-an-app", python, source)
+
+
+def test_update_keeps_resources_and_adds_microphone_permission(tmp_path):
+    app = launcher.build_app(tmp_path / "Jarvis.app", Path('/python'), tmp_path)
+    marker = app / "Contents/Resources/my-file"
+    marker.parent.mkdir()
+    marker.write_text("keep")
+    launcher.build_app(app, Path('/new-python'), tmp_path, update=True)
+    assert marker.read_text() == "keep"
+    with (app / "Contents/Info.plist").open('rb') as stream:
+        assert "NSMicrophoneUsageDescription" in plistlib.load(stream)
+    info_path = app / "Contents/Info.plist"
+    with info_path.open('wb') as stream:
+        plistlib.dump({"CFBundleIdentifier": "another.application"}, stream)
+    with pytest.raises(ValueError):
+        launcher.build_app(app, Path('/python'), tmp_path, update=True)

@@ -243,6 +243,20 @@ class ToolRegistry:
         # Morning briefing runs in the background like a web search.
         self._briefing_task: asyncio.Task | None = None
 
+    async def aclose(self):
+        """Stop session-owned background work cooperatively before shutdown."""
+        self.task_notifier = None
+        if self.tasks is not None:
+            self.tasks.cancel()
+        pending = [task for task in (self._web_task, self._briefing_task)
+                   if task is not None and not task.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        if self.tasks is not None:
+            await self.tasks.wait()
+
     @staticmethod
     def _default_knowledge() -> KnowledgeCapability:
         # Free and local: a running SearXNG if present, else keyless web search
@@ -3690,3 +3704,4 @@ def create_live_registry(
         context_store=context_store,
         planner_model=planner_model,
     )
+

@@ -303,6 +303,13 @@ open ~/Applications/Jarvis.app
 ```
 
 Ce lanceur de développement reste lié au dépôt et à son environnement Python.
-Le vocal Gemini Live, les routines et l’arrêt coopératif ne sont pas encore
-connectés à l’interface. Voir [le guide desktop](docs/desktop-ui.md) pour les
-limites, les tests et les prochaines étapes.
+Le bouton **Activer le vocal** connecte Gemini Live aux deux vues, avec micro
+coupé/réactivable, interruption de réponse et transcriptions. Installer les
+dépendances avec `python -m pip install -e '.[desktop,live]'`, puis configurer
+`GOOGLE_API_KEY` dans le `.env` du projet (ou le fichier desktop utilisateur).
+Le micro reste fermé jusqu’à l’activation explicite ; la voix est envoyée à
+Gemini. Pas de salle ni de clés LiveKit nécessaires pour ce mode desktop.
+
+Pour actualiser un lanceur existant : `python scripts/build_desktop_app.py --update`.
+Voir [le guide vocal](docs/desktop-voice.md) et [le guide desktop](docs/desktop-ui.md)
+pour les limites, les tests et les prochaines étapes.
