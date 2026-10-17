@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline voice setup diagnosis. Never opens devices or starts Gemini."""
+import argparse
 import asyncio
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -8,7 +9,7 @@ import sys
 
 # Works without editable installation when run from this checkout.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from jarvis.desktop.live_runtime import VoiceSetupError, create_components, prepare_environment
+from jarvis.desktop.live_runtime import VoiceSetupError, create_components, prepare_environment, setup_step, preload_live_plugins
 
 
 def package_version(name):
@@ -26,7 +27,7 @@ async def diagnose():
         print(f"{package} : {package_version(package)}")
     components = None
     try:
-        prepare_environment()
+        setup_step("environment", prepare_environment)
         print("Configuration Gemini : présente (clé masquée)")
         components = create_components()
         print("Préparation : OK")
@@ -54,5 +55,41 @@ async def diagnose():
                     pass
 
 
+def run_in_worker(coroutine_factory=diagnose):
+    # Same QApplication + QThread + asyncio.run combination as the GUI. No
+    # session.start/audio.open: this remains an offline preparation-only test.
+    from PySide6.QtCore import QThread, QTimer
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    class DiagnosticWorker(QThread):
+        code = 1
+        def run(self):
+            try:
+                self.code = asyncio.run(coroutine_factory())
+            except Exception as error:
+                print(f"ÉCHEC : thread desktop ({type(error).__name__})", flush=True)
+    worker = DiagnosticWorker()
+    worker.finished.connect(app.quit)
+    QTimer.singleShot(0, worker.start)
+    app.exec()
+    worker.wait()
+    return worker.code
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--worker", action="store_true", help="Reproduire la préparation dans le thread Qt utilisé par l’interface")
+    args = parser.parse_args()
+    print("Mode : thread Qt desktop" if args.worker else "Mode : thread principal", flush=True)
+    if args.worker:
+        try:
+            preload_live_plugins()
+        except VoiceSetupError as error:
+            print(str(error))
+            return 1
+        return run_in_worker()
+    return asyncio.run(diagnose())
+
+
 if __name__ == "__main__":
-    sys.exit(asyncio.run(diagnose()))
+    sys.exit(main())

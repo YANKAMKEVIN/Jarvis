@@ -131,3 +131,23 @@ macOS, modèle Gemini, session LiveKit), avec noms de fichiers/fonctions et lign
 Il n’ouvre aucun périphérique et ne démarre aucune connexion Gemini. Il ne
 recopie ni clé, ni message brut d’exception du fournisseur. Son résultat permet
 de distinguer une incompatibilité de SDK d’un problème des outils natifs.
+
+Si le diagnostic passe alors que l’interface échoue, reproduire la préparation
+dans le même type de thread que l’interface, sans ouvrir le micro ni Gemini :
+
+```bash
+python scripts/diagnose_desktop_voice.py --worker
+```
+
+Ce mode utilise une boucle QApplication et un QThread comme le vocal desktop,
+puis imprime l’étape et les positions de code en échec avant de se fermer.
+
+### Initialisation du plugin Google
+
+LiveKit exige que l’enregistrement des plugins soit effectué dans le thread
+principal. Lors de l’activation du vocal, l’interface importe donc le plugin Google
+avant de lancer le worker. La session, l’audio et les outils restent dans le
+worker. Aucun micro ni connexion ne s’ouvre pendant ce préchargement.
+Un test en processus neuf utilise le vrai plugin puis construit un modèle dans
+un QThread, sans démarrer de connexion, pour éviter de masquer ce cas par les
+imports préalables des autres tests.

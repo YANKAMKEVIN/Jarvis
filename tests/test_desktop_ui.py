@@ -111,6 +111,7 @@ def test_voice_controls_share_state_and_block_text_execution(app, monkeypatch):
         def execute(self, command):
             raise AssertionError('Text must not execute during Live')
 
+    monkeypatch.setattr('jarvis.desktop.live_runtime.preload_live_plugins', lambda: None)
     monkeypatch.setattr(live_worker, 'LiveWorker', SimulatedVoiceWorker)
     monkeypatch.setattr("jarvis.desktop.app.QSystemTrayIcon.isSystemTrayAvailable", lambda: False)
     controller = Controller(executor=NoTextExecutor())

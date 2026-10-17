@@ -19,21 +19,27 @@ class VoiceSetupError(Exception):
         self.frames = frames
 
 
+def setup_failure(stage, error):
+    names = {"environment": "configuration d’environnement", "sdk_import": "import du SDK",
+             "logging": "journalisation", "audio_import": "chargement audio",
+             "macos_tools": "outils macOS", "gemini_model": "modèle Gemini",
+             "agent_session": "session LiveKit"}
+    frames = tuple(f"{Path(frame.filename).name}:{frame.lineno} ({frame.name})"
+                   for frame in traceback.extract_tb(error.__traceback__)[-5:])
+    return VoiceSetupError(
+        f"Le vocal bloque à l’étape « {names[stage]} » ({type(error).__name__}). "
+        f"Code : {stage}. Lancez python scripts/diagnose_desktop_voice.py --worker.",
+        stage=stage, error_type=type(error).__name__, frames=frames,
+    )
+
+
 def setup_step(stage, callback):
     try:
         return callback()
     except VoiceSetupError:
         raise
     except Exception as error:
-        names = {"audio_import": "chargement audio", "macos_tools": "outils macOS",
-                 "gemini_model": "modèle Gemini", "agent_session": "session LiveKit"}
-        frames = tuple(f"{Path(frame.filename).name}:{frame.lineno} ({frame.name})"
-                       for frame in traceback.extract_tb(error.__traceback__)[-5:])
-        raise VoiceSetupError(
-            f"Le vocal bloque à l’étape « {names[stage]} » ({type(error).__name__}). "
-            f"Code : {stage}. Lancez python scripts/diagnose_desktop_voice.py pour le diagnostic.",
-            stage=stage, error_type=type(error).__name__, frames=frames,
-        ) from None
+        raise setup_failure(stage, error) from None
 
 
 def prepare_environment():
@@ -55,6 +61,20 @@ def prepare_environment():
                               "ou dans ~/Library/Application Support/Jarvis/desktop.env, puis réessayez.")
 
 
+def preload_live_plugins():
+    """Register LiveKit plugins on the main thread, before any voice worker.
+
+    GooglePlugin registers itself at import and LiveKit explicitly rejects
+    registration on background threads. This opens no devices or connection.
+    """
+    try:
+        from livekit.plugins import google  # noqa: F401
+    except (ImportError, OSError):
+        raise VoiceSetupError("Dépendances Live indisponibles. Installez python -m pip install -e '.[desktop,live]'.") from None
+    except Exception as error:
+        raise setup_failure("sdk_import", error) from None
+
+
 def create_components():
     try:
         from livekit.agents import Agent, AgentSession
@@ -65,7 +85,9 @@ def create_components():
         from jarvis.live.logging import install_livekit_pii_log_filter
     except (ImportError, OSError):
         raise VoiceSetupError("Dépendances audio indisponibles. Installez python -m pip install -e '.[desktop,live]'.") from None
-    install_livekit_pii_log_filter()
+    except Exception as error:
+        raise setup_failure("sdk_import", error) from None
+    setup_step("logging", install_livekit_pii_log_filter)
     try:
         config = get_live_config()
     except (ValueError, TypeError):
@@ -157,7 +179,7 @@ class LiveRuntime:
         try:
             if self.stop_requested.is_set():
                 return
-            self.prepare()
+            setup_step("environment", self.prepare)
             self.components = self.factory()
             c = self.components
             c.session.input.audio = c.audio.input

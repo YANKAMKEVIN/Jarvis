@@ -308,6 +308,13 @@ class Controller(QObject):
     def start_voice(self):
         if self.demo or self.voice_worker is not None or self.session.busy or self.session.pending:
             return
+        from jarvis.desktop.live_runtime import VoiceSetupError, preload_live_plugins
+        try:
+            preload_live_plugins()
+        except VoiceSetupError as error:
+            self.voice_state, self.voice_error, self.voice_mic_open = "error", str(error), False
+            self.changed.emit()
+            return
         from jarvis.desktop.live_worker import LiveWorker
         self.voice_state, self.voice_error, self.voice_mic_open = "starting", "", False
         worker = LiveWorker(self)
