@@ -120,3 +120,27 @@ Qt for Python : [QSystemTrayIcon](https://doc.qt.io/qtforpython-6/PySide6/QtWidg
   Mac toujours requise.
 - Installation editable et commande `jarvis-desktop --help` vérifiées ; les deux
   vues ont été rendues et inspectées en mode Qt offscreen.
+
+## Finition visuelle
+
+- Orbe à voiles lumineux, halo doux et rythme de respiration ; ambre lorsqu’une
+  confirmation est attendue, rose en cas d’erreur. Ces états ne simulent jamais
+  un micro actif ou une progression réelle.
+- Fond dégradé, surfaces teintées, ombre du champ de saisie et typographie plus
+  aérée. Il ne s’agit pas encore de la vibrance/transparence native macOS.
+- Demandes alignées à droite et réponses ouvertes, texte sélectionnable,
+  confirmation avec intitulé lisible et cible exacte.
+- Accueil avec salutation horaire et trois suggestions. Cliquer prépare le
+  brouillon ; seul Envoyer ou Entrée exécute la demande.
+- Panneau compact de 360 px au repos, agrandi selon le contenu et limité à
+  l’espace disponible de l’écran. Les longs contenus restent défilables.
+- Fondu des réponses et redimensionnement doux. Le réglage de réduction des
+  animations supprime ces transitions et arrête l’orbe ; les orbes cachés ne
+  consomment pas de timer d’animation.
+
+Captures réelles en mode démo, rendues avec Qt offscreen sous Linux :
+
+![Accueil desktop](screenshots/desktop-home.png)
+![Compagnon au repos](screenshots/compact-idle.png)
+![Confirmation compacte](screenshots/compact-confirmation.png)
+![Conversation desktop](screenshots/desktop-conversation.png)

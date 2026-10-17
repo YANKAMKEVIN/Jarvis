@@ -32,13 +32,21 @@ def test_two_views_share_draft_confirmation_and_result(app, monkeypatch):
     controller = Controller(demo=True)
     shell = DesktopShell(app, controller)
     shell.show_full()
-    controller.set_draft("Ouvre Safari")
+    suggestions = [b for b in shell.full.findChildren(QPushButton) if b.objectName() == "suggestion"]
+    suggestions[0].click()
+    assert controller.session.draft == "Ouvre Safari"
+    assert not controller.session.turns and not controller.workers
     shell.switch_view()
+    idle_height = shell.compact.height()
     assert shell.compact.conversation.input.text() == "Ouvre Safari"
     controller.submit()
     controller.submit()  # A second activation must not dispatch twice.
     wait_until(app, lambda: controller.session.pending is not None and not controller.workers)
     assert len(controller.session.turns) == 1
+    wait_until(app, lambda: shell.compact.height() > idle_height)
+    visible_confirmations = [b for b in shell.compact.findChildren(QPushButton)
+                             if b.text() == "Confirmer" and b.isVisibleTo(shell.compact)]
+    assert visible_confirmations
     shell.switch_view()
     assert shell.full.isVisible() and not shell.compact.isVisible()
     assert not shell.full.conversation.input.isEnabled()
@@ -69,5 +77,7 @@ def test_cancel_and_clear_are_reflected_in_both_views(app, monkeypatch):
     controller.reduced_motion = True
     controller.changed.emit()
     assert not shell.full.conversation.orb.timer.isActive()
+    assert shell.full.conversation.opacity.opacity() == 1.0
+    assert shell.full.conversation.fade.state().name == "Stopped"
     shell.full.hide()
     shell.compact.hide()
