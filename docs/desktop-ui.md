@@ -144,3 +144,10 @@ Captures réelles en mode démo, rendues avec Qt offscreen sous Linux :
 ![Compagnon au repos](screenshots/compact-idle.png)
 ![Confirmation compacte](screenshots/compact-confirmation.png)
 ![Conversation desktop](screenshots/desktop-conversation.png)
+
+### Quitter depuis le terminal
+
+`Ctrl+C` demande la même fermeture que le menu Jarvis → Quitter. Un timer de
+service traite le signal dans la boucle Qt, y compris lorsque les animations
+sont réduites. Une action en cours conserve sa protection contre une fermeture
+forcée. `Échap` ne termine pas l’application.

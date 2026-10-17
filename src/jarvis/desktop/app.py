@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import signal
 from types import SimpleNamespace
 from datetime import datetime
 
@@ -681,4 +682,35 @@ def run(demo=False, compact=False):
     controller = Controller(demo=demo)
     shell = DesktopShell(app, controller)
     shell.show_compact() if compact else shell.show_full()
-    return app.exec()
+    # Qt catches Python exceptions raised inside paint/timer callbacks. The
+    # default SIGINT handler therefore prints KeyboardInterrupt instead of
+    # reliably ending app.exec(). Queue a normal quit through the event loop.
+    interrupt_requested = False
+    draining_interrupt = False
+
+    def request_interrupt(signum, frame):
+        nonlocal interrupt_requested
+        interrupt_requested = True  # No Qt calls inside a Python signal handler.
+
+    def drain_interrupt():
+        nonlocal interrupt_requested, draining_interrupt
+        if not interrupt_requested or draining_interrupt:
+            return
+        interrupt_requested = False
+        draining_interrupt = True
+        try:
+            shell.quit()  # Retain the existing guard against killing a worker.
+        finally:
+            draining_interrupt = False
+
+    previous_sigint = signal.signal(signal.SIGINT, request_interrupt)
+    signal_pump = QTimer(app)
+    signal_pump.setInterval(100)
+    signal_pump.timeout.connect(drain_interrupt)
+    signal_pump.start()
+    try:
+        return app.exec()
+    finally:
+        signal_pump.stop()
+        signal_pump.deleteLater()
+        signal.signal(signal.SIGINT, previous_sigint)
