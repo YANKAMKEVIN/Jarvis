@@ -282,3 +282,27 @@ PYTHONPATH=src .venv/bin/python scripts/diagnose_accessibility.py --app Safari
   une primitive explicite, sans fallback automatique.
 - **Local et sobre en données.** Les valeurs de champs et le texte sélectionné
   ne sont pas lus ; les logs filtrent les PII.
+
+
+## Interface de bureau (première version)
+
+Deux vues partagent la même session : un compagnon compact et une fenêtre
+complète, avec conversation texte, activité et confirmations. Installation :
+
+```bash
+python -m pip install -e '.[desktop]'
+jarvis-desktop --demo       # découvrir sans action réelle
+jarvis-desktop              # moteur texte sur macOS, Ollama requis
+```
+
+Pour ouvrir Jarvis depuis Finder sans terminal au quotidien :
+
+```bash
+python scripts/build_desktop_app.py
+open ~/Applications/Jarvis.app
+```
+
+Ce lanceur de développement reste lié au dépôt et à son environnement Python.
+Le vocal Gemini Live, les routines et l’arrêt coopératif ne sont pas encore
+connectés à l’interface. Voir [le guide desktop](docs/desktop-ui.md) pour les
+limites, les tests et les prochaines étapes.

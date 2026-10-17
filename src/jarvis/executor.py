@@ -108,6 +108,15 @@ class CommandExecutor:
             )
 
         intent = create_intent(action, target)
+        return self.execute_intent(intent, confirmed=confirmed)
+
+    def execute_intent(self, intent, confirmed: bool = False) -> ExecutionResult:
+        """Execute the exact previewed intent without asking the model again.
+
+        Rebuild risk from the action registry: a caller cannot downgrade it by
+        supplying a hand-crafted Intent. UI confirmations retain action/target.
+        """
+        intent = create_intent(intent.action, intent.target)
         decision = self.security.evaluate(intent)
         self._debug_routing(
             "security",
@@ -354,3 +363,4 @@ class CommandExecutor:
             print(f"{key}: {value}")
 
         print("==================================================")
+
