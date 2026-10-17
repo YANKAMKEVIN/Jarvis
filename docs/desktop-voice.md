@@ -117,3 +117,17 @@ Résultat de cette tranche sous Linux/Python 3.13 : 25 tests desktop passants.
 Suite complète : 817 tests passants, 149 sous-tests passants et les mêmes
 207 échecs de frameworks macOS absents que le snapshot de `main` ; aucun nouvel
 identifiant de test en échec. La suite complète n’est pas déclarée verte.
+
+## Si la préparation échoue avant l’ouverture du micro
+
+Depuis le même environnement Python que l’application :
+
+```bash
+python scripts/diagnose_desktop_voice.py
+```
+
+Ce diagnostic affiche les versions et l’étape en échec (import audio, outils
+macOS, modèle Gemini, session LiveKit), avec noms de fichiers/fonctions et lignes.
+Il n’ouvre aucun périphérique et ne démarre aucune connexion Gemini. Il ne
+recopie ni clé, ni message brut d’exception du fournisseur. Son résultat permet
+de distinguer une incompatibilité de SDK d’un problème des outils natifs.

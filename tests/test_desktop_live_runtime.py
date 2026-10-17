@@ -178,3 +178,18 @@ def test_stop_closes_microphone_even_while_interruption_is_pending():
         assert c.audio.closed and not c.audio.mic_open
         assert events[-1]['state'] == 'off'
     asyncio.run(scenario())
+
+
+def test_setup_stage_errors_report_location_without_provider_payload():
+    from jarvis.desktop.live_runtime import setup_step
+    def failing():
+        raise TypeError('SECRET_API_KEY_AND_PROVIDER_PAYLOAD')
+    try:
+        setup_step('agent_session', failing)
+    except VoiceSetupError as error:
+        assert error.stage == 'agent_session' and error.error_type == 'TypeError'
+        assert 'SECRET' not in str(error)
+        assert 'SECRET' not in str(error.frames)
+        assert any('failing' in frame for frame in error.frames)
+    else:
+        raise AssertionError('Expected stage failure')

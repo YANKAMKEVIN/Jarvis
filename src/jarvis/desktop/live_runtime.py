@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import traceback
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
@@ -10,6 +11,29 @@ from types import SimpleNamespace
 
 class VoiceSetupError(Exception):
     """A safe, user-facing setup error; never includes provider exception text."""
+
+    def __init__(self, message, stage="configuration", error_type=None, frames=()):
+        super().__init__(message)
+        self.stage = stage
+        self.error_type = error_type
+        self.frames = frames
+
+
+def setup_step(stage, callback):
+    try:
+        return callback()
+    except VoiceSetupError:
+        raise
+    except Exception as error:
+        names = {"audio_import": "chargement audio", "macos_tools": "outils macOS",
+                 "gemini_model": "modèle Gemini", "agent_session": "session LiveKit"}
+        frames = tuple(f"{Path(frame.filename).name}:{frame.lineno} ({frame.name})"
+                       for frame in traceback.extract_tb(error.__traceback__)[-5:])
+        raise VoiceSetupError(
+            f"Le vocal bloque à l’étape « {names[stage]} » ({type(error).__name__}). "
+            f"Code : {stage}. Lancez python scripts/diagnose_desktop_voice.py pour le diagnostic.",
+            stage=stage, error_type=type(error).__name__, frames=frames,
+        ) from None
 
 
 def prepare_environment():
@@ -46,14 +70,14 @@ def create_components():
         config = get_live_config()
     except (ValueError, TypeError):
         raise VoiceSetupError("Configuration Gemini invalide. Vérifiez le modèle, la voix et la température.") from None
-    audio = LocalAudio(asyncio.get_running_loop())
-    assistant = create_assistant_class(Agent)()
-    model = create_realtime_model(google, config)
+    audio = setup_step("audio_import", lambda: LocalAudio(asyncio.get_running_loop()))
+    assistant = setup_step("macos_tools", lambda: create_assistant_class(Agent)())
+    model = setup_step("gemini_model", lambda: create_realtime_model(google, config))
     # Gemini handles turn detection. No inference service or LiveKit room/token.
-    session = AgentSession(llm=model, vad=None, turn_handling={
+    session = setup_step("agent_session", lambda: AgentSession(llm=model, vad=None, turn_handling={
         "turn_detection": "realtime_llm",
         "interruption": {"resume_false_interruption": False},
-    })
+    }))
     return SimpleNamespace(model=model, session=session,
         assistant=assistant, audio=audio)
 
