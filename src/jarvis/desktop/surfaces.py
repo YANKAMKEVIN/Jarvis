@@ -8,6 +8,9 @@ class GlassSurface(QWidget):
     """Translucent painted glass; does not claim native macOS backdrop blur."""
     def paintEvent(self, event):
         p = QPainter(self)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        p.fillRect(self.rect(), Qt.GlobalColor.transparent)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         box = self.rect().adjusted(10, 10, -10, -10)
         p.setPen(Qt.PenStyle.NoPen)
@@ -127,6 +130,9 @@ class OrbTransfer(QWidget):
 
     def paintEvent(self, event):
         p = QPainter(self)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        p.fillRect(self.rect(), Qt.GlobalColor.transparent)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.drawPixmap(self.rect(), self.pixmap)
         p.end()

@@ -6,7 +6,7 @@ import pytest
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QElapsedTimer
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QTextEdit
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QTextEdit
 from jarvis.desktop.app import Controller, DesktopShell, STYLE
 
 
@@ -214,3 +214,113 @@ def test_companion_remembers_position_and_recovers_from_missing_monitor(app, mon
         shell.finish_transfer()
         shell.full.hide()
         shell.compact.hide()
+
+
+def test_three_modes_share_session_and_orb_click_never_opens_micro(app, monkeypatch):
+    from PySide6.QtCore import QPoint, Qt
+    controller, shell = make_shell(app, monkeypatch, demo=True)
+    try:
+        controller.reduced_motion = True
+        shell.show_orb()
+        assert shell.orb_window.isVisible() and not shell.full.isVisible() and not shell.compact.isVisible()
+        first = shell.orb_window.grab().toImage()
+        second = shell.orb_window.grab().toImage()
+        assert first == second  # Transparent repaint must not accumulate glow.
+        assert not controller.voice_mic_open and controller.voice_worker is None
+        QTest.mouseClick(shell.orb_window.orb, Qt.MouseButton.LeftButton, pos=QPoint(90, 90))
+        assert shell.compact.isVisible() and not shell.orb_window.isVisible()
+        assert controller.voice_worker is None
+        controller.voice_event({'type': 'audio_level', 'input': 0.16, 'output': 0.0})
+        assert shell.orb_window.orb.target == shell.compact.assistant.orb.target
+        shell.show_orb()
+        shell.show_full()
+        assert shell.full.isVisible() and not shell.orb_window.isVisible()
+        assert not shell.orb_window.orb.timer.isActive()
+    finally:
+        shell.finish_transfer()
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_cards_and_actions_are_shared_bounded_and_confirmation_stays_vocal(app, monkeypatch):
+    from jarvis.desktop.presentation import project_activity
+    controller, shell = make_shell(app, monkeypatch, demo=True)
+    try:
+        controller.reduced_motion = True
+        shell.show_compact()
+        controller.voice_event(project_activity('list_calendar_events', {'ok': True,
+            'events': [{'title': '<b>Réunion</b>', 'start': '10:00', 'token': 'PRIVATE_TOKEN'}]}, 'calendar'))
+        assert len(controller.cards) == 1
+        assert shell.compact.assistant.hint_area.currentIndex() == 1
+        shell.compact.assistant.details_button.click()
+        assert shell.full.isVisible() and shell.full.pages.currentIndex() == 1
+        labels = shell.full.cards_page.findChildren(QLabel)
+        meeting = next(w for w in labels if '<b>Réunion</b>' in w.text())
+        assert meeting.textFormat().name == 'PlainText'
+        assert all('PRIVATE' not in w.text() for w in labels)
+        controller.voice_event(project_activity('prepare_send_message',
+            {'ok': False, 'requires_confirmation': True, 'token': 'PRIVATE_TOKEN'}, 'message'))
+        shell.full.navigate(2)
+        assert any('Accord vocal attendu' in w.text() for w in shell.full.activity.findChildren(QLabel))
+        assert not any(b.text() == 'Confirmer' for b in shell.full.findChildren(QPushButton))
+        for i in range(50):
+            controller.voice_event(project_activity('open_app', {'ok': True}, str(i)))
+        assert len(controller.activity) == 30
+        controller.clear_cards()
+        assert not controller.cards
+        assert not shell.full.assistant.peek.isVisibleTo(shell.full)
+    finally:
+        shell.finish_transfer()
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_task_cancel_button_waits_for_actual_outcome_and_never_confirms_actions(app, monkeypatch):
+    controller, shell = make_shell(app, monkeypatch)
+    class Worker:
+        cancellations = 0
+        def cancel_task(self): self.cancellations += 1
+    worker = Worker()
+    controller.voice_worker = worker
+    try:
+        shell.show_full()
+        controller.voice_event({'type': 'task_progress', 'id': 'task', 'status': 'running',
+                                'steps': [], 'step_count': 0})
+        shell.full.navigate(2)
+        app.processEvents()
+        cancel = shell.full.activity.findChild(QPushButton, 'cancelTask')
+        assert cancel.isEnabled()
+        cancel.click()
+        assert worker.cancellations == 1
+        assert controller.task['status'] == 'running'  # Sending a request is not completion.
+        controller.voice_event({'type': 'task_progress', 'id': 'task', 'status': 'cancelling',
+                                'steps': [], 'step_count': 0})
+        app.processEvents()
+        cancel = shell.full.activity.findChild(QPushButton, 'cancelTask')
+        assert not cancel.isEnabled()
+        controller.voice_event({'type': 'task_progress', 'id': 'task', 'status': 'cancelled',
+                                'steps': [], 'step_count': 0})
+        app.processEvents()
+        assert shell.full.activity.findChild(QPushButton, 'cancelTask') is None
+        assert any('Tâche annulée' in w.text() for w in shell.full.activity.findChildren(QLabel))
+    finally:
+        controller.voice_worker = None
+        shell.finish_transfer()
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_dragging_orb_moves_it_without_opening_companion(app, monkeypatch):
+    from PySide6.QtCore import QPoint, Qt
+    controller, shell = make_shell(app, monkeypatch, demo=True)
+    try:
+        controller.reduced_motion = True
+        shell.show_orb()
+        origin = shell.orb_window.pos()
+        orb = shell.orb_window.orb
+        QTest.mousePress(orb, Qt.MouseButton.LeftButton, pos=QPoint(80, 80))
+        QTest.mouseMove(orb, QPoint(115, 100))
+        QTest.mouseRelease(orb, Qt.MouseButton.LeftButton, pos=QPoint(115, 100))
+        assert shell.orb_window.pos() != origin
+        assert shell.orb_window.isVisible() and not shell.compact.isVisible()
+        assert controller.voice_worker is None
+    finally:
+        shell.finish_transfer()
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()

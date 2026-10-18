@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import signal
+from collections import OrderedDict
+from datetime import datetime
 
 from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QTimer, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
@@ -11,6 +13,9 @@ from PySide6.QtWidgets import (
 )
 
 from jarvis.desktop.visuals import Orb
+from jarvis.desktop.panels import DetailPanel
+from jarvis.desktop.orb_window import OrbWindow
+from jarvis.desktop.presentation import STATUS_TEXT
 from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, OrbTransfer
 
 STYLE = """
@@ -84,6 +89,7 @@ class Controller(QObject):
     changed = Signal()
     audio_levels = Signal(float, float)
     exit_ready = Signal()
+    details_requested = Signal()
 
     def __init__(self, demo=False):
         super().__init__()
@@ -97,11 +103,28 @@ class Controller(QObject):
         self.voice_turns = 0
         self.quit_after_voice = False
         self.sounds_enabled = False
+        self.cards = OrderedDict()
+        self.activity = OrderedDict()
+        self.task = None
         self.tool_notice = ""
         self.tool_timer = QTimer(self)
         self.tool_timer.setSingleShot(True)
         self.tool_timer.setInterval(6000)
         self.tool_timer.timeout.connect(self.clear_tool_notice)
+
+    def clear_cards(self):
+        self.cards.clear()
+        self.changed.emit()
+
+    def clear_activity(self):
+        if not any(e['status'] == 'running' for e in self.activity.values()):
+            self.activity.clear()
+            self.changed.emit()
+
+    def cancel_task(self):
+        if (self.voice_worker and self.task and self.task['status'] == 'running'
+                and self.voice_state not in {'starting', 'stopping'}):
+            self.voice_worker.cancel_task()
 
     def clear_tool_notice(self):
         self.tool_notice = ""
@@ -118,6 +141,9 @@ class Controller(QObject):
         from jarvis.desktop.live_runtime import VoiceSetupError, preload_live_plugins
         self.voice_state, self.voice_error = "starting", ""
         self.voice_turns = 0
+        self.cards.clear()
+        self.activity.clear()
+        self.task = None
         self.tool_timer.stop()
         self.tool_notice = ""
         self.changed.emit()
@@ -146,6 +172,26 @@ class Controller(QObject):
             self.changed.emit()
 
     def voice_event(self, event):
+        if event.get('type') == 'activity':
+            now = datetime.now().strftime('%H:%M:%S')
+            self.activity[event['id']] = {'label': event['label'], 'status': event['status'], 'time': now}
+            self.activity.move_to_end(event['id'])
+            while len(self.activity) > 30:
+                self.activity.popitem(last=False)
+            if event.get('card'):
+                item = {**event['card'], 'time': now}
+                self.cards[item['kind']] = item
+                self.cards.move_to_end(item['kind'])
+                while len(self.cards) > 4:
+                    self.cards.popitem(last=False)
+            self.tool_notice = f"{event['label']} · {STATUS_TEXT.get(event['status'], 'Résultat reçu')}"
+            self.tool_timer.start()
+            self.changed.emit()
+            return
+        if event.get('type') == 'task_progress':
+            self.task = event
+            self.changed.emit()
+            return
         if event.get("type") == "tool_receipt":
             states = {"received": "Résultat reçu", "confirmation": "Accord vocal attendu",
                       "error": "L’outil signale un problème"}
@@ -170,6 +216,12 @@ class Controller(QObject):
             self.voice_mic_open = event.get("mic_open", False)
             self.input_suppressed = event.get("input_suppressed", False)
             self.voice_error = event.get("message", "")
+            if state in {'off', 'error'}:
+                for entry in self.activity.values():
+                    if entry['status'] == 'running':
+                        entry['status'] = 'unknown'
+                if self.task and self.task['status'] in {'running', 'cancelling'}:
+                    self.task = {**self.task, 'status': 'unknown'}
             self.changed.emit()
 
     def voice_finished(self, worker):
@@ -214,7 +266,17 @@ class VoicePanel(QWidget):
         self.hint = label("Parlez-moi simplement.", "intro")
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.hint.setMinimumHeight(40)
-        layout.addWidget(self.hint)
+        self.hint_area = QStackedWidget()
+        self.hint_area.addWidget(self.hint)
+        self.details_button = button('Voir les détails →', controller.details_requested.emit)
+        self.details_button.setObjectName('quiet')
+        self.hint_area.addWidget(self.details_button)
+        layout.addWidget(self.hint_area)
+        self.peek = label('', 'subtitle')
+        self.peek.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.peek.setMaximumHeight(100)
+        self.peek.setStyleSheet('background: rgba(36, 65, 86, 65); border: 1px solid #29465c; border-radius: 14px; padding: 10px; color: #bfdeed;')
+        layout.addWidget(self.peek)
         layout.addStretch(2)
         self.controls = ControlDock(controller)
         controls = QHBoxLayout(self.controls)
@@ -245,6 +307,17 @@ class VoicePanel(QWidget):
         c = self.controller
         active = c.voice_worker is not None
         state = c.voice_state
+        has_details = bool(c.cards or c.task or c.activity)
+        self.hint_area.setCurrentIndex(1 if has_details else 0)
+        self.details_button.setText(f'{len(c.cards)} carte(s) · Voir les détails →' if c.cards else
+                                    'Suivre la tâche →' if c.task else 'Voir l’activité →')
+        self.peek.setVisible(bool(c.cards) and not self.compact)
+        if c.cards:
+            latest = next(reversed(c.cards.values()))
+            summary = latest['body'] if not latest['items'] else latest['items'][0]
+            self.peek.setText(latest['title'] + '\n' + summary[:160])
+        self.orb.setFixedSize(220 if self.compact else 280 if c.cards else 360,
+                              220 if self.compact else 280 if c.cards else 360)
         self.orb.state = state
         self.orb.update()
         self.controls.active = active
@@ -319,7 +392,7 @@ class DesktopWindow(QMainWindow):
             nav.addWidget(label("ASSISTANT VOCAL", "eyebrow"))
             nav.addSpacing(34)
             self.nav = []
-            for i, text in enumerate(("Assistant", "Activité", "Réglages")):
+            for i, text in enumerate(("Assistant", "Cartes", "Activité", "Réglages")):
                 b = button(text, lambda checked=False, index=i: self.navigate(index))
                 b.setObjectName("nav")
                 b.setCheckable(True)
@@ -338,6 +411,13 @@ class DesktopWindow(QMainWindow):
         switch = button("Agrandir ↗" if compact else "Mode compact ↙", shell.switch_view)
         switch.setObjectName("quiet")
         heading.addWidget(switch)
+        orb_mode = button('◉', shell.show_orb)
+        orb_mode.setObjectName('quiet')
+        orb_mode.setFixedSize(34, 34)
+        orb_mode.setStyleSheet('padding: 0; font-size: 19px;')
+        orb_mode.setToolTip('Mode orbe seul')
+        orb_mode.setAccessibleName('Passer au mode orbe seul')
+        heading.addWidget(orb_mode)
         if compact:
             close = button("×", self.close)
             close.setObjectName("quiet")
@@ -350,13 +430,9 @@ class DesktopWindow(QMainWindow):
         self.assistant = VoicePanel(controller, compact)
         self.pages.addWidget(self.assistant)
         if not compact:
-            self.activity = QWidget()
-            info = QVBoxLayout(self.activity)
-            info.setContentsMargins(0, 0, 0, 0)
-            self.activity_summary = label("", "intro")
-            info.addWidget(card("SESSION VOCALE", "Aucun fil de messages. Les demandes se font à voix haute."))
-            info.addWidget(self.activity_summary)
-            info.addStretch()
+            self.cards_page = DetailPanel(controller)
+            self.pages.addWidget(self.cards_page)
+            self.activity = DetailPanel(controller, activity=True)
             self.pages.addWidget(self.activity)
             settings = QWidget()
             settings_layout = QVBoxLayout(settings)
@@ -378,15 +454,14 @@ class DesktopWindow(QMainWindow):
             settings_layout.addWidget(label("⌘⇧Espace : mode compact lorsque Jarvis est actif.", "subtitle"))
             settings_layout.addStretch()
             self.pages.addWidget(settings)
-            controller.changed.connect(self.render_activity)
             self.navigate(0)
-            self.render_activity()
         workspace.addWidget(self.pages, 1)
         row.addLayout(workspace, 1)
         shortcut = QShortcut(QKeySequence("Ctrl+Shift+Space"), self)
         shortcut.activated.connect(shell.show_compact)
 
     def navigate(self, index):
+        self.shell.finish_transfer()
         self.pages.setCurrentIndex(index)
         for i, widget in enumerate(self.nav):
             widget.setChecked(index == i)
@@ -399,11 +474,6 @@ class DesktopWindow(QMainWindow):
     def set_sounds(self, checked):
         self.controller.set_sounds(checked)
         self.shell.settings.setValue("audio/sounds", checked)
-
-    def render_activity(self):
-        c = self.controller
-        state = "En cours" if c.voice_worker else "Arrêtée"
-        self.activity_summary.setText(f"Session : {state}\nDemandes vocales reçues : {c.voice_turns}")
 
     def closeEvent(self, event):
         if self.compact:
@@ -423,12 +493,15 @@ class DesktopShell:
         controller.sounds_enabled = self.settings.value("audio/sounds", False) in (True, "true")
         controller.reduced_motion = self.settings.value("appearance/reduced_motion", controller.reduced_motion) in (True, "true")
         self.position_restored = False
+        self.orb_position_restored = False
         self.transfer = None
         controller.changed.connect(self.motion_changed)
         self.has_tray = QSystemTrayIcon.isSystemTrayAvailable()
         controller.exit_ready.connect(app.quit)
         self.full = DesktopWindow(controller, self)
         self.compact = DesktopWindow(controller, self, compact=True)
+        self.orb_window = OrbWindow(controller, self)
+        controller.details_requested.connect(self.show_details)
         self.tray = None
         if self.has_tray:
             pixmap = QPixmap(32, 32)
@@ -442,7 +515,7 @@ class DesktopShell:
             self.tray = QSystemTrayIcon(QIcon(pixmap), app)
             self.tray.setToolTip("Jarvis")
             menu = QMenu()
-            for title, callback in (("Ouvrir Jarvis", self.show_full), ("Compagnon compact", self.show_compact), ("Quitter", self.quit)):
+            for title, callback in (("Ouvrir Jarvis", self.show_full), ("Compagnon compact", self.show_compact), ("Orbe seul", self.show_orb), ("Quitter", self.quit)):
                 action = QAction(title, menu)
                 action.triggered.connect(callback)
                 menu.addAction(action)
@@ -459,7 +532,10 @@ class DesktopShell:
         if self.position_restored:
             return
         self.position_restored = True
-        point = self.settings.value("companion/position")
+        self.restore_position(self.compact, 'companion/position')
+
+    def restore_position(self, window, key):
+        point = self.settings.value(key)
         screens = QGuiApplication.screens()
         screen = next((s for s in screens if isinstance(point, QPoint) and
                        s.availableGeometry().contains(point)), QGuiApplication.primaryScreen())
@@ -467,15 +543,33 @@ class DesktopShell:
             return
         area = screen.availableGeometry()
         if not isinstance(point, QPoint):
-            point = QPoint(area.right() - self.compact.width() - 24,
-                           area.bottom() - self.compact.height() - 24)
-        x = max(area.left(), min(point.x(), area.right() - self.compact.width() + 1))
-        y = max(area.top(), min(point.y(), area.bottom() - self.compact.height() + 1))
-        self.compact.move(x, y)
+            point = QPoint(area.right() - window.width() - 24,
+                           area.bottom() - window.height() - 24)
+        x = max(area.left(), min(point.x(), area.right() - window.width() + 1))
+        y = max(area.top(), min(point.y(), area.bottom() - window.height() + 1))
+        window.move(x, y)
 
     def remember_companion(self):
         if self.position_restored and not self.controller.demo:
             self.settings.setValue("companion/position", self.compact.pos())
+
+    def remember_orb(self):
+        if self.orb_position_restored and not self.controller.demo:
+            self.settings.setValue('orb/position', self.orb_window.pos())
+
+    def visible_window(self):
+        return next((w for w in (self.full, self.compact, self.orb_window) if w.isVisible()), self.full)
+
+    def show_orb(self):
+        if not self.orb_position_restored:
+            self.orb_position_restored = True
+            self.restore_position(self.orb_window, 'orb/position')
+        self.present(self.orb_window, self.visible_window())
+
+    def show_details(self):
+        self.show_full()
+        self.finish_transfer()
+        self.full.navigate(1 if self.controller.cards else 2)
 
     def finish_transfer(self):
         if self.transfer is not None:
@@ -492,8 +586,12 @@ class DesktopShell:
         start = QRect(source.assistant.orb.mapToGlobal(QPoint()), source.assistant.orb.size())
         if source is self.compact:
             self.remember_companion()
+        if source is self.orb_window:
+            self.remember_orb()
         target.show()
-        source.hide()
+        for window in (self.full, self.compact, self.orb_window):
+            if window is not target:
+                window.hide()
         target.raise_()
         target.activateWindow()
         # Keep command controls discoverable, with no forced focus on an action.
@@ -510,13 +608,13 @@ class DesktopShell:
             self.transfer.begin()
 
     def show_full(self):
-        if self.compact.isVisible():
+        if self.compact.isVisible() or self.orb_window.isVisible():
             self.full.navigate(0)
-        self.present(self.full, self.compact)
+        self.present(self.full, self.visible_window())
 
     def show_compact(self):
         self.restore_companion()
-        self.present(self.compact, self.full)
+        self.present(self.compact, self.visible_window())
 
     def switch_view(self):
         self.show_full() if self.compact.isVisible() else self.show_compact()
@@ -524,6 +622,7 @@ class DesktopShell:
     def quit(self):
         self.finish_transfer()
         self.remember_companion()
+        self.remember_orb()
         if self.controller.voice_worker:
             self.controller.quit_after_voice = True
             self.controller.stop_voice()
@@ -531,14 +630,14 @@ class DesktopShell:
             self.app.quit()
 
 
-def run(demo=False, compact=False):
+def run(demo=False, compact=False, orb=False):
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Jarvis")
     app.setOrganizationName("Jarvis")
     app.setStyleSheet(STYLE)
     controller = Controller(demo=demo)
     shell = DesktopShell(app, controller)
-    shell.show_compact() if compact else shell.show_full()
+    shell.show_orb() if orb else shell.show_compact() if compact else shell.show_full()
     # Qt catches Python exceptions raised inside paint/timer callbacks. The
     # default SIGINT handler therefore prints KeyboardInterrupt instead of
     # reliably ending app.exec(). Queue a normal quit through the event loop.

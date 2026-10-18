@@ -268,3 +268,40 @@ def test_optional_cues_follow_ready_and_mute_and_can_be_disabled():
         runtime.stop()
         await asyncio.wait_for(task, 1)
     asyncio.run(scenario())
+
+
+def test_real_task_progress_bridge_and_cancellation_request_are_separate_from_audio_interrupt():
+    async def scenario():
+        c = components()
+        class Tasks:
+            status = 'running'
+            requests = 0
+            def progress(self): return {'id': 'task-id', 'status': self.status, 'steps': []}
+            def cancel(self):
+                self.requests += 1
+                self.status = 'cancelling'
+        c.assistant.registry.tasks = Tasks()
+        events = []
+        runtime = LiveRuntime(events.append, factory=lambda: c, prepare=lambda: None)
+        task = asyncio.create_task(runtime.run())
+        await until(lambda: any(e.get('type') == 'task_progress' for e in events))
+        runtime.cancel_task()
+        await until(lambda: any(e.get('status') == 'cancelling' for e in events))
+        assert c.assistant.registry.tasks.requests == 1 and c.session.interrupts == 0
+        c.assistant.registry.tasks.status = 'cancelled'
+        await until(lambda: any(e.get('status') == 'cancelled' for e in events))
+        runtime.stop()
+        await asyncio.wait_for(task, 1)
+    asyncio.run(scenario())
+
+
+def test_registry_events_are_not_duplicated_by_sdk_receipts():
+    events = []
+    runtime = LiveRuntime(events.append)
+    runtime._registry_activity({'id': 'real-call', 'tool': 'open_app', 'phase': 'started'})
+    runtime._registry_activity({'id': 'real-call', 'tool': 'open_app', 'phase': 'result',
+                                'result': {'ok': True, 'state_confirmed': True}})
+    runtime._tools_executed(NS(function_calls=[NS(name='open_app', call_id='sdk-call')],
+                              function_call_outputs=[NS(is_error=False, output='{"ok":true}')]))
+    assert [e['status'] for e in events] == ['running', 'verified']
+    assert events[0]['id'] == events[1]['id']

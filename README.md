@@ -286,14 +286,17 @@ PYTHONPATH=src .venv/bin/python scripts/diagnose_accessibility.py --app Safari
 
 ## Interface de bureau (première version)
 
-Deux vues partagent la même session : un compagnon compact et une fenêtre
+Trois vues partagent la même session : orbe seul, compagnon compact et fenêtre
 complète, entièrement vocales : orbe, état d’écoute et commandes audio.
 Orbe réactif au son, capsule déplaçable avec position mémorisée, commandes
-discrètes et sons optionnels. Aucun champ de saisie ni fil de messages. Installation :
+discrètes et sons optionnels. Cartes d’agenda, rappels et réponses web, avec un
+suivi des actions et une annulation coopérative des tâches. Aucun champ de saisie
+ni fil de messages. Installation :
 
 ```bash
 python -m pip install -e '.[desktop,live]'
 jarvis-desktop --demo       # découvrir sans action réelle
+jarvis-desktop --demo --orb # découvrir l’orbe seul
 jarvis-desktop              # assistant vocal Gemini Live sur macOS
 ```
 
@@ -305,7 +308,7 @@ open ~/Applications/Jarvis.app
 ```
 
 Ce lanceur de développement reste lié au dépôt et à son environnement Python.
-Le bouton **Démarrer Jarvis** connecte Gemini Live aux deux vues, avec micro
+Le bouton **Démarrer Jarvis** connecte Gemini Live aux trois vues, avec micro
 coupé/réactivable et interruption de réponse. Configurer
 `GOOGLE_API_KEY` dans le `.env` du projet (ou le fichier desktop utilisateur).
 Le micro reste fermé jusqu’à l’activation explicite ; la voix est envoyée à

@@ -28,8 +28,9 @@ Autre emplacement possible, notamment pour Finder :
 
 Priorité : variables déjà exportées dans le processus, puis fichier utilisateur,
 puis `.env` du projet. Aucune interpolation de variables ni exécution de shell.
-Seules la clé Google et les options Gemini de modèle, voix, température et vision
-sont lues. Ne pas committer la clé (le `.env` du projet est déjà ignoré par Git).
+Seules la clé Google, les options Gemini de modèle/voix/température/vision, les
+options de backend/modèle/limites du planificateur et le modèle local de synthèse
+sont lus ; aucun endpoint arbitraire n’est chargé depuis ces fichiers. Ne pas committer la clé (le `.env` du projet est déjà ignoré par Git).
 Après modification d’un fichier de configuration, quitter puis relancer Jarvis.
 Ne pas copier la clé dans les logs ou une capture d’écran.
 
@@ -89,7 +90,10 @@ le Mac ; le changement d’Info.plist ne garantit pas à lui seul l’accord de 
   transcrits restent dans le contexte de la session SDK/Gemini ; ils ne sont pas
   recopiés vers l’interface. Le pont transmet des notifications de tour pour le
   compteur, des niveaux audio numériques pour l’orbe et des libellés génériques
-  d’outils sans arguments pour les cartes temporaires. Un même identifiant de message SDK n’est compté qu’une
+  d’outils sans arguments pour le suivi. Les cartes sélectionnées d’agenda,
+  rappels et web transmettent aussi les champs utiles à leur affichage, en mémoire
+  seulement : voir [le guide desktop](desktop-ui.md). Elles ne recopient pas les
+  phrases de la conversation ni les arguments ou jetons des outils. Un même identifiant de message SDK n’est compté qu’une
   fois (fenêtre de 512 identifiants). Deux demandes identiques avec des
   identifiants différents restent deux demandes légitimes.
 - Les confirmations des outils Live se font **vocalement selon le protocole

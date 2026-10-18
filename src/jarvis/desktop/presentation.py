@@ -1,0 +1,155 @@
+"""Bounded, explicit projections of tool results for the desktop (no raw payloads)."""
+from datetime import datetime
+import json
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
+
+LABELS = {
+    'open_app': 'Application', 'close_app': 'Application', 'focus_window': 'Fenêtre',
+    'open_file': 'Fichier', 'open_folder': 'Dossier', 'list_files': 'Fichiers',
+    'find_files': 'Recherche de fichiers', 'move_file': 'Déplacement', 'rename_file': 'Renommage',
+    'search_the_web': 'Recherche web', 'web_answer': 'Recherche web', 'summarize_url': 'Page web',
+    'set_reminder': 'Rappel', 'list_reminders': 'Rappels', 'cancel_reminder': 'Rappel',
+    'list_calendar_events': 'Agenda', 'create_calendar_event': 'Agenda',
+    'schedule_message': 'Message planifié', 'prepare_send_message': 'Message',
+    'confirm_action': 'Confirmation', 'cancel_action': 'Annulation',
+    'run_task': 'Tâche', 'task_status': 'Tâche', 'cancel_task': 'Tâche',
+    'remember_context': 'Mémoire', 'capture_screen': 'Écran', 'ask_about_screen': 'Écran',
+    'get_volume': 'Volume', 'set_volume': 'Volume', 'browse_open_url': 'Navigateur',
+}
+STATUS_TEXT = {
+    'running': 'En cours', 'received': 'Résultat reçu', 'verified': 'État vérifié',
+    'confirmation': 'Accord vocal attendu', 'error': 'L’outil signale un problème',
+    'cancelled': 'Annulée', 'unknown': 'Résultat indisponible',
+}
+TASK_TEXT = {
+    'running': 'Tâche en cours', 'cancelling': 'Annulation demandée',
+    'completed': 'Tâche terminée', 'cancelled': 'Tâche annulée',
+    'needs_confirmation': 'Accord vocal attendu', 'needs_clarification': 'Précision vocale attendue',
+    'failed': 'Tâche en échec', 'budget_exceeded': 'Limite de la tâche atteinte',
+    'unknown': 'Résultat indisponible',
+}
+
+
+def plain(value, limit=180):
+    if not isinstance(value, str):
+        return ''
+    return ''.join(c for c in value if c in '\n\t' or ord(c) >= 32)[:limit].strip()
+
+
+def result_dict(raw):
+    if hasattr(raw, 'to_livekit_dict'):
+        raw = raw.to_livekit_dict()
+    if isinstance(raw, str) and len(raw) <= 131072:
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError, RecursionError):
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def safe_url(value):
+    if not isinstance(value, str) or len(value) > 2048 or any(ord(c) < 32 for c in value):
+        return None
+    try:
+        parts = urlsplit(value)
+        if parts.scheme not in {'https', 'http'} or not parts.hostname or parts.username or parts.password:
+            return None
+        sensitive = {'key', 'api_key', 'token', 'access_token', 'auth', 'authorization',
+                     'signature', 'x-amz-signature', 'x-goog-signature', 'credential', 'secret'}
+        if any(key.lower() in sensitive for key, _ in parse_qsl(parts.query)):
+            return None
+        # Preserve article-identifying query parameters; never carry credentials.
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, ''))
+    except ValueError:
+        return None
+
+
+def date_text(value):
+    if isinstance(value, (float, int)) and not isinstance(value, bool):
+        try:
+            return datetime.fromtimestamp(value).astimezone().strftime('%d/%m · %H:%M')
+        except (ValueError, OSError, OverflowError):
+            return ''
+    value = plain(value, 70)
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone()
+        return parsed.strftime('%d/%m · %H:%M')
+    except ValueError:
+        return value
+
+
+def project_card(name, result):
+    if result.get('ok') is not True or result.get('requires_confirmation'):
+        return None
+    kind, title, body, items, sources = '', '', '', [], []
+    if name == 'list_calendar_events' and isinstance(result.get('events'), list):
+        kind, title = 'calendar', 'Votre agenda'
+        for row in result['events'][:6]:
+            if isinstance(row, dict):
+                items.append(' · '.join(v for v in (date_text(row.get('start')), plain(row.get('title'))) if v))
+        body = 'Aucun rendez-vous dans ce résultat.' if not items else f"{len(result['events'])} rendez-vous · {len(items)} affiché(s)"
+    elif name == 'list_reminders' and isinstance(result.get('reminders'), list):
+        kind, title = 'reminders', 'Vos rappels'
+        for row in result['reminders'][:6]:
+            if isinstance(row, dict):
+                items.append(' · '.join(v for v in (date_text(row.get('due_at')), plain(row.get('text'))) if v))
+        body = 'Aucun rappel en attente.' if not items else f"{len(result['reminders'])} rappel(s) · {len(items)} affiché(s)"
+    elif name in {'web_answer', 'search_the_web', 'summarize_url'}:
+        if result.get('search_started'):
+            return None
+        if name != 'summarize_url' and result.get('external_knowledge_retrieved') is not True:
+            return None
+        kind, title, body = 'web', 'Réponse web' if name != 'summarize_url' else 'Résumé de la page', plain(result.get('message'), 1600)
+        raw_sources = result.get('sources') if isinstance(result.get('sources'), list) else []
+        if name == 'summarize_url':
+            raw_sources = [{'url': result.get('url'), 'title': 'Page consultée'}]
+        for source in raw_sources[:4]:
+            if isinstance(source, dict) and (url := safe_url(source.get('url'))):
+                sources.append({'url': url, 'title': plain(source.get('title'), 100) or urlsplit(url).hostname})
+    elif name in {'get_volume', 'set_volume'}:
+        volume = result.get('volume')
+        if isinstance(volume, (int, float)) and not isinstance(volume, bool) and 0 <= volume <= 100:
+            kind, title, body = 'system', 'Volume du Mac', f'{volume:g} %'
+    if not kind:
+        return None
+    return {'kind': kind, 'title': title, 'body': body, 'items': items, 'sources': sources}
+
+
+def project_activity(name, raw, activity_id, phase='result'):
+    result = result_dict(raw)
+    if phase == 'started':
+        status = 'running'
+    elif phase == 'cancelled':
+        status = 'cancelled'
+    elif phase == 'error' or result.get('ok') is False:
+        status = 'error'
+    else:
+        status = 'received'
+    if result.get('requires_confirmation') is True:
+        status = 'confirmation'
+    elif result.get('search_started') is True:
+        status = 'running'
+    elif result.get('ok') is True and result.get('state_confirmed') is True:
+        status = 'verified'
+    if name == 'search_the_web':
+        activity_id = 'background:web'
+    return {'type': 'activity', 'id': activity_id, 'label': LABELS.get(name, 'Outil Jarvis'),
+            'status': status, 'card': project_card(name, result) if phase == 'result' else None}
+
+
+def project_task(snapshot):
+    if not isinstance(snapshot, dict) or not snapshot.get('id'):
+        return None
+    steps = []
+    raw_steps = snapshot.get('steps', [])
+    for step in raw_steps[:25] if isinstance(raw_steps, list) else []:
+        if isinstance(step, dict):
+            status = 'error' if step.get('ok') is not True else (
+                'verified' if step.get('state_confirmed') is True else 'received')
+            steps.append({'label': LABELS.get(step.get('tool'), 'Outil Jarvis'), 'status': status})
+    status = snapshot.get('status')
+    return {'type': 'task_progress', 'id': plain(snapshot['id'], 80),
+            'status': status if status in TASK_TEXT else 'unknown', 'steps': steps,
+            'step_count': len(steps)}

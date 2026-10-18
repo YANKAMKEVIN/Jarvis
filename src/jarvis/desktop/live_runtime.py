@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import traceback
 from collections import deque
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
+import uuid
+
+from jarvis.desktop.presentation import project_activity, project_task
 
 
 class VoiceSetupError(Exception):
@@ -50,7 +52,9 @@ def prepare_environment():
     except ImportError:
         raise VoiceSetupError("Installez le vocal : python -m pip install -e '.[desktop,live]'") from None
     allowed = {"GOOGLE_API_KEY", "JARVIS_GEMINI_LIVE_MODEL", "JARVIS_GEMINI_LIVE_VOICE",
-               "JARVIS_GEMINI_LIVE_TEMPERATURE", "JARVIS_VISION_ENABLED"}
+               "JARVIS_GEMINI_LIVE_TEMPERATURE", "JARVIS_VISION_ENABLED",
+               "JARVIS_PLANNER_BACKEND", "JARVIS_PLANNER_MODEL", "JARVIS_GEMINI_PLANNER_MODEL",
+               "JARVIS_PLANNER_NUM_CTX", "JARVIS_PLANNER_TIMEOUT", "JARVIS_LLM_MODEL"}
     # Explicit terminal env wins, then the user's desktop config, then repo .env.
     for path in (Path.home() / "Library/Application Support/Jarvis/desktop.env",
                  Path(__file__).resolve().parents[3] / ".env"):
@@ -121,9 +125,15 @@ class LiveRuntime:
         self.interruption_task = None
         self.seen_items = deque(maxlen=512)
         self.sounds_requested = Event()
+        self.cancel_task_requested = Event()
+        self.observed_tools = set()
+        self.last_task_snapshot = None
 
     def set_sounds(self, enabled):
         self.sounds_requested.set() if enabled else self.sounds_requested.clear()
+
+    def cancel_task(self):
+        self.cancel_task_requested.set()
 
     def stop(self):
         self.stop_requested.set()
@@ -163,30 +173,26 @@ class LiveRuntime:
             self.failed = True
             self.stop()
 
+    def _registry_activity(self, event):
+        self.observed_tools.add(event['tool'])
+        self.emit(project_activity(event['tool'], event.get('result'), event['id'], event['phase']))
+
     def _tools_executed(self, event):
-        labels = {"open_app": "Application", "open_file": "Fichier", "open_folder": "Dossier",
-                  "search_the_web": "Recherche web", "web_answer": "Recherche web",
-                  "summarize_url": "Page web", "set_reminder": "Rappel",
-                  "list_reminders": "Rappels", "schedule_message": "Message planifié",
-                  "confirm_action": "Confirmation", "run_task": "Tâche",
-                  "task_status": "Tâche", "remember_context": "Mémoire",
-                  "capture_screen": "Écran", "ask_about_screen": "Écran"}
         for call, output in zip(event.function_calls, event.function_call_outputs):
-            # Never send arguments, tokens, provider output, or personal data to Qt.
-            status = "error" if output.is_error else "received"
-            raw = output.output
-            if not output.is_error and isinstance(raw, str) and len(raw) < 65536:
-                try:
-                    result = json.loads(raw)
-                except (ValueError, TypeError):
-                    result = None
-                if isinstance(result, dict):
-                    if result.get("requires_confirmation") is True:
-                        status = "confirmation"
-                    elif result.get("ok") is False:
-                        status = "error"
-            self.emit({"type": "tool_receipt", "label": labels.get(call.name, "Outil Jarvis"),
-                       "status": status})
+            if call.name in self.observed_tools:
+                continue  # Already received directly from the registry, including planner tools.
+            activity_id = getattr(call, 'call_id', None) or uuid.uuid4().hex
+            self.emit(project_activity(call.name, output.output, activity_id,
+                                       'error' if output.is_error else 'result'))
+
+    def _task_progress(self):
+        registry = self.components.assistant.registry
+        tasks = getattr(registry, 'tasks', None)
+        if tasks is not None and hasattr(tasks, 'progress'):
+            snapshot = project_task(tasks.progress())
+            if snapshot is not None and snapshot != self.last_task_snapshot:
+                self.last_task_snapshot = snapshot
+                self.emit(snapshot)
 
     def _closed(self, event):
         self.failed = self.failed or getattr(event, "error", None) is not None
@@ -221,6 +227,8 @@ class LiveRuntime:
             setup_step("environment", self.prepare)
             self.components = self.factory()
             c = self.components
+            if hasattr(c.assistant.registry, "set_activity_observer"):
+                c.assistant.registry.set_activity_observer(self._registry_activity)
             c.session.input.audio = c.audio.input
             c.session.output.audio = c.audio.output
             c.session.on("agent_state_changed", self._agent_changed)
@@ -244,12 +252,21 @@ class LiveRuntime:
             c.session.generate_reply(instructions=LIVE_SESSION_GREETING)
             suppressed = False
             next_meter = 0.0
+            next_task_poll = 0.0
             while not self.stop_requested.is_set():
                 if sounds != self.sounds_requested.is_set():
                     sounds = self.sounds_requested.is_set()
                     if not sounds:
                         c.audio.clear_cue()
                 now = asyncio.get_running_loop().time()
+                if self.cancel_task_requested.is_set():
+                    self.cancel_task_requested.clear()
+                    tasks = getattr(c.assistant.registry, 'tasks', None)
+                    if tasks is not None:
+                        tasks.cancel()
+                if now >= next_task_poll:
+                    self._task_progress()
+                    next_task_poll = now + 0.25
                 if now >= next_meter:
                     incoming, outgoing = c.audio.levels() if hasattr(c.audio, "levels") else (0.0, 0.0)
                     self.emit({"type": "audio_level", "input": incoming, "output": outgoing})
@@ -300,8 +317,11 @@ class LiveRuntime:
                     await asyncio.gather(self.interruption_task, return_exceptions=True)
                 try:
                     await c.assistant.registry.aclose()
+                    self._task_progress()
                 except Exception:
                     error_message = error_message or "Une tâche vocale n’a pas pu être fermée correctement. Vérifiez son résultat avant de réessayer."
+                if hasattr(c.assistant.registry, "set_activity_observer"):
+                    c.assistant.registry.set_activity_observer(None)
                 for close in (c.session.aclose, c.model.aclose):
                     try:
                         await close()

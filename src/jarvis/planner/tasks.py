@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+import uuid
 from typing import Any, Awaitable, Callable
 
 from jarvis.planner.engine import PlannerEngine, StepRecord, TaskOutcome
@@ -37,6 +38,7 @@ class TaskManager:
         self._steps: list[StepRecord] = []
         self._started = 0.0
         self._outcome: TaskOutcome | None = None
+        self._id: str | None = None
 
     @property
     def running(self) -> bool:
@@ -57,6 +59,7 @@ class TaskManager:
             }
 
         self._goal = goal.strip()
+        self._id = uuid.uuid4().hex
         self._cancel = threading.Event()
         self._steps = []
         self._outcome = None
@@ -103,6 +106,16 @@ class TaskManager:
             "cancel_requested": True,
             "message": "Annulation demandee : la tache s'arrete avant l'etape suivante.",
         }
+
+    def progress(self) -> dict[str, Any] | None:
+        """Presentation snapshot: no goal, arguments, result text or approval token."""
+        if self._id is None:
+            return None
+        status = ("cancelling" if self._cancel.is_set() else "running") if self.running else (
+            self._outcome.status if self._outcome is not None else "unknown")
+        return {"id": self._id, "status": status,
+                "steps": [step.to_dict() for step in self._steps],
+                "step_count": len(self._steps)}
 
     def last_completed(self) -> tuple[str, list[str]] | None:
         """The last successfully completed task as (goal, ordered ok tool names).
@@ -177,3 +190,4 @@ def announcement_for(goal: str, outcome: TaskOutcome) -> str:
         "Dis-le brievement a l'utilisateur et propose de reessayer ou de le faire "
         "autrement, sans inventer de resultat."
     )
+

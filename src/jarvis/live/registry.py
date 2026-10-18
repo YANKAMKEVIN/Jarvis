@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import inspect
+import uuid
 from typing import Any, Callable
 
 from livekit.agents import function_tool
@@ -242,6 +243,7 @@ class ToolRegistry:
         self._last_web_result_text: str | None = None
         # Morning briefing runs in the background like a web search.
         self._briefing_task: asyncio.Task | None = None
+        self.activity_observer = None
 
     async def aclose(self):
         """Stop session-owned background work cooperatively before shutdown."""
@@ -269,6 +271,18 @@ class ToolRegistry:
 
         provider = FallbackProvider(SearXNGProvider(), KeylessWebProvider())
         return KnowledgeCapability(KnowledgeService(brain=LocalBrain(), provider=provider))
+
+    def set_activity_observer(self, observer) -> None:
+        """Optional in-memory consumer; observer failures never affect a tool."""
+        self.activity_observer = observer
+
+    def _activity(self, event) -> None:
+        observer = getattr(self, "activity_observer", None)
+        if observer is not None:
+            try:
+                observer(event)
+            except Exception:
+                pass
 
     def set_task_notifier(self, notifier) -> None:
         self.task_notifier = notifier
@@ -316,6 +330,8 @@ class ToolRegistry:
                 message=f"La recherche web a echoue : {error}",
                 error_code="system_error",
             )
+        self._activity({"phase": "result", "tool": "search_the_web",
+                        "id": "background:web", "result": result.to_livekit_dict()})
         # Keep the answer verbatim so the user can ask to send it afterwards.
         if result.ok and result.data.get("external_knowledge_retrieved"):
             self._last_web_result_text = self._format_web_result_for_send(result)
@@ -416,7 +432,16 @@ class ToolRegistry:
 
             @functools.wraps(fn)
             async def wrapper(*args, **kwargs):
-                result = await fn(*args, **kwargs)
+                activity_id = uuid.uuid4().hex
+                self._activity({"phase": "started", "tool": tool_name, "id": activity_id})
+                try:
+                    result = await fn(*args, **kwargs)
+                except BaseException as error:
+                    phase = "cancelled" if isinstance(error, asyncio.CancelledError) else "error"
+                    self._activity({"phase": phase, "tool": tool_name, "id": activity_id})
+                    raise
+                self._activity({"phase": "result", "tool": tool_name,
+                                "id": activity_id, "result": result})
                 target = None
                 if target_arg is not None:
                     try:

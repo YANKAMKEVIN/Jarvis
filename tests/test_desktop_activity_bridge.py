@@ -1,0 +1,85 @@
+"""Real registry decorator and planner progress, with no native tool construction."""
+import asyncio
+from jarvis.live.registry import ToolRegistry
+from jarvis.planner.tasks import TaskManager
+from jarvis.planner.engine import StepRecord, TaskOutcome
+
+
+def test_observer_tracks_actual_tool_lifecycle_and_never_changes_its_result():
+    async def scenario():
+        registry = ToolRegistry.__new__(ToolRegistry)
+        events = []
+        registry.set_activity_observer(events.append)
+        async def log(*args): pass
+        registry._log_action = log
+        @registry._journaled('open_app')
+        async def success(): return {'ok': True}
+        assert await success() == {'ok': True}
+        assert [e['phase'] for e in events] == ['started', 'result']
+        assert events[0]['id'] == events[1]['id']
+        @registry._journaled('open_app')
+        async def failure(): raise ValueError('PRIVATE_PROVIDER_ERROR')
+        try:
+            await failure()
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Tool errors must still propagate')
+        assert events[-1]['phase'] == 'error'
+        assert 'PRIVATE' not in str(events)
+        registry.set_activity_observer(lambda event: (_ for _ in ()).throw(RuntimeError('observer failed')))
+        assert await success() == {'ok': True}
+    asyncio.run(scenario())
+
+
+def test_planner_progress_reports_cooperative_cancellation_before_actual_end():
+    async def scenario():
+        release = asyncio.Event()
+        class Engine:
+            async def run(self, goal, cancel, on_step):
+                step = StepRecord('open_app', True, False)
+                on_step(step)
+                await release.wait()
+                return TaskOutcome('cancelled' if cancel.is_set() else 'completed', 'PRIVATE_SUMMARY', [step])
+        manager = TaskManager(Engine)
+        assert manager.progress() is None
+        assert manager.start('PRIVATE_GOAL')['task_started']
+        await asyncio.sleep(0)
+        first = manager.progress()
+        assert first['status'] == 'running' and first['step_count'] == 1
+        manager.cancel()
+        assert manager.progress()['status'] == 'cancelling'
+        assert 'PRIVATE' not in str(manager.progress())
+        release.set()
+        await manager.wait()
+        assert manager.progress()['status'] == 'cancelled'
+        assert manager.progress()['id'] == first['id']
+        manager.start('another task')
+        assert manager.progress()['id'] != first['id']
+        await manager.wait()
+    asyncio.run(scenario())
+
+
+def test_background_web_completion_reaches_cards_without_changing_voice_notification():
+    from jarvis.capabilities.results import ToolResult
+    from jarvis.desktop.live_runtime import LiveRuntime
+    async def scenario():
+        registry = ToolRegistry.__new__(ToolRegistry)
+        class Knowledge:
+            def answer(self, question):
+                return ToolResult.success('web_answer', 'Réponse sourcée', external_knowledge_retrieved=True,
+                    sources=[{'title': 'Source', 'url': 'https://example.com/read?id=1'}])
+        registry.knowledge = Knowledge()
+        events, spoken = [], []
+        runtime = LiveRuntime(events.append)
+        registry.set_activity_observer(runtime._registry_activity)
+        async def log(*args): pass
+        async def notify(message): spoken.append(message)
+        registry._log_action = log
+        registry.set_task_notifier(notify)
+        await registry._run_web_search('PRIVATE_QUESTION')
+        assert events[-1]['id'] == 'background:web'
+        assert events[-1]['card']['body'] == 'Réponse sourcée'
+        assert 'PRIVATE_QUESTION' not in str(events)
+        assert spoken and 'Réponse sourcée' in spoken[0]
+    asyncio.run(scenario())
