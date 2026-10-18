@@ -193,3 +193,33 @@ def test_setup_stage_errors_report_location_without_provider_payload():
         assert any('failing' in frame for frame in error.frames)
     else:
         raise AssertionError('Expected stage failure')
+
+
+def test_turn_notifications_omit_words_and_deduplicate_ids_only():
+    events = []
+    runtime = LiveRuntime(events.append)
+    def event(item_id):
+        return NS(item=NS(id=item_id, role="user", text_content="PRIVATE_WORDS"))
+    runtime._conversation(event("same-id"))
+    runtime._conversation(event("same-id"))
+    runtime._conversation(event("new-id"))  # A deliberate repeated phrase is valid.
+    assert len(events) == 2
+    assert all(e["role"] == "user" and "text" not in e for e in events)
+    assert "PRIVATE" not in str(events)
+
+
+def test_suppression_changes_are_reported_without_closing_microphone():
+    async def scenario():
+        c = components()
+        events = []
+        runtime = LiveRuntime(events.append, factory=lambda: c, prepare=lambda: None)
+        task = asyncio.create_task(runtime.run())
+        await until(lambda: runtime.ready)
+        c.audio.input_suppressed = True
+        await until(lambda: any(e.get("input_suppressed") for e in events))
+        assert c.audio.mic_open
+        c.audio.input_suppressed = False
+        await until(lambda: events[-1].get("input_suppressed") is False)
+        runtime.stop()
+        await asyncio.wait_for(task, 1)
+    asyncio.run(scenario())

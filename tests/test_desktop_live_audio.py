@@ -88,3 +88,43 @@ def test_failed_device_start_releases_partial_resources():
         assert not audio.mic_open and created[0].closed
         assert audio.microphone is None and audio.speaker is None
     asyncio.run(scenario())
+
+
+def test_speaker_feedback_is_blocked_through_hardware_latency_and_echo_tail():
+    async def scenario():
+        now = [10.0]
+        audio = LocalAudio(asyncio.get_running_loop(),
+            NS(RawOutputStream=FakeStream, RawInputStream=FakeStream), clock=lambda: now[0])
+        audio.open()
+        try:
+            audio._input_callback(bytes(960), 480, None, None)
+            assert audio.input.frames.qsize() == 1
+            await audio.output.capture_frame(frame())
+            audio.output.flush()
+            timing = NS(outputBufferDacTime=1.1, currentTime=1.0)
+            data = bytearray(960)
+            audio._output_callback(data, 480, timing, None)
+            assert any(data) and audio.input_suppressed
+            assert audio.input.frames.empty()  # No stale capture forwarded.
+            audio._input_callback(bytes(frame().data), 480, None, None)
+            assert audio.input.frames.empty()
+            audio.output.clear_buffer()  # Interrupt cannot remove hardware audio.
+            now[0] = 10.35
+            assert audio.input_suppressed
+            now[0] = 10.38
+            assert not audio.input_suppressed
+            audio._input_callback(bytes(960), 480, None, None)
+            assert audio.input.frames.qsize() == 1
+            # Output silence must not extend the pause forever.
+            audio._output_callback(data, 480, timing, None)
+            assert not any(data) and not audio.input_suppressed
+            await audio.output.capture_frame(frame())
+            audio._output_callback(data, 480, timing, None)
+            audio.set_microphone(False)
+            now[0] += 1
+            audio._input_callback(bytes(960), 480, None, None)
+            assert not audio.mic_open and audio.input.frames.empty()
+            assert not audio.microphone.active
+        finally:
+            audio.close()
+    asyncio.run(scenario())

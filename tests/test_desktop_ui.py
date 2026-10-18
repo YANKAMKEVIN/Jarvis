@@ -1,4 +1,4 @@
-"""Offscreen checks; no model, network or macOS actions."""
+"""Voice-only UI checks; simulated worker, no model/network/macOS actions."""
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -6,8 +6,7 @@ import pytest
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QElapsedTimer
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QPushButton
-
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QTextEdit
 from jarvis.desktop.app import Controller, DesktopShell, STYLE
 
 
@@ -27,63 +26,41 @@ def wait_until(app, predicate):
     assert predicate()
 
 
-def test_two_views_share_draft_confirmation_and_result(app, monkeypatch):
+def make_shell(app, monkeypatch, demo=False):
     monkeypatch.setattr("jarvis.desktop.app.QSystemTrayIcon.isSystemTrayAvailable", lambda: False)
-    controller = Controller(demo=True)
-    shell = DesktopShell(app, controller)
-    shell.show_full()
-    suggestions = [b for b in shell.full.findChildren(QPushButton) if b.objectName() == "suggestion"]
-    suggestions[0].click()
-    assert controller.session.draft == "Ouvre Safari"
-    assert not controller.session.turns and not controller.workers
-    shell.switch_view()
-    idle_height = shell.compact.height()
-    assert shell.compact.conversation.input.text() == "Ouvre Safari"
-    controller.submit()
-    controller.submit()  # A second activation must not dispatch twice.
-    wait_until(app, lambda: controller.session.pending is not None and not controller.workers)
-    assert len(controller.session.turns) == 1
-    wait_until(app, lambda: shell.compact.height() > idle_height)
-    visible_confirmations = [b for b in shell.compact.findChildren(QPushButton)
-                             if b.text() == "Confirmer" and b.isVisibleTo(shell.compact)]
-    assert visible_confirmations
-    shell.switch_view()
-    assert shell.full.isVisible() and not shell.compact.isVisible()
-    assert not shell.full.conversation.input.isEnabled()
-    confirmations = [b for b in shell.full.findChildren(QPushButton) if b.text() == "Confirmer"]
-    assert confirmations
-    confirmations[-1].click()
-    wait_until(app, lambda: not controller.session.busy and not controller.workers)
-    assert controller.session.pending is None
-    assert "Aucune application" in controller.session.turns[-1].reply
-    assert shell.full.conversation.input.isEnabled()
-    shell.full.hide()
-    shell.compact.hide()
+    controller = Controller(demo=demo)
+    return controller, DesktopShell(app, controller)
 
 
-def test_cancel_and_clear_are_reflected_in_both_views(app, monkeypatch):
-    monkeypatch.setattr("jarvis.desktop.app.QSystemTrayIcon.isSystemTrayAvailable", lambda: False)
-    controller = Controller(demo=True)
-    shell = DesktopShell(app, controller)
-    controller.set_draft("essai")
-    controller.submit()
-    wait_until(app, lambda: controller.session.pending is not None and not controller.workers)
-    controller.cancel()
-    assert controller.session.turns[-1].status == "cancelled"
-    assert shell.full.clear_button.isEnabled()
-    controller.clear()
-    assert not controller.session.turns
-    assert shell.compact.conversation.input.text() == ""
-    controller.reduced_motion = True
-    controller.changed.emit()
-    assert not shell.full.conversation.orb.timer.isActive()
-    assert shell.full.conversation.opacity.opacity() == 1.0
-    assert shell.full.conversation.fade.state().name == "Stopped"
-    shell.full.hide()
-    shell.compact.hide()
+def test_demo_has_no_text_input_and_cannot_activate_voice(app, monkeypatch):
+    controller, shell = make_shell(app, monkeypatch, demo=True)
+    try:
+        shell.show_full()
+        for window in (shell.full, shell.compact):
+            assert not window.findChildren(QLineEdit)
+            assert not window.findChildren(QTextEdit)
+            assert not window.assistant.voice_button.isEnabled()
+        controller.start_voice()
+        assert controller.voice_worker is None and not controller.voice_mic_open
+        controller.voice_event({"type": "transcript", "role": "user", "text": "PRIVATE_PHRASE"})
+        controller.voice_event({"type": "transcript", "role": "assistant", "text": "PRIVATE_REPLY"})
+        assert controller.voice_turns == 1
+        assert not hasattr(controller, "session")
+        assert "PRIVATE" not in str(vars(controller))
+        for window in (shell.full, shell.compact):
+            assert all("PRIVATE" not in widget.text() for widget in window.findChildren(QLabel))
+        controller.reduced_motion = True
+        controller.changed.emit()
+        assert not shell.full.assistant.orb.timer.isActive()
+        shell.switch_view()
+        assert shell.compact.isVisible() and not shell.full.isVisible()
+        assert not shell.compact.assistant.orb.timer.isActive()
+    finally:
+        shell.full.hide()
+        shell.compact.hide()
 
 
-def test_voice_controls_share_state_and_block_text_execution(app, monkeypatch):
+def test_voice_controls_share_one_worker_and_cleanup_before_quit(app, monkeypatch):
     from threading import Event
     from PySide6.QtCore import QThread, Signal
     from jarvis.desktop import live_worker
@@ -97,8 +74,7 @@ def test_voice_controls_share_state_and_block_text_execution(app, monkeypatch):
             self.interrupts = 0
         def run(self):
             self.event.emit({"type": "state", "state": "listening", "mic_open": True})
-            self.event.emit({"type": "transcript", "role": "user", "text": "Bonjour"})
-            self.event.emit({"type": "transcript", "role": "assistant", "text": "Bonsoir !"})
+            self.event.emit({"type": "transcript", "role": "user"})
             self.stop_flag.wait(3)
             self.event.emit({"type": "state", "state": "off", "mic_open": False})
         def stop(self): self.stop_flag.set()
@@ -107,35 +83,43 @@ def test_voice_controls_share_state_and_block_text_execution(app, monkeypatch):
             self.event.emit({"type": "state", "state": "muted" if muted else "listening", "mic_open": not muted})
         def interrupt(self): self.interrupts += 1
 
-    class NoTextExecutor:
-        def execute(self, command):
-            raise AssertionError('Text must not execute during Live')
-
-    monkeypatch.setattr('jarvis.desktop.live_runtime.preload_live_plugins', lambda: None)
-    monkeypatch.setattr(live_worker, 'LiveWorker', SimulatedVoiceWorker)
-    monkeypatch.setattr("jarvis.desktop.app.QSystemTrayIcon.isSystemTrayAvailable", lambda: False)
-    controller = Controller(executor=NoTextExecutor())
-    shell = DesktopShell(app, controller)
-    shell.show_full()
-    assert controller.voice_worker is None
-    controller.start_voice()
-    wait_until(app, lambda: controller.voice_mic_open and bool(controller.session.turns))
-    worker = controller.voice_worker
-    assert not shell.full.conversation.input.isEnabled()
-    controller.set_draft('Never execute this')
-    controller.submit()
-    assert not controller.workers
-    shell.show_compact()
-    assert shell.compact.conversation.mic_button.isVisible()
-    controller.toggle_microphone()
-    wait_until(app, lambda: not controller.voice_mic_open)
-    assert worker.muted
-    controller.interrupt_voice()
-    assert worker.interrupts == 1
-    controller.stop_voice()
-    wait_until(app, lambda: controller.voice_worker is None)
-    assert not controller.voice_mic_open
-    assert shell.compact.conversation.input.isEnabled()
-    assert controller.session.turns[-1].reply == 'Bonsoir !'
-    shell.full.hide()
-    shell.compact.hide()
+    monkeypatch.setattr("jarvis.desktop.live_runtime.preload_live_plugins", lambda: None)
+    monkeypatch.setattr(live_worker, "LiveWorker", SimulatedVoiceWorker)
+    controller, shell = make_shell(app, monkeypatch)
+    ready = []
+    controller.exit_ready.connect(lambda: ready.append(True))
+    try:
+        shell.show_full()
+        assert controller.voice_worker is None
+        shell.full.assistant.voice_button.click()
+        wait_until(app, lambda: controller.voice_mic_open and controller.voice_turns == 1)
+        worker = controller.voice_worker
+        controller.start_voice()
+        assert controller.voice_worker is worker
+        shell.show_compact()
+        assert shell.compact.assistant.mic_button.isVisible()
+        controller.voice_event({"type": "state", "state": "speaking", "mic_open": True,
+                                "input_suppressed": True})
+        assert "pause" in shell.compact.assistant.voice_notice.text()
+        assert "pause" in shell.full.assistant.voice_notice.text()
+        controller.voice_event({"type": "state", "state": "listening", "mic_open": True,
+                                "input_suppressed": True})
+        assert "Reprise" in shell.compact.assistant.status.text()
+        shell.compact.assistant.mic_button.click()
+        wait_until(app, lambda: not controller.voice_mic_open)
+        assert worker.muted
+        shell.compact.assistant.mic_button.click()
+        wait_until(app, lambda: controller.voice_mic_open)
+        assert not worker.muted
+        shell.compact.assistant.interrupt_button.click()
+        assert worker.interrupts == 1
+        shell.quit()
+        assert controller.quit_after_voice
+        wait_until(app, lambda: controller.voice_worker is None)
+        assert ready and not controller.voice_mic_open
+    finally:
+        if controller.voice_worker:
+            controller.stop_voice()
+            wait_until(app, lambda: controller.voice_worker is None)
+        shell.full.hide()
+        shell.compact.hide()

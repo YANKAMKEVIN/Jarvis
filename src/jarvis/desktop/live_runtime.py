@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import traceback
+from collections import deque
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
@@ -117,6 +118,7 @@ class LiveRuntime:
         self.agent_state = "listening"
         self.components = None
         self.interruption_task = None
+        self.seen_items = deque(maxlen=512)
 
     def stop(self):
         self.stop_requested.set()
@@ -129,7 +131,8 @@ class LiveRuntime:
 
     def state(self, state):
         audio = self.components.audio if self.components else None
-        self.emit({"type": "state", "state": state, "mic_open": bool(audio and audio.mic_open)})
+        self.emit({"type": "state", "state": state, "mic_open": bool(audio and audio.mic_open),
+                   "input_suppressed": bool(audio and getattr(audio, "input_suppressed", False))})
 
     def _agent_changed(self, event):
         self.agent_state = event.new_state
@@ -141,7 +144,13 @@ class LiveRuntime:
         role = getattr(item, "role", None)
         text = getattr(item, "text_content", "")
         if role in {"user", "assistant"} and isinstance(text, str) and text.strip():
-            self.emit({"type": "transcript", "role": role, "text": text[:16000],
+            item_id = getattr(item, "id", None)
+            if item_id:
+                if item_id in self.seen_items:
+                    return
+                self.seen_items.append(item_id)
+            # The desktop needs only turn counts, never a copy of the words.
+            self.emit({"type": "transcript", "role": role,
                        "interrupted": bool(getattr(item, "interrupted", False))})
 
     def _error(self, event):
@@ -199,7 +208,12 @@ class LiveRuntime:
             phase = "session"
             from jarvis.live.prompts import LIVE_SESSION_GREETING
             c.session.generate_reply(instructions=LIVE_SESSION_GREETING)
+            suppressed = False
             while not self.stop_requested.is_set():
+                current_suppression = bool(getattr(c.audio, "input_suppressed", False))
+                if current_suppression != suppressed:
+                    suppressed = current_suppression
+                    self.state("muted" if self.mute_requested.is_set() else self.agent_state)
                 wanted = not self.mute_requested.is_set()
                 if wanted != c.audio.mic_open:
                     c.audio.set_microphone(wanted)

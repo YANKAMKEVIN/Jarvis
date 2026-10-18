@@ -51,7 +51,7 @@ python scripts/build_desktop_app.py --update
 open ~/Applications/Jarvis.app
 ```
 
-1. Cliquer sur **Activer le vocal**. Cette action ouvre la session externe et le
+1. Cliquer sur **Démarrer Jarvis**. Cette action ouvre la session externe et le
    microphone après le démarrage de la session, jamais au lancement de l’app.
 2. Accorder l’accès Microphone si macOS le demande. Si l’accès est refusé,
    vérifier Réglages Système → Confidentialité et sécurité → Microphone.
@@ -59,14 +59,20 @@ open ~/Applications/Jarvis.app
 4. **Couper le micro** arrête la capture et vide le tampon d’entrée local ; le
    bouton permet ensuite de réactiver le micro. L’audio déjà envoyé reste envoyé.
 5. **Interrompre** coupe la réponse orale en cours. Cela n’annule pas une action
-   système déjà lancée. Les interruptions naturelles par la voix dépendent aussi
-   de la détection de parole du modèle.
-6. **Arrêter le vocal** ferme les périphériques puis nettoie la session et ses
+   système déjà lancée. Attendre ensuite la reprise de l’écoute avant de parler.
+6. **Arrêter** ferme les périphériques puis nettoie la session et ses
    tâches. Quitter l’application ou Ctrl+C demande le même arrêt propre avant
    de terminer le processus.
 
-Un casque est conseillé pour éviter que les haut-parleurs ne réinjectent la
-voix de Jarvis dans le micro ; cette tranche n’ajoute pas d’annulation d’écho.
+Pendant la lecture d’un bloc audio non silencieux, l’entrée micro n’est plus
+transmise à Gemini. Le délai matériel de sortie et une marge de 250 ms sont
+inclus pour limiter le retour de la voix de Jarvis. Les anciens échantillons
+d’entrée encore dans le tampon local sont supprimés. Le micro matériel reste
+ouvert sauf si vous le coupez explicitement ; la pause automatique ne réactive
+jamais un micro coupé. Cette protection fonctionne en alternance, sans annulation
+acoustique d’écho : parler par-dessus Jarvis est volontairement suspendu. Utiliser
+**Interrompre**, puis attendre le retour de l’écoute. Un casque reste utile en
+cas de réverbération importante ou de latence inhabituelle du périphérique.
 Le bundle est toujours un lanceur lié au Python du venv, pas un binaire autonome
 signé. L’attribution des permissions macOS au lanceur/Python reste à vérifier sur
 le Mac ; le changement d’Info.plist ne garantit pas à lui seul l’accord de TCC.
@@ -79,14 +85,15 @@ le Mac ; le changement d’Info.plist ne garantit pas à lui seul l’accord de 
   soumise à son option d’activation existante.
 - L’enregistrement LiveKit est désactivé (`record=False`). L’interface n’ajoute
   aucun fichier audio ni stockage durable de transcriptions.
-- Les transcriptions finales s’affichent dans les deux vues, dans l’ordre. Une
-  réponse coupée est marquée comme interrompue lorsque le SDK le signale.
+- L’interface est entièrement vocale, sans saisie ni fil de messages. Les mots
+  transcrits restent dans le contexte de la session SDK/Gemini ; ils ne sont pas
+  recopiés vers l’interface. Seules des notifications de tour alimentent le
+  compteur d’activité. Un même identifiant de message SDK n’est compté qu’une
+  fois (fenêtre de 512 identifiants). Deux demandes identiques avec des
+  identifiants différents restent deux demandes légitimes.
 - Les confirmations des outils Live se font **vocalement selon le protocole
-  prepare → accord explicite → confirm_action existant**. La carte de
-  confirmation du moteur texte ne confirme pas les actions de la session Live.
-- Le texte est temporairement désactivé pendant le vocal pour éviter deux
-  moteurs pilotant le Mac en concurrence. Les échanges texte précédents sont
-  visibles mais ne sont pas automatiquement transmis au contexte Gemini.
+  prepare → accord explicite → confirm_action existant**. Aucune transcription
+  n’est soumise à un second moteur d’exécution par l’interface.
 - Un arrêt coupe d’abord capture et lecture. Le nettoyage peut ensuite attendre
   la fin d’une étape système déjà lancée. Les tâches du planificateur reçoivent
   une demande d’annulation coopérative ; aucun thread d’action n’est tué.
@@ -100,8 +107,9 @@ PYTHONPATH=src QT_QPA_PLATFORM=offscreen python -m pytest -q tests/test_desktop*
 ```
 
 Les tests utilisent des sessions et périphériques simulés : démarrage, arrêt
-pendant la connexion, coupure/reprise micro, interruption, transcription,
-fermeture sur erreur, absence d’exécution texte concurrente, configuration Finder
+pendant la connexion, coupure/reprise micro, interruption, suppression du retour
+audio pendant la lecture et son délai matériel, absence de texte transmis à
+l’interface, fermeture sur erreur, configuration Finder
 et mise à jour du lanceur. Un branchement réel `AgentSession` sans modèle ni
 réseau a aussi été vérifié avec les adaptateurs audio.
 
@@ -112,11 +120,6 @@ entre les deux vues, puis arrêter et vérifier que le micro est libéré.
 
 Références SDK : [sessions](https://docs.livekit.io/agents/logic/sessions/),
 [événements](https://docs.livekit.io/agents/events/).
-
-Résultat de cette tranche sous Linux/Python 3.13 : 25 tests desktop passants.
-Suite complète : 817 tests passants, 149 sous-tests passants et les mêmes
-207 échecs de frameworks macOS absents que le snapshot de `main` ; aucun nouvel
-identifiant de test en échec. La suite complète n’est pas déclarée verte.
 
 ## Si la préparation échoue avant l’ouverture du micro
 

@@ -287,12 +287,13 @@ PYTHONPATH=src .venv/bin/python scripts/diagnose_accessibility.py --app Safari
 ## Interface de bureau (première version)
 
 Deux vues partagent la même session : un compagnon compact et une fenêtre
-complète, avec conversation texte, activité et confirmations. Installation :
+complète, entièrement vocales : orbe, état d’écoute et commandes audio.
+Aucun champ de saisie ni fil de messages. Installation :
 
 ```bash
-python -m pip install -e '.[desktop]'
+python -m pip install -e '.[desktop,live]'
 jarvis-desktop --demo       # découvrir sans action réelle
-jarvis-desktop              # moteur texte sur macOS, Ollama requis
+jarvis-desktop              # assistant vocal Gemini Live sur macOS
 ```
 
 Pour ouvrir Jarvis depuis Finder sans terminal au quotidien :
@@ -303,12 +304,15 @@ open ~/Applications/Jarvis.app
 ```
 
 Ce lanceur de développement reste lié au dépôt et à son environnement Python.
-Le bouton **Activer le vocal** connecte Gemini Live aux deux vues, avec micro
-coupé/réactivable, interruption de réponse et transcriptions. Installer les
-dépendances avec `python -m pip install -e '.[desktop,live]'`, puis configurer
+Le bouton **Démarrer Jarvis** connecte Gemini Live aux deux vues, avec micro
+coupé/réactivable et interruption de réponse. Configurer
 `GOOGLE_API_KEY` dans le `.env` du projet (ou le fichier desktop utilisateur).
 Le micro reste fermé jusqu’à l’activation explicite ; la voix est envoyée à
 Gemini. Pas de salle ni de clés LiveKit nécessaires pour ce mode desktop.
+L’entrée audio est suspendue pendant la lecture de la voix de Jarvis pour limiter
+les boucles de retour des haut-parleurs. Pour parler pendant sa réponse, cliquer
+sur **Interrompre**, puis attendre la reprise de l’écoute. Les confirmations des
+outils restent vocales. Les modes terminal existants restent disponibles.
 
 Pour actualiser un lanceur existant : `python scripts/build_desktop_app.py --update`.
 Voir [le guide vocal](docs/desktop-voice.md) et [le guide desktop](docs/desktop-ui.md)

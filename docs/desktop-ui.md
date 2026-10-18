@@ -1,4 +1,4 @@
-# Jarvis Desktop — première tranche
+# Jarvis Desktop — assistant vocal
 
 ## Installer et ouvrir
 
@@ -6,147 +6,103 @@ Sur le Mac, depuis le dépôt (Python 3.13+) :
 
 ```bash
 source .venv/bin/activate
-python -m pip install -e '.[desktop]'
+python -m pip install -e '.[desktop,live]'
 jarvis-desktop
 ```
 
-Ou sans installation editable :
+Configurer `GOOGLE_API_KEY` dans le `.env` du projet ou dans
+`~/Library/Application Support/Jarvis/desktop.env`.
+Voir [le guide vocal](desktop-voice.md) pour la configuration et le diagnostic.
+Le desktop utilise Gemini Live ; Ollama n’est pas requis pour cette interface.
+Les modes terminal existants restent indépendants.
 
-```bash
-python -m pip install -r requirements-desktop.txt
-PYTHONPATH=src python -m jarvis.desktop
-```
+## Une interface conçue pour la voix
 
-Pour le texte, Ollama doit être lancé avec le modèle configuré par
-`JARVIS_LLM_MODEL` (`granite4:3b` par défaut). Le bouton **Activer le vocal**
-utilise Gemini Live et le registre complet de ses outils, dans une session
-séparée. Voir [le guide vocal](desktop-voice.md) pour l’installation et la clé.
-Les permissions macOS requises dépendent des actions demandées.
+- Deux vues partagent une seule session vocale : fenêtre complète et compagnon
+  compact au premier plan. Changer de vue ne relance ni connexion ni demande.
+- Aucun champ de saisie, bouton Envoyer, suggestion textuelle ou fil de messages.
+  L’orbe et les libellés indiquent connexion, écoute, réflexion, réponse et erreur.
+- **Démarrer Jarvis** ouvre la session puis le micro. Rien n’écoute au lancement.
+- **Couper le micro** ferme la capture ; le même bouton permet de la reprendre.
+- **Interrompre** coupe la réponse orale. Les actions système déjà lancées peuvent
+  continuer. L’entrée audio est suspendue pendant la lecture de Jarvis et une
+  courte période après pour limiter les retours de sa propre voix. Pour reprendre
+  la parole avant la fin, utiliser ce bouton et attendre le retour de l’écoute.
+- **Arrêter** ferme l’audio puis nettoie la session. Les confirmations des outils
+  se font vocalement, selon le protocole existant de Gemini Live.
+- L’onglet Activité affiche seulement l’état de session et le nombre de demandes
+  vocales reçues, jamais le contenu des phrases.
+- L’orbe est peint localement, sans image téléchargée. Le réglage **Réduire les
+  animations** et le masquage arrêtent son timer.
 
-### Sans terminal au quotidien
+Cette protection audio fonctionne en alternant écoute et réponse ; ce n’est pas
+une annulation acoustique d’écho permettant de parler simultanément à Jarvis.
+Le son réel et les latences des périphériques restent à vérifier sur le Mac.
 
-Avec l’environnement activé, créer une fois le lanceur :
+## Finder et Dock
+
+Créer une fois le lanceur depuis l’environnement activé :
 
 ```bash
 python scripts/build_desktop_app.py
 open ~/Applications/Jarvis.app
 ```
 
-Ensuite, double-cliquer sur `Jarvis.app` depuis Finder, ou la garder dans le Dock.
-Ce lanceur de développement référence le **chemin absolu du dépôt et du Python
-actuel** : ne pas déplacer/supprimer le dépôt ou `.venv`. Ce n’est pas encore une
-application autonome signée, distribuable sur un autre Mac. Pour actualiser un
-lanceur Jarvis existant et ajouter sa description d’accès au microphone :
-`python scripts/build_desktop_app.py --update`. Les autres fichiers du bundle
-sont conservés ; une application d’une autre identité n’est jamais remplacée.
+Ensuite, double-cliquer sur `Jarvis.app` depuis Finder ou la garder dans le Dock.
+Ce lanceur de développement référence le chemin absolu du dépôt et du Python
+actuel : conserver le dépôt et `.venv` à leur place. Ce n’est pas une application
+encore autonome et signée pour distribution sur d’autres Macs.
 
-Finder n’hérite pas des exports du terminal. Le vocal charge sa configuration
-depuis `~/Library/Application Support/Jarvis/desktop.env`, puis le `.env` du
-projet, sans remplacer les valeurs déjà exportées. Le modèle texte/recherche
-utilise encore sa configuration d’environnement habituelle.
+Pour actualiser un lanceur existant :
 
-### Découvrir sans action réelle
+```bash
+python scripts/build_desktop_app.py --update
+```
+
+Finder ne reprend pas les exports du terminal. Le vocal charge la configuration
+utilisateur puis celle du projet, sans remplacer les variables déjà exportées.
+
+## Démo et fermeture
 
 ```bash
 jarvis-desktop --demo
 jarvis-desktop --demo --compact
 ```
 
-La démo fonctionne aussi hors macOS. Toute demande simule une confirmation
-pour ouvrir Safari ; après accord, un résultat indique clairement qu’aucune
-application n’a été ouverte. Aucun modèle ni périphérique audio n’est utilisé.
+La démo est uniquement visuelle : aucun micro, connexion Gemini ou outil système.
 
-## Ce qui fonctionne
+Avec la barre de menus disponible, fermer la fenêtre la masque ; le menu
+**Jarvis → Quitter** termine l’app après nettoyage de la session. Sans barre de
+menus, fermer la fenêtre demande la fermeture complète. `Ctrl+C` dans le terminal
+demande aussi cet arrêt propre, même avec les animations réduites. `Échap` ne
+termine pas l’application.
 
-- Fenêtre complète et compagnon compact, palette anthracite/bleu glacier.
-- Orbe peint localement, animation désactivable et suspendue si caché.
-- Une seule session, un seul brouillon et une seule demande en cours, partagés
-  entre les deux fenêtres. Agrandir/réduire ne relance jamais une demande.
-- Exécution du moteur texte hors du thread graphique pour garder l’UI réactive.
-- Confirmation demandée uniquement quand le moteur l’exige, avec aperçu de
-  l’action/cible exactes. Approbation à usage unique, annulation avant exécution.
-- `CommandExecutor.execute_intent` exécute cet aperçu sans réinterroger le modèle
-  et recalcule le risque selon le registre des actions.
-- Activité de session, erreurs explicites, effacement des échanges et remise à
-  zéro du contexte du moteur texte. Aucun nouveau stockage de conversations.
-- Icône/menu de barre de menus lorsque la plateforme fournit un system tray.
-  Fermer une fenêtre la masque ; **Quitter** dans le menu termine l’application.
-  Sans system tray, fermer la fenêtre termine l’application lorsque le moteur est
-  au repos. Une exécution en cours bloque la fermeture pour éviter de tuer un worker.
-- `⌘⇧Espace` sur Mac (`Ctrl+Shift+Space` ailleurs) ouvre le panneau **quand
-  Jarvis est l’application active**. Ce n’est pas encore un raccourci global.
+`⌘⇧Espace` sur Mac (`Ctrl+Shift+Space` ailleurs) ouvre le compagnon lorsque
+Jarvis est l’application active. Ce n’est pas encore un raccourci global.
 
-Le résultat texte du moteur ne fournit pas de drapeau de réussite vérifiée.
-L’interface affiche donc « Réponse reçue », jamais un faux succès ou des étapes
-inventées. Les demandes bloquées ou non prises en charge gardent le texte du
-moteur. L’historique de session ne remplace pas le journal durable du moteur.
+## Captures réelles
 
-## Prochaines tranches
+Mode démo, rendu Qt offscreen sous Linux, sans activation audio :
 
-1. Événements structurés par capacité : étapes, erreurs et effets confirmés.
-2. Vues mémoire/rappels/routines connectées aux stores existants, avec leurs
-   règles de confirmation ; elles ne sont pas dupliquées dans cette tranche.
-3. Raccourci global, préférences persistantes, puis packaging macOS autonome,
-   permissions et signature.
+![Assistant vocal](screenshots/desktop-home.png)
+![Compagnon compact](screenshots/compact-idle.png)
 
 ## Vérifications
 
 ```bash
-python -m pip install pytest
-PYTHONPATH=src QT_QPA_PLATFORM=offscreen python -m pytest -q \
-  tests/test_desktop_session.py tests/test_desktop_ui.py tests/test_desktop_launcher.py
+PYTHONPATH=src QT_QPA_PLATFORM=offscreen python -m pytest -q tests/test_desktop*.py
 ```
 
-Les tests UI utilisent une simulation et n’effectuent aucune action macOS.
-Validation manuelle restante sur le Mac : lancer le `.app` depuis Finder,
-vérifier la barre de menus/Dock, changer de vue pendant un traitement,
-annuler/confirmer un aperçu, tester une action réelle et une erreur Ollama.
-Le rendu offscreen Linux ne valide ni les permissions TCC ni le comportement
-natif de la barre de menus macOS.
+Les tests vérifient notamment l’absence d’interface textuelle, le partage d’un
+seul worker, le contrôle micro/interruption, le filtrage du retour audio et le
+nettoyage à la fermeture. Les périphériques et sessions réseau sont simulés.
+Le test de préchargement utilise le vrai plugin Google, sans démarrer de connexion.
 
-Qt for Python : [QSystemTrayIcon](https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QSystemTrayIcon.html),
-[QThread](https://doc.qt.io/qtforpython-6/PySide6/QtCore/QThread.html).
+Sur Mac, vérifier Finder/Dock, permissions Microphone, une salutation, la pause
+micro pendant une réponse sur haut-parleurs, l’interruption, la reprise d’écoute,
+le changement de vue et l’arrêt. Le rendu Linux ne valide pas le son ou TCC.
 
-### Résultat de cette tranche (environnement Linux, Python 3.13)
-
-- 9 nouveaux tests desktop passent ; les contrôles ciblés avec routage/vocal
-  totalisent 36 tests et 5 sous-tests passants.
-- Suite complète : 801 tests passants, 207 échecs, 149 sous-tests passants.
-- Même environnement sur le snapshot de `main` : 792 tests passants, les mêmes
-  207 échecs et 149 sous-tests passants. Aucun nouvel identifiant de test en échec.
-- Les échecs existants comprennent les accès aux frameworks macOS absents sous
-  Linux. La suite complète n’est donc pas déclarée verte ; validation native sur
-  Mac toujours requise.
-- Installation editable et commande `jarvis-desktop --help` vérifiées ; les deux
-  vues ont été rendues et inspectées en mode Qt offscreen.
-
-## Finition visuelle
-
-- Orbe à voiles lumineux, halo doux et rythme de respiration ; ambre lorsqu’une
-  confirmation est attendue, rose en cas d’erreur. Ces états ne simulent jamais
-  un micro actif ou une progression réelle.
-- Fond dégradé, surfaces teintées, ombre du champ de saisie et typographie plus
-  aérée. Il ne s’agit pas encore de la vibrance/transparence native macOS.
-- Demandes alignées à droite et réponses ouvertes, texte sélectionnable,
-  confirmation avec intitulé lisible et cible exacte.
-- Accueil avec salutation horaire et trois suggestions. Cliquer prépare le
-  brouillon ; seul Envoyer ou Entrée exécute la demande.
-- Panneau compact de 470 px au repos (avec commandes vocales), agrandi selon le contenu et limité à
-  l’espace disponible de l’écran. Les longs contenus restent défilables.
-- Fondu des réponses et redimensionnement doux. Le réglage de réduction des
-  animations supprime ces transitions et arrête l’orbe ; les orbes cachés ne
-  consomment pas de timer d’animation.
-
-Captures réelles en mode démo, rendues avec Qt offscreen sous Linux :
-
-![Accueil desktop](screenshots/desktop-home.png)
-![Compagnon au repos](screenshots/compact-idle.png)
-![Confirmation compacte](screenshots/compact-confirmation.png)
-![Conversation desktop](screenshots/desktop-conversation.png)
-
-### Quitter depuis le terminal
-
-`Ctrl+C` demande la même fermeture que le menu Jarvis → Quitter. Un timer de
-service traite le signal dans la boucle Qt, y compris lorsque les animations
-sont réduites. Une action en cours conserve sa protection contre une fermeture
-forcée. `Échap` ne termine pas l’application.
+Résultat sous Linux/Python 3.13 : **30 tests desktop passants**. Suite complète :
+822 tests et 149 sous-tests passants, avec les mêmes 207 échecs de frameworks
+macOS absents que le snapshot de référence ; aucun nouvel identifiant en échec.
+La suite complète n’est donc pas déclarée verte sur Linux.

@@ -9,12 +9,14 @@ import asyncio
 from collections import deque
 from queue import Empty, Full, Queue
 from threading import Lock
+from time import monotonic
 
 from livekit import rtc
 from livekit.agents.voice.io import AudioInput, AudioOutput, AudioOutputCapabilities
 
 SAMPLE_RATE = 24000
 BLOCK_SAMPLES = 480  # 20 ms, mono PCM16
+ECHO_TAIL_SECONDS = 0.25
 
 
 class MicrophoneInput(AudioInput):
@@ -145,7 +147,7 @@ class SpeakerOutput(AudioOutput):
 
 
 class LocalAudio:
-    def __init__(self, loop, devices=None):
+    def __init__(self, loop, devices=None, clock=monotonic):
         if devices is None:
             import sounddevice as devices
         self.devices = devices
@@ -154,14 +156,31 @@ class LocalAudio:
         self.microphone = None
         self.speaker = None
         self.mic_open = False
+        self.clock = clock
+        self.capture_lock = Lock()
+        self.suppress_until = 0.0
+
+    @property
+    def input_suppressed(self):
+        return self.mic_open and self.clock() < self.suppress_until
 
     def _input_callback(self, data, frames, timing, status):
-        if self.mic_open:
-            self.input.push(data)
+        with self.capture_lock:
+            if self.mic_open and not self.input_suppressed:
+                self.input.push(data)
 
     def _output_callback(self, data, frames, timing, status):
         latency = max(0, timing.outputBufferDacTime - timing.currentTime) + frames / SAMPLE_RATE
-        data[:] = self.output.read(len(data), latency)
+        pcm = self.output.read(len(data), latency)
+        if any(pcm):
+            # Half duplex, not acoustic echo cancellation: don't feed Jarvis's
+            # own speaker audio back to Gemini. Include hardware latency and
+            # a short room echo tail; explicit mute still owns the device.
+            with self.capture_lock:
+                self.suppress_until = max(self.suppress_until,
+                    self.clock() + latency + ECHO_TAIL_SECONDS)
+                self.input.clear()
+        data[:] = pcm
 
     def open(self):
         try:
