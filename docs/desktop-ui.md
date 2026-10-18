@@ -171,10 +171,44 @@ jarvis-desktop --demo --orb
 La démo est uniquement visuelle : aucun micro, connexion Gemini ou outil système.
 
 Avec la barre de menus disponible, fermer la fenêtre la masque ; le menu
-**Jarvis → Quitter** termine l’app après nettoyage de la session. Sans barre de
+**Jarvis → Quitter Jarvis** termine l’app après nettoyage de la session. Sans barre de
 menus, fermer la fenêtre demande la fermeture complète. `Ctrl+C` dans le terminal
 demande aussi cet arrêt propre, même avec les animations réduites. `Échap` ne
 termine pas l’application.
+
+## Contrôles depuis la barre de menus
+
+Le menu permanent partage le contrôleur des trois fenêtres : il permet de
+démarrer, arrêter ou reconnecter le vocal, couper/réactiver le micro et
+interrompre une réponse. Les commandes sont désactivées pendant la connexion,
+l’arrêt et le nettoyage d’une session en erreur. Les tests audio bloquent le
+démarrage du vocal ; **Arrêter le test audio local** reste accessible dans le menu.
+La démo ne permet aucune capture ou connexion.
+
+Deux lignes séparent l’état de Jarvis de l’état de capture. **Écoute suspendue**
+pendant la réponse ne signifie pas que le périphérique micro est fermé : la
+ligne **Capture micro ouverte** continue de l’indiquer. Le test du micro porte
+explicitement la mention **local**. L’icône est barrée quand la capture est
+fermée ; sa couleur reflète repos, écoute, réflexion/réponse ou erreur. Ces
+indications suivent les événements du contrôleur, sans transcription, erreur
+brute ou résultat d’outil dans le menu ni l’infobulle.
+
+**Masquer les fenêtres** garde la session dans son état actuel. Cette commande
+n’est effective que si la barre de menus est disponible. **Réglages audio** ouvre
+directement les réglages ; les cartes, le compagnon et l’orbe restent accessibles.
+Ouvrir le menu ne force plus l’apparition du compagnon. Quitter attend toujours
+la fermeture du worker vocal ou du test audio local.
+
+Capture réelle du menu Qt en démo, sans barre native ni micro. Sur Mac, le menu
+utilisera l’apparence native du système ; cette image ne valide pas son intégration.
+
+![Contrôles du menu en démonstration](screenshots/menu-controls.png)
+
+Pour reproduire cette capture :
+
+```bash
+QT_QPA_PLATFORM=offscreen python scripts/capture_desktop_menu.py
+```
 
 ## Raccourci global
 
@@ -282,8 +316,12 @@ micro pendant une réponse sur haut-parleurs, l’interruption, la reprise d’�
 le changement de vue et l’arrêt. Vérifier aussi ⌘⇧Espace depuis Safari,
 le choix d’un micro/casque, les tests locaux et une reconnexion après coupure
 avec le micro préalablement coupé. Le rendu Linux ne valide pas le son ou TCC.
+Vérifier aussi les commandes vocales depuis le menu avec toutes les fenêtres
+masquées, la distinction capture/écoute, l’accès aux réglages et Quitter pendant
+un test micro local.
 
-Résultat sous Linux/Python 3.13 : **64 tests desktop passants**. Suite complète :
+Résultat sous Linux/Python 3.13 : **68 tests desktop passants**. Suite complète du
+lot précédent (avant les 4 tests du menu) :
 856 tests et 149 sous-tests passants, avec les mêmes 207 échecs de frameworks
 macOS absents que le snapshot de référence ; aucun nouvel identifiant en échec.
 La suite complète n’est donc pas déclarée verte sur Linux.

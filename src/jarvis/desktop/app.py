@@ -7,15 +7,16 @@ from collections import OrderedDict
 from datetime import datetime
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSettings, QTimer, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
+from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QMainWindow,
-    QGraphicsOpacityEffect, QMenu, QPushButton, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
+    QGraphicsOpacityEffect, QPushButton, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
 from jarvis.desktop.audio_settings import AudioSettings
 from jarvis.desktop.devices import valid_choice
 from jarvis.desktop.hotkey import GlobalHotkey
+from jarvis.desktop.tray import TrayControls
 from jarvis.desktop.visuals import Orb
 from jarvis.desktop.panels import DetailPanel
 from jarvis.desktop.orb_window import OrbWindow
@@ -63,6 +64,7 @@ QToolTip { background: #23384f; color: #e1efff; border: 1px solid #527494; }
 QMenu { background: #152235; border: 1px solid #344d67; }
 QMenu::item { padding: 8px 20px; }
 QMenu::item:selected { background: #29435f; }
+QMenu::item:disabled { color: #7b91a6; }
 """
 
 def label(text, name=None):
@@ -648,24 +650,10 @@ class DesktopShell:
         self.orb_window = OrbWindow(controller, self)
         controller.details_requested.connect(self.show_details)
         self.tray = None
+        self.tray_controls = None
         if self.has_tray:
-            pixmap = QPixmap(32, 32)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setBrush(QColor("#87d2ff"))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(6, 6, 20, 20)
-            painter.end()
-            self.tray = QSystemTrayIcon(QIcon(pixmap), app)
-            self.tray.setToolTip("Jarvis")
-            menu = QMenu()
-            for title, callback in (("Ouvrir Jarvis", self.show_full), ("Compagnon compact", self.show_compact), ("Orbe seul", self.show_orb), ("Quitter", self.quit)):
-                action = QAction(title, menu)
-                action.triggered.connect(callback)
-                menu.addAction(action)
-            self.tray.setContextMenu(menu)
-            self.tray.activated.connect(self.tray_activated)
+            self.tray = QSystemTrayIcon(app)
+            self.tray_controls = TrayControls(self, self.tray)
             self.tray.show()
         app.setQuitOnLastWindowClosed(False)
         self.hotkey = GlobalHotkey(self.show_compact, parent=controller,
@@ -695,9 +683,20 @@ class DesktopShell:
             window.shortcut.setEnabled(not self.hotkey.active)
         self.controller.changed.emit()
 
-    def tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.show_compact()
+    def show_settings(self):
+        self.show_full()
+        self.finish_transfer()
+        self.full.navigate(3)
+
+    def hide_windows(self):
+        # Never strand a running assistant without a way to reopen it.
+        if not self.has_tray:
+            return
+        self.finish_transfer()
+        self.remember_companion()
+        self.remember_orb()
+        for window in (self.full, self.compact, self.orb_window):
+            window.hide()
 
     def restore_companion(self):
         if self.position_restored:
