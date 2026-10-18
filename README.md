@@ -294,7 +294,11 @@ suivi des actions et une annulation coopérative des tâches. Raccourci global
 macOS, choix/tests des périphériques et reconnexion explicite après coupure.
 Menu permanent avec état de capture et commandes vocales, même fenêtres masquées. Aucun champ de saisie
 ni fil de messages. Les missions présentent leur objectif, l’outil en cours et
-leurs bilans ; l’analyse d’écran à la demande dispose d’un indicateur et d’une carte de résultat. Installation :
+leurs bilans ; l’analyse d’écran à la demande dispose d’un indicateur et d’une carte de résultat.
+La mission en cours apparaît à côté de la sphère dans Assistant, avec un résumé
+cliquable sous l’orbe en mode compact et un petit bilan à la fin.
+
+Installation :
 
 ```bash
 python -m pip install -e '.[desktop,live]'
@@ -324,3 +328,4 @@ outils restent vocales. Les modes terminal existants restent disponibles.
 Pour actualiser un lanceur existant : `python scripts/build_desktop_app.py --update`.
 Voir [le guide vocal](docs/desktop-voice.md) et [le guide desktop](docs/desktop-ui.md)
 pour les limites, les tests et les prochaines étapes.
+

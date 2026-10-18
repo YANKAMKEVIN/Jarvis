@@ -34,6 +34,7 @@ def main():
 
     def save(window, name):
         app.processEvents()
+        app.processEvents()  # Allow resized mission labels and layouts to settle.
         if not window.grab().save(str(args.output / name)):
             raise RuntimeError('Cannot write screenshot: ' + name)
 
@@ -79,11 +80,18 @@ def main():
                     {'label': 'Recherche web', 'status': 'verified'}]})
             shell.full.navigate(2)
             save(shell.full, 'task-progress.png')
+            shell.full.navigate(0)
+            save(shell.full, 'assistant-mission.png')
+            shell.show_compact()
+            save(shell.compact, 'compact-mission.png')
+            shell.show_full()
             controller.voice_event({'type': 'task_progress', 'id': 'sample-task',
                 'objective': 'Exemple · Préparer les informations de ma journée',
                 'current': '', 'status': 'completed', 'step_count': 2, 'steps': [
                     {'label': 'Fichiers', 'status': 'received'},
                     {'label': 'Recherche web', 'status': 'verified'}]})
+            shell.full.navigate(0)
+            save(shell.full, 'assistant-mission-bilan.png')
             controller.voice_event(project_activity('ask_about_screen', {'ok': True,
                 'analysis': 'EXEMPLE SIMULÉ · Une fenêtre affiche une erreur de connexion. Le détail est trop petit pour être lu avec certitude.',
                 'source': 'window'}, 'sample-screen'))
@@ -104,3 +112,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

@@ -9,7 +9,7 @@ from datetime import datetime
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSettings, QTimer, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QMainWindow,
+    QApplication, QBoxLayout, QCheckBox, QFrame, QHBoxLayout, QLabel, QMainWindow,
     QGraphicsOpacityEffect, QPushButton, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
@@ -19,6 +19,7 @@ from jarvis.desktop.hotkey import GlobalHotkey
 from jarvis.desktop.tray import TrayControls
 from jarvis.desktop.visuals import Orb
 from jarvis.desktop.panels import DetailPanel
+from jarvis.desktop.mission_panel import MissionPanel
 from jarvis.desktop.orb_window import OrbWindow
 from jarvis.desktop.presentation import STATUS_TEXT
 from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, OrbTransfer
@@ -100,6 +101,7 @@ class Controller(QObject):
     audio_levels = Signal(float, float)
     exit_ready = Signal()
     details_requested = Signal()
+    mission_details_requested = Signal()
     audio_event = Signal(object)
     devices_changed = Signal()
 
@@ -119,6 +121,7 @@ class Controller(QObject):
         self.activity = OrderedDict()
         self.task = None
         self.mission_history = OrderedDict()
+        self.hidden_mission_bilan = None
         self.screen_operations = set()
         self.input_choice = self.output_choice = None
         self.device_config_invalid = False
@@ -376,7 +379,16 @@ class VoicePanel(QWidget):
         layout.addStretch(1)
         self.orb = Orb(220 if compact else 360)
         controller.audio_levels.connect(self.orb.set_levels)
-        layout.addWidget(self.orb, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.stage = QBoxLayout(QBoxLayout.Direction.TopToBottom)
+        self.stage.setSpacing(20 if not compact else 8)
+        self.orb_slot = QWidget()
+        orb_layout = QVBoxLayout(self.orb_slot)
+        orb_layout.setContentsMargins(0, 0, 0, 0)
+        orb_layout.addWidget(self.orb, 0, Qt.AlignmentFlag.AlignCenter)
+        self.stage.addWidget(self.orb_slot, 1)
+        self.mission = MissionPanel(controller, compact)
+        self.stage.addWidget(self.mission, 1)
+        layout.addLayout(self.stage)
         self.status = label("Votre assistant vocal", "greeting")
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if compact:
@@ -422,10 +434,20 @@ class VoicePanel(QWidget):
     def toggle_voice(self):
         self.controller.stop_voice() if self.controller.voice_worker else self.controller.start_voice()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'footnote'):
+            self.render()
+
     def render(self):
         c = self.controller
         active = c.voice_worker is not None
         state = c.voice_state
+        mission_shown = self.mission.render()
+        beside = mission_shown and self.mission.expanded and not self.compact
+        self.stage.setDirection(QBoxLayout.Direction.LeftToRight if beside else QBoxLayout.Direction.TopToBottom)
+        self.mission.setMinimumWidth(300 if beside else 0)
+        self.mission.setMaximumWidth(370 if beside else 16777215)
         has_details = bool(c.cards or c.task or c.activity)
         self.hint_area.setCurrentIndex(1 if has_details and state not in {"error", "starting"} else 0)
         self.details_button.setText(f'{len(c.cards)} carte(s) · Voir les détails →' if c.cards else
@@ -435,8 +457,8 @@ class VoicePanel(QWidget):
             latest = next(reversed(c.cards.values()))
             summary = latest['body'] if not latest['items'] else latest['items'][0]
             self.peek.setText(latest['title'] + '\n' + summary[:160])
-        self.orb.setFixedSize(220 if self.compact else 280 if c.cards else 360,
-                              220 if self.compact else 280 if c.cards else 360)
+        orb_size = (180 if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else 280 if c.cards or mission_shown else 360)
+        self.orb.setFixedSize(orb_size, orb_size)
         self.orb.state = state
         self.orb.update()
         self.controls.active = active
@@ -673,6 +695,7 @@ class DesktopShell:
         self.compact = DesktopWindow(controller, self, compact=True)
         self.orb_window = OrbWindow(controller, self)
         controller.details_requested.connect(self.show_details)
+        controller.mission_details_requested.connect(self.show_mission_details)
         self.tray = None
         self.tray_controls = None
         if self.has_tray:
@@ -764,6 +787,11 @@ class DesktopShell:
         self.show_full()
         self.finish_transfer()
         self.full.navigate(1 if self.controller.cards else 2)
+
+    def show_mission_details(self):
+        self.show_full()
+        self.finish_transfer()
+        self.full.navigate(2)
 
     def finish_transfer(self):
         if self.transfer is not None:
@@ -880,3 +908,4 @@ def run(demo=False, compact=False, orb=False):
         signal_pump.stop()
         signal_pump.deleteLater()
         signal.signal(signal.SIGINT, previous_sigint)
+

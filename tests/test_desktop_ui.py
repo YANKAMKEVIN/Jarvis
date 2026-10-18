@@ -36,6 +36,105 @@ def make_shell(app, monkeypatch, demo=False):
     return controller, DesktopShell(app, controller, settings=Settings())
 
 
+def test_assistant_mission_is_beside_orb_then_becomes_dismissible_bilan(app, monkeypatch):
+    from PySide6.QtCore import QPoint
+    from jarvis.desktop.presentation import project_task
+    c, shell = make_shell(app, monkeypatch)
+    c.reduced_motion = True
+    try:
+        shell.show_full()
+        panel = shell.full.assistant
+        assert panel.mission.isHidden()
+        c.voice_event(project_task({'id': 'mission', 'objective': 'Préparer ma journée',
+            'status': 'running', 'current_tool': 'list_calendar_events',
+            'steps': [{'tool': 'list_files', 'ok': True}]}))
+        app.processEvents()
+        assert panel.mission.isVisible()
+        assert panel.mission.mapToGlobal(QPoint()).x() > panel.orb.mapToGlobal(QPoint()).x() + panel.orb.width()
+        assert panel.mission.current.text() == 'En cours · Agenda'
+        assert not panel.mission.dismiss.isVisible()
+        c.voice_event(project_task({'id': 'mission', 'objective': 'Préparer ma journée',
+            'status': 'completed', 'steps': []}))
+        app.processEvents()
+        assert not panel.mission.expanded and panel.mission.dismiss.isVisible()
+        assert not panel.mission.cancel.isVisible()
+        panel.mission.dismiss.click()
+        assert panel.mission.isHidden() and c.task is not None
+        assert shell.compact.assistant.mission.isHidden()
+        assert panel.orb.width() == 360
+        c.voice_event(project_task({'id': 'next', 'status': 'needs_confirmation', 'steps': []}))
+        assert not panel.mission.isHidden() and panel.mission.expanded
+        assert 'accord' in panel.mission.state.text()
+        assert not panel.mission.cancel.isVisible()
+    finally:
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_compact_mission_opens_activity_even_when_cards_exist(app, monkeypatch):
+    from jarvis.desktop.presentation import project_activity, project_task
+    c, shell = make_shell(app, monkeypatch)
+    c.reduced_motion = True
+    try:
+        c.voice_event(project_activity('get_volume', {'ok': True, 'volume': 30}, 'volume'))
+        c.voice_event(project_task({'id': 'mission', 'objective': 'Mon objectif', 'status': 'running', 'current_tool': 'open_app', 'steps': []}))
+        shell.show_compact()
+        app.processEvents()
+        panel = shell.compact.assistant.mission
+        assert panel.isVisible() and panel.summary.isVisible()
+        assert panel.summary.text() == 'Mon objectif\nEn cours · Application'
+        assert panel.cancel.isHidden()
+        panel.summary.click()
+        assert shell.full.isVisible() and shell.full.pages.currentIndex() == 2
+    finally:
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_mission_cancel_uses_existing_controller_and_reduced_motion_stops_fade(app, monkeypatch):
+    from unittest.mock import Mock
+    from jarvis.desktop.presentation import project_task
+    c, shell = make_shell(app, monkeypatch)
+    try:
+        c.voice_worker = Mock()
+        c.voice_state = 'listening'
+        c.voice_event(project_task({'id': 'mission', 'status': 'running', 'steps': []}))
+        panel = shell.full.assistant.mission
+        assert panel.cancel.isEnabled()
+        panel.cancel.click()
+        c.voice_worker.cancel_task.assert_called_once_with()
+        c.voice_worker.interrupt.assert_not_called()
+        c.reduced_motion = True
+        c.changed.emit()
+        assert panel.opacity.opacity() == 1 and panel.fade.state() == panel.fade.State.Stopped
+        c.voice_state = 'error'
+        c.changed.emit()
+        assert not panel.cancel.isEnabled()
+    finally:
+        c.voice_worker = None
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_mission_layout_fits_small_window_with_long_objective(app, monkeypatch):
+    from jarvis.desktop.presentation import project_task
+    c, shell = make_shell(app, monkeypatch)
+    c.reduced_motion = True
+    try:
+        shell.full.resize(800, 730)
+        shell.show_full()
+        c.voice_event(project_task({'id': 'mission', 'objective': 'Un objectif très détaillé ' * 20,
+            'status': 'running', 'current_tool': 'open_app',
+            'steps': [{'tool': 'open_app', 'ok': True}] * 8}))
+        app.processEvents()
+        panel = shell.full.assistant
+        wait_until(app, lambda: panel.mission.geometry().right() < panel.width())
+        assert shell.full.width() == 800
+        assert panel.mission.geometry().right() < panel.width()
+        assert panel.controls.geometry().bottom() < panel.height()
+        assert panel.mission.cancel.isVisible()
+        assert len([w for w in panel.mission.steps if w.isVisible()]) == 3
+    finally:
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
 def test_screen_indicator_follows_overlapping_operations_and_session_end(app, monkeypatch):
     from jarvis.desktop.presentation import project_activity
     from jarvis.desktop.tray import presence
@@ -505,3 +604,4 @@ def test_device_preferences_are_saved_and_invalid_preferences_block_capture(app,
         controller.voice_worker = None
         shell.finish_transfer()
         for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+

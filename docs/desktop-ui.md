@@ -105,6 +105,31 @@ continuent de répondre vocalement, avec leur état dans Activité.
 
 ## Suivi des actions et tâches
 
+La mission est visible directement dans **Assistant**. Dans la fenêtre complète,
+un panneau de verre apparaît à droite de la sphère : objectif, état, outil en
+cours et trois dernières étapes affichées. La sphère se décale et adapte sa
+taille à la place disponible. Les états demandant une précision ou un accord
+vocal gardent le panneau développé. **Annuler la mission** utilise la même
+annulation coopérative que dans Activité, indépendamment de l’interruption audio.
+
+À la fin, le panneau devient un petit bilan sous la sphère, avec **Détails** et
+**Masquer**. Masquer n’efface ni la mission ni son historique. En mode compact,
+deux lignes sous l’orbe indiquent l’objectif court et l’étape ou l’état courant ;
+cliquer ce résumé ouvre toujours **Activité**, même si des cartes sont présentes.
+Les objectifs longs sont raccourcis à l’affichage et restent lisibles dans
+l’infobulle et les détails. Le panneau utilise uniquement les événements de la
+session existante : aucune mission ni connexion supplémentaire n’est lancée.
+
+Le fondu d’apparition est désactivé avec **Réduire les animations**. Les commandes
+de confirmation restent vocales. L’onglet **Activité** conserve les étapes
+détaillées et les missions précédentes.
+
+Captures réelles Qt, avec mission simulée et commandes vocales désactivées :
+
+![Mission à côté de la sphère](screenshots/assistant-mission.png)
+![Résumé dans le compagnon compact](screenshots/compact-mission.png)
+![Bilan après la mission](screenshots/assistant-mission-bilan.png)
+
 **Activité** conserve les trente dernières actions de cette session. Les actions
 instrumentées du registre annoncent leur début et leur retour ; les lectures
 non instrumentées apparaissent après le retour SDK. Le planificateur fournit ses
@@ -373,8 +398,15 @@ un test micro local.
 Tester aussi une observation de fenêtre nommée, une vision désactivée, un refus
 de capture macOS, une mission en cours puis terminée et ses bilans après reconnexion.
 
-Résultat sous Linux/Python 3.13 : **75 tests desktop passants**. Suite complète
+Pour le panneau intégré à Assistant : **29 tests UI, menu et présentation
+passants**, dont 4 nouveaux contrôlant le placement, le bilan, la navigation,
+l’annulation et la petite fenêtre. Vérification visuelle hors écran des captures
+complète et compacte ; l’audio et l’intégration native macOS ne sont pas testés
+par ces contrôles.
+
+Résultat du lot précédent sous Linux/Python 3.13 : **75 tests desktop passants**. Suite complète
 exécutée pendant ce lot, avant le dernier test de rendu Qt :
 866 tests et 149 sous-tests passants, avec les mêmes 207 échecs de frameworks
 macOS absents que le snapshot de référence ; aucun nouvel identifiant en échec.
 La suite complète n’est donc pas déclarée verte sur Linux.
+
