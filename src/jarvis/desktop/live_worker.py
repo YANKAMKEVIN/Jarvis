@@ -30,8 +30,9 @@ class LiveWorker(QThread):
     def set_sounds(self, enabled):
         self.runtime.set_sounds(enabled)
 
-    def cancel_task(self):
-        self.runtime.cancel_task()
+    def cancel_task(self, task_id=None):
+        self.runtime.cancel_task(task_id)
 
     def set_devices(self, input_choice, output_choice):
         self.runtime.set_devices(input_choice, output_choice)
+

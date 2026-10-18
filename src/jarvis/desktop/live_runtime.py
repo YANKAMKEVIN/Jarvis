@@ -7,6 +7,7 @@ import traceback
 from collections import deque
 from pathlib import Path
 from threading import Event
+from queue import Empty, SimpleQueue
 from types import SimpleNamespace
 import uuid
 
@@ -127,6 +128,7 @@ class LiveRuntime:
         self.seen_items = deque(maxlen=512)
         self.sounds_requested = Event()
         self.cancel_task_requested = Event()
+        self.task_cancellations = SimpleQueue()
         self.observed_tools = set()
         self.last_task_snapshot = None
         self.input_choice = self.output_choice = None
@@ -138,7 +140,8 @@ class LiveRuntime:
     def set_sounds(self, enabled):
         self.sounds_requested.set() if enabled else self.sounds_requested.clear()
 
-    def cancel_task(self):
+    def cancel_task(self, task_id=None):
+        self.task_cancellations.put(task_id)
         self.cancel_task_requested.set()
 
     def stop(self):
@@ -194,8 +197,11 @@ class LiveRuntime:
     def _task_progress(self):
         registry = self.components.assistant.registry
         tasks = getattr(registry, 'tasks', None)
-        if tasks is not None and hasattr(tasks, 'progress'):
-            snapshot = project_task(tasks.presentation() if hasattr(tasks, 'presentation') else tasks.progress())
+        if tasks is not None and (hasattr(tasks, 'progress') or hasattr(tasks, 'presentations')):
+            if hasattr(tasks, 'presentations'):
+                snapshot = {'type': 'missions', 'missions': [project_task(item) for item in tasks.presentations()]}
+            else:
+                snapshot = project_task(tasks.presentation() if hasattr(tasks, 'presentation') else tasks.progress())
             if snapshot is not None and snapshot != self.last_task_snapshot:
                 self.last_task_snapshot = snapshot
                 self.emit(snapshot)
@@ -274,8 +280,13 @@ class LiveRuntime:
                 if self.cancel_task_requested.is_set():
                     self.cancel_task_requested.clear()
                     tasks = getattr(c.assistant.registry, 'tasks', None)
-                    if tasks is not None:
-                        tasks.cancel()
+                    while True:
+                        try:
+                            task_id = self.task_cancellations.get_nowait()
+                        except Empty:
+                            break
+                        if tasks is not None:
+                            tasks.cancel(task_id) if task_id is not None else tasks.cancel()
                 if now >= next_task_poll:
                     self._task_progress()
                     next_task_poll = now + 0.25
@@ -347,3 +358,4 @@ class LiveRuntime:
             if error_message:
                 final["retryable"] = phase in {"connection", "session"}
             self.emit(final)
+

@@ -19,7 +19,7 @@ from jarvis.desktop.hotkey import GlobalHotkey
 from jarvis.desktop.tray import TrayControls
 from jarvis.desktop.visuals import Orb
 from jarvis.desktop.panels import DetailPanel
-from jarvis.desktop.mission_panel import MissionPanel
+from jarvis.desktop.mission_panel import MissionDeck
 from jarvis.desktop.orb_window import OrbWindow
 from jarvis.desktop.presentation import STATUS_TEXT
 from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, OrbTransfer
@@ -120,6 +120,8 @@ class Controller(QObject):
         self.cards = OrderedDict()
         self.activity = OrderedDict()
         self.task = None
+        self.missions = OrderedDict()
+        self.selected_mission_id = None
         self.mission_history = OrderedDict()
         self.hidden_mission_bilan = None
         self.screen_operations = set()
@@ -200,15 +202,36 @@ class Controller(QObject):
 
     def clear_activity(self):
         if (not any(e['status'] == 'running' for e in self.activity.values())
-                and not (self.task and self.task['status'] in {'running', 'cancelling'})):
+                and not any(m['status'] in {'queued', 'running', 'cancelling'} for m in self.mission_list())):
             self.activity.clear()
             self.mission_history.clear()
+            self.missions.clear()
             self.task = None
             self.changed.emit()
 
-    def cancel_task(self):
-        if (self.voice_worker and self.task and self.task['status'] == 'running'
-                and self.voice_state not in {'starting', 'stopping', 'error'}):
+    def mission_list(self):
+        return list(self.missions.values()) if self.missions else ([self.task] if self.task else [])
+
+    def focus_missions(self):
+        active = [m for m in self.mission_list() if m['status'] in {'queued', 'running', 'cancelling', 'needs_confirmation', 'needs_clarification'}]
+        if active:
+            return sorted(active, key=lambda m: m['id'] != self.selected_mission_id)
+        return [self.task] if self.task else []
+
+    def select_mission(self, task_id):
+        mission = next((m for m in self.mission_list() if m['id'] == task_id), None)
+        if mission is not None:
+            self.selected_mission_id = task_id
+            self.task = mission
+            self.changed.emit()
+
+    def cancel_task(self, task_id=None):
+        candidates = [m for m in self.mission_list() if m['status'] in {'queued', 'running'} and (task_id is None or m['id'] == task_id)]
+        if len(candidates) != 1 or not self.voice_worker or self.voice_state in {'starting', 'stopping', 'error'}:
+            return
+        if self.missions:
+            self.voice_worker.cancel_task(candidates[0]['id'])
+        else:
             self.voice_worker.cancel_task()
 
     def clear_tool_notice(self):
@@ -240,6 +263,8 @@ class Controller(QObject):
             self.cards.clear()
             self.activity.clear()
             self.task = None
+            self.missions.clear()
+            self.selected_mission_id = None
             self.mission_history.clear()
         self.screen_operations.clear()
         self.tool_timer.stop()
@@ -297,6 +322,18 @@ class Controller(QObject):
             self.tool_timer.start()
             self.changed.emit()
             return
+        if event.get('type') == 'missions':
+            self.missions = OrderedDict((m['id'], m) for m in event['missions'] if m is not None)
+            active = [m for m in self.missions.values() if m["status"] in {"queued", "running", "cancelling", "needs_confirmation", "needs_clarification"}]
+            chosen = next((m for m in active if m['id'] == self.selected_mission_id), None)
+            self.task = chosen or (active[0] if active else next(reversed(self.missions.values()), None))
+            self.selected_mission_id = self.task['id'] if self.task else None
+            self.mission_history = OrderedDict((m['id'], m) for m in self.missions.values()
+                if m is not self.task and m['status'] not in {'queued', 'running', 'cancelling', 'needs_confirmation', 'needs_clarification'})
+            while len(self.mission_history) > 4:
+                self.mission_history.popitem(last=False)
+            self.changed.emit()
+            return
         if event.get('type') == 'task_progress':
             if self.task and self.task['id'] != event['id']:
                 previous = dict(self.task)
@@ -341,8 +378,9 @@ class Controller(QObject):
                 for entry in self.activity.values():
                     if entry['status'] == 'running':
                         entry['status'] = 'unknown'
-                if self.task and self.task['status'] in {'running', 'cancelling'}:
-                    self.task = {**self.task, 'status': 'unknown'}
+                for mission in self.mission_list():
+                    if mission['status'] in {'queued', 'running', 'cancelling'}:
+                        mission['status'] = 'unknown'
             self.changed.emit()
 
     def voice_finished(self, worker):
@@ -386,7 +424,7 @@ class VoicePanel(QWidget):
         orb_layout.setContentsMargins(0, 0, 0, 0)
         orb_layout.addWidget(self.orb, 0, Qt.AlignmentFlag.AlignCenter)
         self.stage.addWidget(self.orb_slot, 1)
-        self.mission = MissionPanel(controller, compact)
+        self.mission = MissionDeck(controller, compact)
         self.stage.addWidget(self.mission, 1)
         layout.addLayout(self.stage)
         self.status = label("Votre assistant vocal", "greeting")
@@ -457,7 +495,8 @@ class VoicePanel(QWidget):
             latest = next(reversed(c.cards.values()))
             summary = latest['body'] if not latest['items'] else latest['items'][0]
             self.peek.setText(latest['title'] + '\n' + summary[:160])
-        orb_size = (180 if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else 280 if c.cards or mission_shown else 360)
+        compact_orb = 140 if len(c.focus_missions()) > 1 else 180
+        orb_size = (compact_orb if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else 280 if c.cards or mission_shown else 360)
         self.orb.setFixedSize(orb_size, orb_size)
         self.orb.state = state
         self.orb.update()

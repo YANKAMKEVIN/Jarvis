@@ -1,4 +1,5 @@
 import asyncio
+from jarvis.planner.resources import DesktopGate
 import functools
 import inspect
 import uuid
@@ -244,12 +245,14 @@ class ToolRegistry:
         # Morning briefing runs in the background like a web search.
         self._briefing_task: asyncio.Task | None = None
         self.activity_observer = None
+        self.desktop_gate = DesktopGate()
+        self.task_announcement_lock = asyncio.Lock()
 
     async def aclose(self):
         """Stop session-owned background work cooperatively before shutdown."""
         self.task_notifier = None
         if self.tasks is not None:
-            self.tasks.cancel()
+            self.tasks.cancel_all()
         pending = [task for task in (self._web_task, self._briefing_task)
                    if task is not None and not task.done()]
         for task in pending:
@@ -288,13 +291,26 @@ class ToolRegistry:
         self.task_notifier = notifier
 
     async def _on_task_finished(self, goal: str, outcome: TaskOutcome) -> None:
-        await self._log_action(
-            f"task_{outcome.status}",
-            None,
-            {"ok": outcome.status in ("completed", "needs_confirmation")},
-        )
-        if self.task_notifier is not None:
-            await self.task_notifier(announcement_for(goal, outcome))
+        await self._log_action(f"task_{outcome.status}", None,
+                               {"ok": outcome.status in ("completed", "needs_confirmation")})
+        if not hasattr(self, "task_announcement_lock"):
+            self.task_announcement_lock = asyncio.Lock()
+        async with self.task_announcement_lock:
+            if self.task_notifier is not None:
+                await self.task_notifier(f"Concernant la mission « {goal} » : " + announcement_for(goal, outcome))
+
+    def _desktop_access(self, fn):
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            if not hasattr(self, "desktop_gate"):
+                self.desktop_gate = DesktopGate()
+            gate = self.desktop_gate
+            if not gate.owned and gate.busy:
+                return {"ok": False, "error_code": "desktop_busy",
+                        "message": "Une mission utilise le bureau. Attends sa fin ou demande quelle mission annuler. Aucune action n'a ete lancee."}
+            async with gate.hold():
+                return await fn(*args, **kwargs)
+        return wrapper
 
     def _purge_personal_data(self, scope: str) -> ToolResult:
         counts: dict[str, int] = {}
@@ -527,6 +543,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("open_app", "app_name")
+        @self._desktop_access
         async def open_app(app_name: str) -> dict:
             """Open a macOS application by name."""
             debug_live("tool_call", tool="open_app", app_name=app_name)
@@ -556,6 +573,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("close_app", "app_name")
+        @self._desktop_access
         async def close_app(app_name: str) -> dict:
             """Close a macOS application by name."""
             debug_live("tool_call", tool="close_app", app_name=app_name)
@@ -617,6 +635,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("play_pause")
+        @self._desktop_access
         async def play_pause() -> dict:
             """Toggle play/pause for the active supported media app."""
             debug_live("tool_call", tool="play_pause")
@@ -640,6 +659,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("next_track")
+        @self._desktop_access
         async def next_track() -> dict:
             """Skip to the next track in the active supported media app."""
             debug_live("tool_call", tool="next_track")
@@ -663,6 +683,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("previous_track")
+        @self._desktop_access
         async def previous_track() -> dict:
             """Go back to the previous track in the active supported media app."""
             debug_live("tool_call", tool="previous_track")
@@ -762,6 +783,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("run_shortcut", "name")
+        @self._desktop_access
         async def run_shortcut(name: str) -> dict:
             """Run a macOS Shortcut by name."""
             debug_live("tool_call", tool="run_shortcut")
@@ -948,6 +970,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("draft_email")
+        @self._desktop_access
         async def draft_email(recipient: str, subject: str, body: str) -> dict:
             """Create an unsent Apple Mail draft."""
             debug_live("tool_call", tool="draft_email", body_length=len(body) if isinstance(body, str) else None)
@@ -992,6 +1015,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("lock_screen")
+        @self._desktop_access
         async def lock_screen() -> dict:
             """Lock the current Mac session."""
             debug_live("tool_call", tool="lock_screen")
@@ -1006,6 +1030,7 @@ class ToolRegistry:
                 "position, taille, et etats minimise ou plein ecran."
             ),
         )
+        @self._desktop_access
         async def get_active_window() -> dict:
             """Read the currently active Mac window."""
             debug_live("tool_call", tool="get_active_window")
@@ -1021,6 +1046,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("focus_window", "app_name")
+        @self._desktop_access
         async def focus_window(app_name: str) -> dict:
             """Focus a macOS application window."""
             debug_live("tool_call", tool="focus_window", app_name=app_name)
@@ -1036,6 +1062,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("minimize_window", "app_name")
+        @self._desktop_access
         async def minimize_window(app_name: str | None = None) -> dict:
             """Minimize the active window or an app window."""
             debug_live("tool_call", tool="minimize_window", app_name=app_name)
@@ -1052,6 +1079,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("maximize_window", "app_name")
+        @self._desktop_access
         async def maximize_window(app_name: str | None = None) -> dict:
             """Maximize the active window or an app window without fullscreen."""
             debug_live("tool_call", tool="maximize_window", app_name=app_name)
@@ -1068,6 +1096,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("move_window", "app_name")
+        @self._desktop_access
         async def move_window(position: str, app_name: str | None = None) -> dict:
             """Move the active window or an app window."""
             debug_live(
@@ -1093,6 +1122,7 @@ class ToolRegistry:
                 "right_app : les noms des applications."
             ),
         )
+        @self._desktop_access
         async def arrange_windows(left_app: str, right_app: str) -> dict:
             """Tile two apps side by side."""
             debug_live("tool_call", tool="arrange_windows")
@@ -1189,6 +1219,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("open_file")
+        @self._desktop_access
         async def open_file(path: str) -> dict:
             """Open a local file with macOS."""
             debug_live("tool_call", tool="open_file", path=path)
@@ -1204,6 +1235,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("open_folder")
+        @self._desktop_access
         async def open_folder(path: str) -> dict:
             """Open a local folder in Finder."""
             debug_live("tool_call", tool="open_folder", path=path)
@@ -1219,6 +1251,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("create_folder")
+        @self._desktop_access
         async def create_folder(path: str) -> dict:
             """Create a local folder without overwriting."""
             debug_live("tool_call", tool="create_folder", path=path)
@@ -1234,6 +1267,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("rename_file")
+        @self._desktop_access
         async def rename_file(path: str, new_name: str) -> dict:
             """Rename a local file or folder without overwriting."""
             debug_live(
@@ -1260,6 +1294,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("move_file")
+        @self._desktop_access
         async def move_file(source: str, destination: str) -> dict:
             """Move a local file or folder without overwriting."""
             debug_live(
@@ -1284,6 +1319,7 @@ class ToolRegistry:
                 "si le presse-papiers contient du texte."
             ),
         )
+        @self._desktop_access
         async def get_clipboard_text() -> dict:
             """Read current readable text from the Mac clipboard."""
             debug_live("tool_call", tool="get_clipboard_text")
@@ -1301,6 +1337,7 @@ class ToolRegistry:
                 "texte fourni, puis verifie que le texte relu est identique."
             ),
         )
+        @self._desktop_access
         async def set_clipboard_text(text: str) -> dict:
             """Set Mac clipboard text and verify the result."""
             debug_live(
@@ -1323,6 +1360,7 @@ class ToolRegistry:
                 "verifie prudemment qu'aucun texte lisible n'est detecte."
             ),
         )
+        @self._desktop_access
         async def clear_clipboard() -> dict:
             """Clear readable text from the Mac clipboard."""
             debug_live("tool_call", tool="clear_clipboard")
@@ -1345,6 +1383,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("rewrite_clipboard")
+        @self._desktop_access
         async def rewrite_clipboard(instruction: str) -> dict:
             """Transform the clipboard text with the local model."""
             debug_live("tool_call", tool="rewrite_clipboard")
@@ -1362,6 +1401,7 @@ class ToolRegistry:
                 "active. N'appuie jamais automatiquement sur Entree."
             ),
         )
+        @self._desktop_access
         async def type_text(text: str) -> dict:
             """Type text into the currently active macOS window."""
             debug_live(
@@ -1382,6 +1422,7 @@ class ToolRegistry:
                 "arrow_up, arrow_down, arrow_left ou arrow_right."
             ),
         )
+        @self._desktop_access
         async def press_key(key: str) -> dict:
             """Press one allowed key in the currently active macOS window."""
             debug_live("tool_call", tool="press_key", key=key)
@@ -1401,6 +1442,7 @@ class ToolRegistry:
                 "command+f, command+s."
             ),
         )
+        @self._desktop_access
         async def hotkey(keys: list[str]) -> dict:
             """Send one allowed hotkey in the active macOS window."""
             debug_live("tool_call", tool="hotkey", keys=keys)
@@ -1416,6 +1458,7 @@ class ToolRegistry:
                 "les coordonnees globales macOS."
             ),
         )
+        @self._desktop_access
         async def get_mouse_position() -> dict:
             """Read the current mouse pointer position."""
             debug_live("tool_call", tool="get_mouse_position")
@@ -1431,6 +1474,7 @@ class ToolRegistry:
                 "explicites x/y. Ne devine jamais ces coordonnees."
             ),
         )
+        @self._desktop_access
         async def move_mouse(x: int, y: int) -> dict:
             """Move the mouse pointer to explicit macOS coordinates."""
             debug_live("tool_call", tool="move_mouse", x=x, y=y)
@@ -1446,6 +1490,7 @@ class ToolRegistry:
                 "Ce tool ne confirme pas l'effet applicatif du clic."
             ),
         )
+        @self._desktop_access
         async def click() -> dict:
             """Send one left click at the current mouse position."""
             debug_live("tool_call", tool="click")
@@ -1461,6 +1506,7 @@ class ToolRegistry:
                 "pointeur. Ce tool ne confirme pas l'effet applicatif."
             ),
         )
+        @self._desktop_access
         async def double_click() -> dict:
             """Send one double left click at the current mouse position."""
             debug_live("tool_call", tool="double_click")
@@ -1476,6 +1522,7 @@ class ToolRegistry:
                 "Ce tool ne confirme pas l'effet applicatif du clic."
             ),
         )
+        @self._desktop_access
         async def right_click() -> dict:
             """Send one right click at the current mouse position."""
             debug_live("tool_call", tool="right_click")
@@ -1491,6 +1538,7 @@ class ToolRegistry:
                 "down, left ou right, avec amount entre 1 et 10."
             ),
         )
+        @self._desktop_access
         async def scroll(direction: str, amount: int = 3) -> dict:
             """Send a bounded mouse scroll command."""
             debug_live(
@@ -1515,6 +1563,7 @@ class ToolRegistry:
                 "macOS actuelle, avec une profondeur et un nombre d'elements bornes."
             ),
         )
+        @self._desktop_access
         async def inspect_ui(max_depth: int = 4, max_elements: int = 80) -> dict:
             """Inspect the current macOS Accessibility UI tree."""
             debug_live(
@@ -1539,6 +1588,7 @@ class ToolRegistry:
                 "role est optionnel et ne doit etre fourni que s'il est utile."
             ),
         )
+        @self._desktop_access
         async def find_ui_elements(query: str, role: str | None = None) -> dict:
             """Find current macOS Accessibility UI elements by human label."""
             debug_live(
@@ -1563,6 +1613,7 @@ class ToolRegistry:
                 "l'interface actuelle. L'element est re-resolu juste avant l'action."
             ),
         )
+        @self._desktop_access
         async def focus_ui_element(query: str, role: str | None = None) -> dict:
             """Focus one current macOS Accessibility UI element."""
             debug_live(
@@ -1587,6 +1638,7 @@ class ToolRegistry:
                 "l'element expose cette action. Aucun fallback souris automatique."
             ),
         )
+        @self._desktop_access
         async def activate_ui_element(query: str, role: str | None = None) -> dict:
             """Activate one current macOS Accessibility UI element with AXPress."""
             debug_live(
@@ -1619,6 +1671,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("click_element")
+        @self._desktop_access
         async def click_element(query: str, role: str | None = None) -> dict:
             """Click an element by its Accessibility-grounded position (never blind)."""
             debug_live("tool_call", tool="click_element",
@@ -1681,6 +1734,7 @@ class ToolRegistry:
                 "pour les demandes naturelles comme selectionne tout et copie."
             ),
         )
+        @self._desktop_access
         async def select_all_and_copy() -> dict:
             """Run command+a then command+c as one ordered interaction."""
             debug_live("tool_call", tool="select_all_and_copy")
@@ -1708,6 +1762,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("focus_app_ui_and_type", "app_name")
+        @self._desktop_access
         async def focus_app_ui_and_type(
             app_name: str,
             text: str,
@@ -1746,6 +1801,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("open_app_and_focus_ui", "app_name")
+        @self._desktop_access
         async def open_app_and_focus_ui(
             app_name: str,
             query: str,
@@ -1782,6 +1838,7 @@ class ToolRegistry:
                 "reste false : l'effacement du champ ne peut pas etre confirme."
             ),
         )
+        @self._desktop_access
         async def select_all_and_delete() -> dict:
             """Verify an editable target, then Command+A and one Backspace."""
             debug_live("tool_call", tool="select_all_and_delete")
@@ -1809,6 +1866,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("send_prompt_to_app", "app_name")
+        @self._desktop_access
         async def send_prompt_to_app(
             app_name: str,
             text: str,
@@ -1870,6 +1928,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("prepare_send_message", "app_name")
+        @self._desktop_access
         async def prepare_send_message(
             app_name: str,
             text: str,
@@ -1977,6 +2036,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("send_last_web_result", "app_name")
+        @self._desktop_access
         async def send_last_web_result(
             app_name: str,
             recipient: str | None = None,
@@ -2146,6 +2206,7 @@ class ToolRegistry:
                 "no_pending_action."
             ),
         )
+        @self._desktop_access
         async def confirm_action(token: str) -> dict:
             """Execute a previously prepared outward action after confirmation."""
             debug_live("tool_call", tool="confirm_action", token=token)
@@ -2213,6 +2274,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("browse_open_url", "url", self._journal_host)
+        @self._desktop_access
         async def browse_open_url(
             url: str,
             browser: str | None = None,
@@ -2246,6 +2308,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("browse_search_web")
+        @self._desktop_access
         async def browse_search_web(
             query: str,
             browser: str | None = None,
@@ -2277,6 +2340,7 @@ class ToolRegistry:
                 "le deduire. browser=None choisit automatiquement le navigateur."
             ),
         )
+        @self._desktop_access
         async def browse_get_active_tab(browser: str | None = None) -> dict:
             """Read the active tab of a browser."""
             debug_live("tool_call", tool="browse_get_active_tab", browser=browser)
@@ -2296,6 +2360,7 @@ class ToolRegistry:
                 "onglet precis. browser=None choisit automatiquement."
             ),
         )
+        @self._desktop_access
         async def browse_list_tabs(browser: str | None = None) -> dict:
             """List the tabs of a browser's front window."""
             debug_live("tool_call", tool="browse_list_tabs", browser=browser)
@@ -2323,6 +2388,7 @@ class ToolRegistry:
                 "browser=None choisit automatiquement."
             ),
         )
+        @self._desktop_access
         async def browse_activate_tab(
             query: str | None = None,
             index: int | None = None,
@@ -2360,6 +2426,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("capture_screen")
+        @self._desktop_access
         async def capture_screen(
             path: str | None = None,
             display: int | None = None,
@@ -2387,6 +2454,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("capture_region")
+        @self._desktop_access
         async def capture_region(
             x: int,
             y: int,
@@ -2425,6 +2493,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("capture_window", "app_name")
+        @self._desktop_access
         async def capture_window(
             app_name: str | None = None,
             path: str | None = None,
@@ -2454,6 +2523,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled('describe_screen')
+        @self._desktop_access
         async def describe_screen(
             target: str = "window",
             app_name: str | None = None,
@@ -2485,6 +2555,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled('ask_about_screen')
+        @self._desktop_access
         async def ask_about_screen(
             question: str,
             target: str = "window",
@@ -2525,6 +2596,7 @@ class ToolRegistry:
             ),
         )
         @self._journaled("read_whatsapp_conversation")
+        @self._desktop_access
         async def read_whatsapp_conversation(question: str | None = None) -> dict:
             """Read the open WhatsApp conversation via vision (opt-in)."""
             guard = self._vision_guard("read_whatsapp_conversation")
@@ -2673,45 +2745,45 @@ class ToolRegistry:
                 "fin. N'utilise PAS ce tool pour une demande simple ou un enchainement "
                 "court que tu peux faire directement avec tes autres tools (volume, "
                 "media, ouvrir une app ou un site, envoyer un message). goal : "
-                "l'objectif complet et autonome, en francais."
+                "l'objectif complet et autonome, en francais. read_only=true pour une recherche sans action sur le Mac ; seuls les outils de lecture autorises seront disponibles. Sinon la mission reserve le bureau et attend son tour. Jusqu'a deux missions executent en parallele, six demandes actives maximum. Le retour contient task_id."
             ),
         )
         @self._journaled("run_task")
-        async def run_task(goal: str) -> dict:
+        async def run_task(goal: str, read_only: bool = False) -> dict:
             """Start a multi-step planner task in the background."""
             debug_live(
                 "tool_call",
                 tool="run_task",
                 goal_length=len(goal) if isinstance(goal, str) else None,
             )
-            return self.tasks.start(goal)
+            return self.tasks.start(goal, read_only=read_only)
 
         @function_tool(
             name="task_status",
             description=(
                 "Donne l'avancement de la tache en arriere-plan (en cours, nombre "
                 "d'etapes, duree) ou le resultat de la derniere tache. Utilise ce "
-                "tool pour 'ou en est la tache', 'c'est bientot fini ?'."
+                "tool pour 'ou en est la tache', 'c'est bientot fini ?'. Sans task_id, liste les missions. Avec task_id, cible exactement cette mission."
             ),
         )
-        async def task_status() -> dict:
+        async def task_status(task_id: str | None = None) -> dict:
             """Report the background task progress or last result."""
             debug_live("tool_call", tool="task_status")
-            return self.tasks.status()
+            return self.tasks.status(task_id)
 
         @function_tool(
             name="cancel_task",
             description=(
                 "Annule la tache en arriere-plan quand l'utilisateur dit stop, "
                 "annule ou laisse tomber pendant qu'une tache tourne. Elle s'arrete "
-                "avant l'etape suivante."
+                "avant l'etape suivante. Fournis task_id si plusieurs missions sont actives. Sans identifiant et avec plusieurs missions, demande laquelle annuler ; ne devine jamais."
             ),
         )
         @self._journaled("cancel_task")
-        async def cancel_task() -> dict:
+        async def cancel_task(task_id: str | None = None) -> dict:
             """Request cancellation of the running background task."""
             debug_live("tool_call", tool="cancel_task")
-            return self.tasks.cancel()
+            return self.tasks.cancel(task_id)
 
         @function_tool(
             name="save_task_procedure",
@@ -3322,11 +3394,14 @@ class ToolRegistry:
         # also gets web_answer, a blocking web search kept out of the voice
         # tool set (the voice uses the background search_the_web instead).
         self.planner_tools = tools + [web_answer]
+        if not hasattr(self, "desktop_gate"):
+            self.desktop_gate = DesktopGate()
         self.tasks = TaskManager(
             lambda: PlannerEngine(
                 self.planner_model or build_planner_model(), self.planner_tools
             ),
             on_finished=self._on_task_finished,
+            desktop_gate=self.desktop_gate,
         )
         return tools
 
@@ -3731,4 +3806,5 @@ def create_live_registry(
         context_store=context_store,
         planner_model=planner_model,
     )
+
 

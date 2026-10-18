@@ -13,7 +13,7 @@ LABELS = {
     'schedule_message': 'Message planifié', 'prepare_send_message': 'Message',
     'confirm_action': 'Confirmation', 'cancel_action': 'Annulation',
     'run_task': 'Tâche', 'task_status': 'Tâche', 'cancel_task': 'Tâche',
-    'remember_context': 'Mémoire', 'capture_screen': 'Capture d’écran', 'ask_about_screen': 'Analyse d’écran',
+    'remember_context': 'Mémoire', 'recall': 'Mémoire', 'recent_activity': 'Activité', 'capture_screen': 'Capture d’écran', 'ask_about_screen': 'Analyse d’écran',
     'describe_screen': 'Analyse d’écran', 'capture_window': 'Capture de fenêtre', 'capture_region': 'Capture de zone',
     'get_volume': 'Volume', 'set_volume': 'Volume', 'browse_open_url': 'Navigateur',
 }
@@ -23,6 +23,7 @@ STATUS_TEXT = {
     'cancelled': 'Annulée', 'unknown': 'Résultat indisponible',
 }
 TASK_TEXT = {
+    'queued': 'En attente de ressources',
     'running': 'Tâche en cours', 'cancelling': 'Annulation demandée',
     'completed': 'Tâche terminée', 'cancelled': 'Tâche annulée',
     'needs_confirmation': 'Action préparée · accord vocal requis', 'needs_clarification': 'Précision vocale attendue',
@@ -31,6 +32,7 @@ TASK_TEXT = {
 }
 SCREEN_TOOLS = frozenset({'describe_screen', 'ask_about_screen', 'capture_screen', 'capture_window', 'capture_region'})
 MISSION_GUIDANCE = {
+    'queued': 'Cette mission attend une place ou la libération du bureau. Aucune action n’a encore été lancée.',
     'running': 'Jarvis traite votre objectif. Les étapes apparaissent après leur exécution.',
     'cancelling': 'Annulation demandée. L’action déjà lancée peut encore se terminer.',
     'completed': 'Le planificateur a terminé. Consultez les états des étapes pour vérifier les effets confirmés.',
@@ -174,6 +176,8 @@ def project_task(snapshot):
     status = snapshot.get('status')
     return {'type': 'task_progress', 'id': plain(snapshot['id'], 80),
             'objective': plain(snapshot.get('objective'), 300),
+            'read_only': snapshot.get('read_only') is True,
             'current': LABELS.get(snapshot.get('current_tool'), 'Outil Jarvis') if snapshot.get('current_tool') else '',
             'status': status if status in TASK_TEXT else 'unknown', 'steps': steps,
             'step_count': len(raw_steps) if isinstance(raw_steps, list) else 0}
+

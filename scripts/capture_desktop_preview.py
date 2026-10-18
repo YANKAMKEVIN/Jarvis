@@ -19,7 +19,7 @@ def main():
     from PySide6.QtGui import QColor, QPainter, QPixmap
     from PySide6.QtWidgets import QApplication, QLabel
     from jarvis.desktop.app import Controller, DesktopShell, STYLE
-    from jarvis.desktop.presentation import project_activity
+    from jarvis.desktop.presentation import project_activity, project_task
 
     class Settings:
         def value(self, key, default=None): return default
@@ -101,6 +101,24 @@ def main():
             controller.voice_event(project_activity('describe_screen', None, 'sample-screen-busy', 'started'))
             shell.full.navigate(0)
             save(shell.full, 'screen-observation.png')
+            controller.screen_operations.clear()
+            controller.voice_state = 'thinking'
+            missions = [project_task({'id': 'research-' + str(i), 'read_only': True,
+                'objective': objective, 'status': 'running', 'current_tool': 'web_answer',
+                'steps': [{'tool': 'recall', 'ok': True}]}) for i, objective in enumerate([
+                    'Exemple · Comparer deux solutions audio',
+                    'Exemple · Préparer une synthèse sur un sujet'])]
+            controller.voice_event({'type': 'missions', 'missions': missions})
+            shell.show_full()
+            shell.full.navigate(0)
+            save(shell.full, 'assistant-missions.png')
+            shell.show_compact()
+            save(shell.compact, 'compact-missions.png')
+            missions.append(project_task({'id': 'queued', 'objective': 'Exemple · Ranger mes documents',
+                'status': 'queued', 'steps': []}))
+            controller.voice_event({'type': 'missions', 'missions': missions})
+            shell.show_full()
+            save(shell.full, 'missions-queue.png')
     finally:
         shell.finish_transfer()
         for window in (shell.full, shell.compact, shell.orb_window):

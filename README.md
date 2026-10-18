@@ -297,6 +297,10 @@ ni fil de messages. Les missions présentent leur objectif, l’outil en cours e
 leurs bilans ; l’analyse d’écran à la demande dispose d’un indicateur et d’une carte de résultat.
 La mission en cours apparaît à côté de la sphère dans Assistant, avec un résumé
 cliquable sous l’orbe en mode compact et un petit bilan à la fin.
+Deux cartes de mission peuvent être suivies en parallèle : recherches avec
+outils de lecture limités, missions sur le bureau mises en file, annulation
+par identifiant et sélection en mode compact. Jusqu’à deux exécutions et six
+demandes vivantes, dans la même session vocale.
 
 Installation :
 

@@ -296,6 +296,30 @@ def test_real_task_progress_bridge_and_cancellation_request_are_separate_from_au
     asyncio.run(scenario())
 
 
+def test_multi_mission_bridge_preserves_each_cancellation_identifier():
+    async def scenario():
+        c = components()
+        class Tasks:
+            requests = []
+            def presentations(self):
+                return [{'id': key, 'objective': key, 'status': 'running', 'steps': []} for key in ['first', 'second']]
+            def cancel(self, task_id): self.requests.append(task_id)
+        c.assistant.registry.tasks = Tasks()
+        events = []
+        runtime = LiveRuntime(events.append, factory=lambda: c, prepare=lambda: None)
+        task = asyncio.create_task(runtime.run())
+        await until(lambda: any(e.get('type') == 'missions' for e in events))
+        runtime.cancel_task('second')
+        runtime.cancel_task('first')
+        await until(lambda: c.assistant.registry.tasks.requests == ['second', 'first'])
+        snapshot = next(e for e in events if e.get('type') == 'missions')
+        assert [m['id'] for m in snapshot['missions']] == ['first', 'second']
+        assert c.session.interrupts == 0
+        runtime.stop()
+        await asyncio.wait_for(task, 1)
+    asyncio.run(scenario())
+
+
 def test_registry_events_are_not_duplicated_by_sdk_receipts():
     events = []
     runtime = LiveRuntime(events.append)
@@ -349,3 +373,4 @@ def test_selected_devices_are_configured_before_connection():
         runtime.stop()
         await task
     asyncio.run(scenario())
+

@@ -56,7 +56,7 @@ class DetailPanel(QWidget):
     def render(self):
         c = self.controller
         can_cancel = bool(c.voice_worker) and c.voice_state not in {'starting', 'stopping', 'error'}
-        signature = repr((c.task, c.mission_history if self.activity else None, c.activity if self.activity else c.cards, can_cancel))
+        signature = repr((c.mission_list(), c.task, c.mission_history if self.activity else None, c.activity if self.activity else c.cards, can_cancel))
         if signature == self.signature:
             return
         self.signature = signature
@@ -67,7 +67,9 @@ class DetailPanel(QWidget):
                 widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
-        missions = ([c.task] if c.task else []) + (list(reversed(c.mission_history.values())) if self.activity else [])
+        active = [m for m in c.mission_list() if m['status'] in {'queued', 'running', 'cancelling', 'needs_confirmation', 'needs_clarification'}]
+        completed = [m for m in c.mission_list() if m not in active]
+        missions = (active + list(reversed(completed))[:4]) if self.activity and c.missions else ([c.task] if c.task else []) + (list(reversed(c.mission_history.values())) if self.activity else [])
         for mission_index, task in enumerate(missions):
             frame, row = box()
             row.addWidget(text('MISSION ACTUELLE' if mission_index == 0 else 'MISSION PRÉCÉDENTE · CETTE SESSION', 'eyebrow'))
@@ -82,12 +84,12 @@ class DetailPanel(QWidget):
             if task['step_count'] > len(task['steps']):
                 row.addWidget(text(f"{len(task['steps'])} premières étapes affichées sur {task['step_count']}.", 'subtitle'))
             row.addWidget(text(MISSION_GUIDANCE.get(task['status'], MISSION_GUIDANCE['unknown']), 'subtitle'))
-            if mission_index == 0 and task['status'] in {'running', 'cancelling'}:
+            if task['status'] in {'queued', 'running', 'cancelling'}:
                 row.addWidget(text('Une action déjà lancée peut finir avant l’arrêt.', 'subtitle'))
                 cancel = QPushButton('Annulation demandée…' if task['status'] == 'cancelling' else 'Annuler la tâche')
                 cancel.setObjectName('cancelTask')
-                cancel.setEnabled(task['status'] == 'running' and can_cancel and not c.demo)
-                cancel.clicked.connect(c.cancel_task)
+                cancel.setEnabled(task['status'] in {'queued', 'running'} and can_cancel and not c.demo)
+                cancel.clicked.connect(lambda checked=False, identifier=task['id']: c.cancel_task(identifier))
                 row.addWidget(cancel)
             self.rows.addWidget(frame)
         entries = list(c.activity.values() if self.activity else c.cards.values())
@@ -125,5 +127,6 @@ class DetailPanel(QWidget):
             self.rows.addWidget(frame)
         self.rows.addStretch()
         has_activity = bool(entries or c.task or c.mission_history) if self.activity else bool(entries)
-        busy = self.activity and (any(e['status'] == 'running' for e in entries) or bool(c.task and c.task['status'] in {'running', 'cancelling'}))
+        busy = self.activity and (any(e['status'] == 'running' for e in entries) or any(m['status'] in {'queued', 'running', 'cancelling'} for m in c.mission_list()))
         self.clear.setEnabled(has_activity and (not self.activity or not busy))
+

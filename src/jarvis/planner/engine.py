@@ -206,6 +206,8 @@ class PlannerEngine:
             except Exception as error:
                 return TaskOutcome("failed", f"Erreur du modele : {error}", steps)
 
+            if cancel.is_set():
+                return TaskOutcome("cancelled", "Tache annulee a la demande.", steps)
             if not turn.tool_calls:
                 summary = turn.text or "Tache terminee, sans resume du modele."
                 return TaskOutcome("completed", summary, steps)
@@ -341,4 +343,5 @@ class PlannerEngine:
         if len(text) > MAX_TOOL_RESULT_CHARS:
             text = text[:MAX_TOOL_RESULT_CHARS] + "... (tronque)"
         return text
+
 

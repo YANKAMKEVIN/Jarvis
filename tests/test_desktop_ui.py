@@ -36,6 +36,90 @@ def make_shell(app, monkeypatch, demo=False):
     return controller, DesktopShell(app, controller, settings=Settings())
 
 
+def test_multiple_mission_cards_cancel_by_id_and_compact_cycles_all_missions(app, monkeypatch):
+    import sys
+    from unittest.mock import Mock
+    from jarvis.desktop.presentation import project_task
+    errors = []
+    monkeypatch.setattr(sys, 'excepthook', lambda *args: errors.append(args))
+    c, shell = make_shell(app, monkeypatch)
+    c.reduced_motion = True
+    c.voice_worker = Mock()
+    c.voice_state = 'listening'
+    try:
+        shell.show_full()
+        missions = [project_task({'id': str(i), 'objective': 'Objectif ' + str(i),
+            'status': 'running' if i < 2 else 'queued', 'current_tool': 'web_answer' if i < 2 else None, 'steps': []}) for i in range(3)]
+        c.voice_event({'type': 'missions', 'missions': missions})
+        app.processEvents()
+        deck = shell.full.assistant.mission
+        assert len([p for p in deck.panels if p.isVisible()]) == 2
+        assert '3 missions actives' in deck.count.text() and '1 autres' in deck.count.text()
+        c.cancel_task()
+        c.voice_worker.cancel_task.assert_not_called()
+        deck.panels[1].cancel.click()
+        c.voice_worker.cancel_task.assert_called_once_with('1')
+        shell.show_compact()
+        compact = shell.compact.assistant.mission
+        seen = set()
+        for _ in range(3):
+            seen.add(c.selected_mission_id)
+            compact.count.click()
+        assert seen == {'0', '1', '2'}
+        compact.summary.click()
+        assert shell.full.pages.currentIndex() == 2
+        c.voice_event({'type': 'state', 'state': 'error'})
+        assert all(m['status'] == 'unknown' for m in c.missions.values())
+        assert not errors
+    finally:
+        c.voice_worker = None
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_multi_mission_snapshots_keep_other_running_mission_visible_after_completion(app, monkeypatch):
+    from jarvis.desktop.presentation import project_task
+    c, shell = make_shell(app, monkeypatch)
+    c.reduced_motion = True
+    def snapshot(a, b):
+        c.voice_event({'type': 'missions', 'missions': [project_task({'id': identifier,
+            'objective': identifier, 'status': state, 'steps': []}) for identifier, state in [('a', a), ('b', b)]]})
+    try:
+        shell.show_full()
+        snapshot('running', 'queued')
+        assert c.task['id'] == 'a'
+        snapshot('completed', 'running')
+        assert c.task['id'] == 'b' and c.task['status'] == 'running'
+        assert shell.full.assistant.mission.panels[0].bound_task['id'] == 'b'
+        c.clear_activity()
+        assert c.missions
+        snapshot('completed', 'cancelled')
+        assert c.task['status'] == 'cancelled'
+        assert not shell.full.assistant.mission.expanded
+        c.clear_activity()
+        assert not c.missions and c.task is None
+    finally:
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_two_mission_cards_fit_small_window(app, monkeypatch):
+    from jarvis.desktop.presentation import project_task
+    c, shell = make_shell(app, monkeypatch)
+    c.reduced_motion = True
+    try:
+        shell.full.resize(800, 730)
+        shell.show_full()
+        c.voice_event({'type': 'missions', 'missions': [project_task({'id': str(i),
+            'objective': 'Un objectif très détaillé ' * 20, 'status': 'running',
+            'current_tool': 'web_answer', 'steps': [{'tool': 'web_answer', 'ok': True}] * 3}) for i in range(2)]})
+        panel = shell.full.assistant
+        wait_until(app, lambda: panel.mission.geometry().right() < panel.width())
+        assert shell.full.width() == 800
+        assert panel.controls.geometry().bottom() < panel.height()
+        assert all(p.cancel.isVisible() for p in panel.mission.panels)
+    finally:
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
 def test_assistant_mission_is_beside_orb_then_becomes_dismissible_bilan(app, monkeypatch):
     from PySide6.QtCore import QPoint
     from jarvis.desktop.presentation import project_task

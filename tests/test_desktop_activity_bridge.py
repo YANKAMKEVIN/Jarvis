@@ -44,7 +44,10 @@ def test_planner_progress_reports_cooperative_cancellation_before_actual_end():
         manager = TaskManager(Engine)
         assert manager.progress() is None
         assert manager.start('PRIVATE_GOAL')['task_started']
-        await asyncio.sleep(0)
+        for _ in range(20):
+            if manager.progress()['status'] == 'running':
+                break
+            await asyncio.sleep(0.01)
         first = manager.progress()
         assert first['status'] == 'running' and first['step_count'] == 1
         manager.cancel()
@@ -150,3 +153,4 @@ def test_mission_presentation_tracks_inflight_tool_and_excludes_result_text():
         assert snapshot['current_tool'] is None and snapshot['status'] == 'completed'
         assert 'PRIVATE' not in str(snapshot)
     asyncio.run(scenario())
+

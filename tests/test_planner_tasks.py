@@ -88,7 +88,7 @@ class TaskManagerTest(unittest.TestCase):
         self.assertEqual(self.finished[0][0], "Fais quelque chose")
         self.assertEqual(manager.status()["last_task"]["summary"], "Fait.")
 
-    def test_only_one_task_at_a_time_and_status_while_running(self):
+    def test_second_desktop_mission_is_queued_and_status_lists_both(self):
         release = threading.Event()
 
         def blocking(messages):
@@ -108,9 +108,11 @@ class TaskManagerTest(unittest.TestCase):
 
         second, status = asyncio.run(scenario())
 
-        self.assertEqual(second["error_code"], "task_already_running")
+        self.assertTrue(second["task_started"])
+        self.assertEqual(len(status["tasks"]), 2)
         self.assertTrue(status["running"])
-        self.assertEqual(status["goal"], "tache 1")
+        self.assertEqual(status["tasks"][0]["goal"], "tache 1")
+        self.assertEqual(status["tasks"][1]["state"], "queued")
         self.assertEqual(manager.status()["running"], False)
 
     def test_cancel_stops_the_task(self):
@@ -418,3 +420,4 @@ class ProcedureToolTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

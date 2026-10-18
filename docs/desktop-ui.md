@@ -130,6 +130,61 @@ Captures réelles Qt, avec mission simulée et commandes vocales désactivées :
 ![Résumé dans le compagnon compact](screenshots/compact-mission.png)
 ![Bilan après la mission](screenshots/assistant-mission-bilan.png)
 
+## Plusieurs missions et file d’attente
+
+Le moteur accepte six demandes vivantes au maximum, avec deux exécutions
+simultanées. Chaque mission possède son identifiant, ses étapes, son état,
+son résultat et son annulation. Une mission **En attente de ressources** n’a
+encore lancé aucune action. L’attente ne consomme pas le budget d’exécution
+du planificateur. Une septième demande est refusée, sans remplacer les autres.
+
+Deux politiques sont appliquées par le moteur :
+
+- `run_task(goal, read_only=true)` réserve une place de recherche. Son jeu
+  d’outils est réduit aux lectures autorisées : réponse web, mémoire/activité,
+  liste/recherche/métadonnées de fichiers et certains états système. Aucun outil
+  de navigateur, presse-papiers, capture, souris, clavier, préparation d’envoi
+  ou modification de fichier n’est accessible dans ce mode, même si le modèle
+  le réclame. Deux recherches peuvent réellement se chevaucher.
+- Le mode par défaut réserve le bureau pendant tout le plan, y compris entre
+  deux étapes. Les autres missions de ce mode attendent leur tour. Une recherche
+  peut utiliser l’autre place pendant cette attente. Les commandes vocales
+  directes qui touchent au bureau partagent ce verrou : si une mission l’utilise,
+  elles retournent `desktop_busy` sans exécuter l’action. Elles ne sont pas
+  silencieusement rejouées après la mission.
+
+Le verrou concerne la session Jarvis, pas les autres processus ni les actions
+manuelles de l’utilisateur. Les verrous internes des outils et les confirmations
+vocales existantes restent en place. Une préparation d’envoi termine le plan en
+attente d’accord et libère le bureau ; sa confirmation ultérieure garde ses
+vérifications habituelles. Une annulation ne revient pas sur les effets passés.
+
+Dans Assistant, deux cartes au maximum restent visibles à droite de la sphère,
+avec un format plus court lorsqu’elles sont plusieurs. Le compteur ouvre
+**Activité** pour les autres missions. Chaque bouton **Annuler** vise uniquement
+l’identifiant de sa carte. En compact, **N missions actives · Suivante** permet
+de choisir la mission dont le résumé est affiché. Les attentes de précision ou
+d’accord sont incluses dans les missions à suivre, sans occuper une place
+d’exécution une fois le plan arrêté.
+
+`task_status()` liste les missions ; `task_status(task_id)` en cible une.
+`cancel_task(task_id)` demande son annulation. Sans identifiant et avec plusieurs
+missions en cours/en attente, l’annulation est refusée comme ambiguë : Jarvis
+doit demander laquelle. Annuler une mission en file l’empêche de démarrer.
+Fermer la session annule toutes les missions coopérativement, attend leur
+nettoyage et ne laisse pas les missions en file démarrer ensuite.
+
+Le moteur conserve au maximum dix snapshots récents dans la session ; Activité
+affiche les missions à suivre et jusqu’à quatre bilans terminés. Une reconnexion
+conserve les éléments affichés pour vérification mais crée un moteur neuf,
+sans reprise ni relance automatique.
+
+Captures réelles Qt avec missions simulées, sans modèle, micro ni outils natifs :
+
+![Deux missions dans Assistant](screenshots/assistant-missions.png)
+![Sélection d’une mission en compact](screenshots/compact-missions.png)
+![Missions supplémentaires](screenshots/missions-queue.png)
+
 **Activité** conserve les trente dernières actions de cette session. Les actions
 instrumentées du registre annoncent leur début et leur retour ; les lectures
 non instrumentées apparaissent après le retour SDK. Le planificateur fournit ses
@@ -397,8 +452,22 @@ masquées, la distinction capture/écoute, l’accès aux réglages et Quitter p
 un test micro local.
 Tester aussi une observation de fenêtre nommée, une vision désactivée, un refus
 de capture macOS, une mission en cours puis terminée et ses bilans après reconnexion.
+Pour les missions multiples, tester deux recherches indépendantes, deux missions
+qui pilotent le bureau (la seconde attend), l’annulation ciblée de celle en
+attente, une demande vocale ambiguë d’annulation et Quitter avec plusieurs missions.
 
-Pour le panneau intégré à Assistant : **29 tests UI, menu et présentation
+Pour le lot multi-missions : **90 tests ciblés passants** (83 desktop et 7 tests
+de concurrence/ressources). Les scénarios vérifient le chevauchement réel de
+recherches simulées, le verrou du bureau, l’absence d’interférence d’une commande
+directe, le refus d’outils hors lecture, la limite de file, l’annulation ciblée,
+la fermeture globale, les identifiants transmis au worker et les deux cartes.
+Suite complète dans cet environnement : **879 tests et 149 sous-tests passants**,
+avec exactement les mêmes **210 échecs** que le snapshot avant modification
+(207 liés aux frameworks macOS absents, 3 à la dépendance PDF `pypdf` absente).
+Aucun nouvel identifiant en échec. L’audio, les effets réels sur le Mac et les
+permissions restent à valider sur macOS ; la suite complète Linux n’est pas verte.
+
+Pour le lot précédent du panneau intégré à Assistant : **29 tests UI, menu et présentation
 passants**, dont 4 nouveaux contrôlant le placement, le bilan, la navigation,
 l’annulation et la petite fenêtre. Vérification visuelle hors écran des captures
 complète et compacte ; l’audio et l’intégration native macOS ne sont pas testés
