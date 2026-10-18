@@ -52,6 +52,12 @@ def main():
         painter.end()
         if not canvas.save(str(args.output / 'orb-only.png')):
             raise RuntimeError('Cannot write orb screenshot')
+        shell.show_full()
+        shell.full.navigate(3)
+        app.processEvents()
+        settings = shell.full.pages.widget(3)
+        settings.verticalScrollBar().setValue(settings.verticalScrollBar().maximum())
+        save(shell.full, 'audio-settings.png')
         if args.samples:
             controller.voice_event(project_activity('list_calendar_events', {'ok': True, 'events': [
                 {'title': 'Exemple · Point équipe', 'start': '2026-10-18T10:00'},

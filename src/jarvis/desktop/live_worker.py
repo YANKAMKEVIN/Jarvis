@@ -32,3 +32,6 @@ class LiveWorker(QThread):
 
     def cancel_task(self):
         self.runtime.cancel_task()
+
+    def set_devices(self, input_choice, output_choice):
+        self.runtime.set_devices(input_choice, output_choice)

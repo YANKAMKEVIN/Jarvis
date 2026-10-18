@@ -2,16 +2,20 @@
 from __future__ import annotations
 
 import signal
+import json
 from collections import OrderedDict
 from datetime import datetime
 
-from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QTimer, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSettings, QTimer, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QMainWindow,
-    QGraphicsOpacityEffect, QMenu, QPushButton, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
+    QGraphicsOpacityEffect, QMenu, QPushButton, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
+from jarvis.desktop.audio_settings import AudioSettings
+from jarvis.desktop.devices import valid_choice
+from jarvis.desktop.hotkey import GlobalHotkey
 from jarvis.desktop.visuals import Orb
 from jarvis.desktop.panels import DetailPanel
 from jarvis.desktop.orb_window import OrbWindow
@@ -51,6 +55,10 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QCheckBox { spacing: 10px; padding: 8px 0; }
 QCheckBox::indicator { width: 15px; height: 15px; border: 1px solid #52708a; border-radius: 4px; background: #0b1825; }
 QCheckBox::indicator:checked { background: #87dcff; border-color: #b5edff; }
+QComboBox { background: #132537; border: 1px solid #31495f; border-radius: 8px; padding: 7px; min-height: 18px; }
+QComboBox QAbstractItemView { background: #132537; color: #dce8f6; selection-background-color: #29485f; }
+QProgressBar { background: #192c3d; border: 1px solid #314b60; border-radius: 4px; min-height: 8px; max-height: 8px; }
+QProgressBar::chunk { background: #87d9ff; border-radius: 3px; }
 QToolTip { background: #23384f; color: #e1efff; border: 1px solid #527494; }
 QMenu { background: #152235; border: 1px solid #344d67; }
 QMenu::item { padding: 8px 20px; }
@@ -90,6 +98,8 @@ class Controller(QObject):
     audio_levels = Signal(float, float)
     exit_ready = Signal()
     details_requested = Signal()
+    audio_event = Signal(object)
+    devices_changed = Signal()
 
     def __init__(self, demo=False):
         super().__init__()
@@ -106,11 +116,76 @@ class Controller(QObject):
         self.cards = OrderedDict()
         self.activity = OrderedDict()
         self.task = None
+        self.input_choice = self.output_choice = None
+        self.device_config_invalid = False
+        self.audio_worker = None
+        self.audio_job_kind = None
+        self.audio_job_state = "idle"
+        self.local_mic_open = False
+        self.can_reconnect = False
+        self.reconnecting = False
+        self.microphone_muted = False
+        self.user_stop_requested = False
+        self.hotkey_enabled = True
+        self.hotkey_active = False
+        self.hotkey_message = 'Raccourci local uniquement.'
         self.tool_notice = ""
         self.tool_timer = QTimer(self)
         self.tool_timer.setSingleShot(True)
         self.tool_timer.setInterval(6000)
         self.tool_timer.timeout.connect(self.clear_tool_notice)
+
+    def set_devices(self, input_choice, output_choice):
+        if self.voice_worker is not None or self.audio_worker is not None:
+            return
+        if any(choice is not None and not valid_choice(choice) for choice in (input_choice, output_choice)):
+            return
+        self.input_choice, self.output_choice = input_choice, output_choice
+        self.device_config_invalid = False
+        self.devices_changed.emit()
+        self.changed.emit()
+
+    def start_audio_job(self, kind):
+        if self.demo or self.voice_worker is not None or self.audio_worker is not None:
+            return
+        if kind not in {'scan', 'microphone', 'speaker'}:
+            return
+        if self.device_config_invalid and kind != 'scan':
+            self.audio_event.emit({'type': 'audio_test', 'state': 'error', 'message': 'Choisissez à nouveau les périphériques avant le test.'})
+            return
+        from jarvis.desktop.audio_settings import AudioJob
+        worker = AudioJob(kind, self.input_choice, self.output_choice, parent=self)
+        self.audio_worker = worker
+        self.audio_job_kind = kind
+        self.audio_job_state = "preparing"
+        worker.event.connect(self.handle_audio_event)
+        worker.finished.connect(lambda: self.audio_finished(worker))
+        self.changed.emit()
+        self.audio_event.emit({'type': 'audio_test', 'state': 'preparing',
+                               'message': 'Lecture des périphériques…' if kind == 'scan' else 'Préparation du test audio local…'})
+        worker.start()
+
+    def handle_audio_event(self, event):
+        if event.get('type') == 'audio_test':
+            self.audio_job_state = event['state']
+            self.local_mic_open = event['state'] == 'microphone'
+            self.changed.emit()
+        self.audio_event.emit(event)
+
+    def stop_audio_job(self):
+        if self.audio_worker is not None:
+            self.audio_worker.stop()
+
+    def audio_finished(self, worker):
+        if self.audio_worker is worker:
+            self.audio_worker = None
+            self.audio_job_kind = None
+            self.audio_job_state = "idle"
+            self.local_mic_open = False
+            self.changed.emit()
+        worker.deleteLater()
+        if self.quit_after_voice:
+            self.exit_ready.emit()
 
     def clear_cards(self):
         self.cards.clear()
@@ -135,15 +210,26 @@ class Controller(QObject):
         if self.voice_worker:
             self.voice_worker.set_sounds(enabled)
 
-    def start_voice(self):
-        if self.demo or self.voice_worker is not None:
+    def start_voice(self, reconnect=None):
+        if self.demo or self.voice_worker is not None or self.audio_worker is not None:
             return
+        if self.device_config_invalid:
+            self.voice_state, self.voice_error = 'error', 'Choix audio enregistré invalide. Sélectionnez vos périphériques dans Réglages.'
+            self.changed.emit()
+            return
+        reconnect = self.can_reconnect if reconnect is None else reconnect
+        self.reconnecting = bool(reconnect)
+        self.can_reconnect = False
+        self.user_stop_requested = False
+        if not reconnect:
+            self.microphone_muted = False
         from jarvis.desktop.live_runtime import VoiceSetupError, preload_live_plugins
         self.voice_state, self.voice_error = "starting", ""
         self.voice_turns = 0
-        self.cards.clear()
-        self.activity.clear()
-        self.task = None
+        if not reconnect:
+            self.cards.clear()
+            self.activity.clear()
+            self.task = None
         self.tool_timer.stop()
         self.tool_notice = ""
         self.changed.emit()
@@ -156,6 +242,10 @@ class Controller(QObject):
         from jarvis.desktop.live_worker import LiveWorker
         worker = LiveWorker(self)
         self.voice_worker = worker
+        if self.input_choice is not None or self.output_choice is not None:
+            worker.set_devices(self.input_choice, self.output_choice)
+        if self.microphone_muted:
+            worker.set_muted(True)
         if self.sounds_enabled:
             worker.set_sounds(True)
         self.voice_mic_open = False
@@ -166,6 +256,8 @@ class Controller(QObject):
         worker.start()
 
     def stop_voice(self):
+        self.user_stop_requested = True
+        self.can_reconnect = False
         if self.voice_worker is not None:
             self.voice_state = "stopping"
             self.voice_worker.stop()
@@ -216,6 +308,10 @@ class Controller(QObject):
             self.voice_mic_open = event.get("mic_open", False)
             self.input_suppressed = event.get("input_suppressed", False)
             self.voice_error = event.get("message", "")
+            if state == 'error':
+                self.can_reconnect = bool(event.get('retryable')) and not self.user_stop_requested
+            if state in {'listening', 'muted', 'speaking', 'thinking'}:
+                self.reconnecting = False
             if state in {'off', 'error'}:
                 for entry in self.activity.values():
                     if entry['status'] == 'running':
@@ -238,11 +334,12 @@ class Controller(QObject):
             self.exit_ready.emit()
 
     def toggle_microphone(self):
-        if self.voice_worker and self.voice_state not in {"starting", "stopping"}:
-            self.voice_worker.set_muted(self.voice_mic_open)
+        if self.voice_worker and self.voice_state not in {"starting", "stopping", "error"}:
+            self.microphone_muted = self.voice_mic_open
+            self.voice_worker.set_muted(self.microphone_muted)
 
     def interrupt_voice(self):
-        if self.voice_worker and self.voice_state not in {"starting", "stopping"}:
+        if self.voice_worker and self.voice_state not in {"starting", "stopping", "error"}:
             self.voice_worker.interrupt()
 
 
@@ -308,7 +405,7 @@ class VoicePanel(QWidget):
         active = c.voice_worker is not None
         state = c.voice_state
         has_details = bool(c.cards or c.task or c.activity)
-        self.hint_area.setCurrentIndex(1 if has_details else 0)
+        self.hint_area.setCurrentIndex(1 if has_details and state not in {"error", "starting"} else 0)
         self.details_button.setText(f'{len(c.cards)} carte(s) · Voir les détails →' if c.cards else
                                     'Suivre la tâche →' if c.task else 'Voir l’activité →')
         self.peek.setVisible(bool(c.cards) and not self.compact)
@@ -334,18 +431,35 @@ class VoicePanel(QWidget):
         if c.input_suppressed and state == "listening":
             self.status.setText("Reprise de l’écoute…")
             self.hint.setText("Un instant, le temps que la sortie audio se termine.")
+        if state == 'starting' and c.reconnecting:
+            self.status.setText('Reconnexion en cours…')
+            self.hint.setText('Une nouvelle conversation démarre, sans renvoyer vos demandes précédentes.')
+        elif state == 'error' and c.can_reconnect:
+            self.hint.setText('Reconnecter ouvre une nouvelle conversation. Vérifiez le résultat des actions précédentes dans Activité.')
+        elif state == 'error':
+            self.hint.setText('Vérifiez le message ci-dessous, puis réessayez ou ouvrez Réglages.')
         if c.tool_notice and not c.voice_error:
             self.hint.setText(c.tool_notice)
             self.hint.setStyleSheet("color: #bfe5f6; font-size: 12px; background: rgba(63, 106, 136, 35); border: 1px solid #284357; border-radius: 12px; padding: 5px;")
         else:
             self.hint.setStyleSheet("color: #94abc1; font-size: " + ("12px;" if self.compact else "14px;"))
-        self.voice_button.setText("Arrêt en cours…" if state == "stopping" else "Arrêter" if active else "Démarrer Jarvis")
-        self.voice_button.setEnabled(not c.demo and state not in {"starting", "stopping"})
+        self.voice_button.setText('Fermeture…' if state == 'error' and active else
+                                  'Arrêt en cours…' if state == 'stopping' else 'Arrêter' if active else
+                                  'Reconnecter' if c.can_reconnect else 'Réessayer' if state == 'error' else 'Démarrer Jarvis')
+        self.voice_button.setEnabled(not c.demo and c.audio_worker is None and state not in {"starting", "stopping"} and not (state == "error" and active))
         for control in (self.mic_button, self.interrupt_button):
             control.setVisible(active)
-            control.setEnabled(active and state not in {"starting", "stopping"})
+            control.setEnabled(active and state not in {"starting", "stopping", "error"})
         self.mic_button.setText("Couper le micro" if c.voice_mic_open else "Réactiver le micro")
-        if c.voice_error:
+        if c.audio_worker is not None:
+            self.status.setText('Micro en test local' if c.local_mic_open else 'Test audio local' if c.audio_job_kind != 'scan' else 'Périphériques audio')
+            self.hint_area.setCurrentIndex(0)
+            self.hint.setText('Arrêtez le test dans Réglages pour démarrer le vocal.')
+        if c.local_mic_open:
+            notice = 'Micro ouvert pour le test local · aucune voix envoyée à Gemini'
+        elif c.audio_worker is not None:
+            notice = 'Opération audio locale en cours · Gemini déconnecté'
+        elif c.voice_error:
             notice = c.voice_error
         elif c.demo:
             notice = "Démonstration visuelle · micro désactivé"
@@ -451,14 +565,33 @@ class DesktopWindow(QMainWindow):
             sounds.setChecked(controller.sounds_enabled)
             sounds.toggled.connect(self.set_sounds)
             settings_layout.addWidget(sounds)
-            settings_layout.addWidget(label("⌘⇧Espace : mode compact lorsque Jarvis est actif.", "subtitle"))
+            settings_layout.addWidget(label('PÉRIPHÉRIQUES ET TESTS LOCAUX', 'eyebrow'))
+            self.audio_settings = AudioSettings(controller)
+            settings_layout.addWidget(self.audio_settings)
+            self.hotkey_check = QCheckBox('Activer le raccourci global ⌘⇧Espace')
+            self.hotkey_check.setChecked(controller.hotkey_enabled)
+            self.hotkey_check.setEnabled(not controller.demo)
+            self.hotkey_check.toggled.connect(shell.set_global_hotkey)
+            settings_layout.addWidget(self.hotkey_check)
+            self.hotkey_status = label(controller.hotkey_message, 'subtitle')
+            settings_layout.addWidget(self.hotkey_status)
+            self.hotkey_retry = button('Réessayer le raccourci', shell.retry_hotkey)
+            settings_layout.addWidget(self.hotkey_retry)
+            def render_hotkey():
+                self.hotkey_status.setText(controller.hotkey_message)
+                self.hotkey_retry.setEnabled(controller.hotkey_enabled and not controller.hotkey_active and not controller.demo)
+            controller.changed.connect(render_hotkey)
             settings_layout.addStretch()
-            self.pages.addWidget(settings)
+            settings_scroll = QScrollArea()
+            settings_scroll.setWidgetResizable(True)
+            settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            settings_scroll.setWidget(settings)
+            self.pages.addWidget(settings_scroll)
             self.navigate(0)
         workspace.addWidget(self.pages, 1)
         row.addLayout(workspace, 1)
-        shortcut = QShortcut(QKeySequence("Ctrl+Shift+Space"), self)
-        shortcut.activated.connect(shell.show_compact)
+        self.shortcut = QShortcut(QKeySequence("Ctrl+Shift+Space"), self)
+        self.shortcut.activated.connect(shell.show_compact)
 
     def navigate(self, index):
         self.shell.finish_transfer()
@@ -490,6 +623,18 @@ class DesktopShell:
     def __init__(self, app, controller, settings=None):
         self.app, self.controller = app, controller
         self.settings = settings if settings is not None else QSettings("Jarvis", "Desktop")
+        controller.hotkey_enabled = self.settings.value('input/global_hotkey', True) in (True, 'true')
+        for key, attribute in (('audio/input_device', 'input_choice'), ('audio/output_device', 'output_choice')):
+            raw = self.settings.value(key)
+            if raw is not None:
+                try:
+                    choice = json.loads(raw) if isinstance(raw, str) else raw
+                    if choice is not None and not valid_choice(choice):
+                        raise ValueError('Invalid device preference')
+                    setattr(controller, attribute, choice)
+                except (TypeError, ValueError):
+                    controller.device_config_invalid = True
+        controller.devices_changed.connect(self.save_devices)
         controller.sounds_enabled = self.settings.value("audio/sounds", False) in (True, "true")
         controller.reduced_motion = self.settings.value("appearance/reduced_motion", controller.reduced_motion) in (True, "true")
         self.position_restored = False
@@ -523,6 +668,32 @@ class DesktopShell:
             self.tray.activated.connect(self.tray_activated)
             self.tray.show()
         app.setQuitOnLastWindowClosed(False)
+        self.hotkey = GlobalHotkey(self.show_compact, parent=controller,
+                                   demo=controller.demo or app.platformName() == 'offscreen')
+        self.hotkey.changed.connect(self.hotkey_changed)
+        self.hotkey.set_enabled(controller.hotkey_enabled)
+        app.aboutToQuit.connect(self.hotkey.close)
+        self.quit_guard = QuitGuard(self, app)
+        app.installEventFilter(self.quit_guard)
+
+    def save_devices(self):
+        self.settings.setValue('audio/input_device', json.dumps(self.controller.input_choice))
+        self.settings.setValue('audio/output_device', json.dumps(self.controller.output_choice))
+
+    def set_global_hotkey(self, enabled):
+        self.controller.hotkey_enabled = enabled
+        self.settings.setValue('input/global_hotkey', enabled)
+        self.hotkey.set_enabled(enabled)
+
+    def retry_hotkey(self):
+        self.hotkey.set_enabled(self.controller.hotkey_enabled)
+
+    def hotkey_changed(self):
+        self.controller.hotkey_active = self.hotkey.active
+        self.controller.hotkey_message = self.hotkey.message
+        for window in (self.full, self.compact, self.orb_window):
+            window.shortcut.setEnabled(not self.hotkey.active)
+        self.controller.changed.emit()
 
     def tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
@@ -623,11 +794,27 @@ class DesktopShell:
         self.finish_transfer()
         self.remember_companion()
         self.remember_orb()
-        if self.controller.voice_worker:
+        if self.controller.audio_worker:
+            self.controller.quit_after_voice = True
+            self.controller.stop_audio_job()
+        elif self.controller.voice_worker:
             self.controller.quit_after_voice = True
             self.controller.stop_voice()
         else:
             self.app.quit()
+
+
+class QuitGuard(QObject):
+    def __init__(self, shell, parent):
+        super().__init__(parent)
+        self.shell = shell
+
+    def eventFilter(self, watched, event):
+        c = self.shell.controller
+        if event.type() == QEvent.Type.Quit and (c.voice_worker or c.audio_worker):
+            self.shell.quit()
+            return True
+        return False
 
 
 def run(demo=False, compact=False, orb=False):

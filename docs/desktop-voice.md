@@ -61,7 +61,12 @@ open ~/Applications/Jarvis.app
    bouton permet ensuite de réactiver le micro. L’audio déjà envoyé reste envoyé.
 5. **Interrompre** coupe la réponse orale en cours. Cela n’annule pas une action
    système déjà lancée. Attendre ensuite la reprise de l’écoute avant de parler.
-6. **Arrêter** ferme les périphériques puis nettoie la session et ses
+6. Dans **Réglages**, choisir et tester les périphériques lorsque le vocal est
+   arrêté. Les tests sont locaux et n’ouvrent aucune connexion Gemini.
+7. Après une coupure, **Reconnecter** ouvre une nouvelle conversation sans rejouer
+   les demandes précédentes. Le micro coupé reste coupé ; vérifier les actions
+   déjà effectuées dans Activité avant de les redemander.
+8. **Arrêter** ferme les périphériques puis nettoie la session et ses
    tâches. Quitter l’application ou Ctrl+C demande le même arrêt propre avant
    de terminer le processus.
 

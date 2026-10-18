@@ -48,8 +48,9 @@ class FakeAudio:
     def clear_cue(self):
         self.cue_cleared = True
 
-    def open(self):
-        self.opened = self.mic_open = True
+    def open(self, microphone=True):
+        self.opened = True
+        self.mic_open = microphone
         if self.failure:
             raise RuntimeError("PRIVATE_AUDIO_DETAILS")
 
@@ -305,3 +306,46 @@ def test_registry_events_are_not_duplicated_by_sdk_receipts():
                               function_call_outputs=[NS(is_error=False, output='{"ok":true}')]))
     assert [e['status'] for e in events] == ['running', 'verified']
     assert events[0]['id'] == events[1]['id']
+
+
+def test_reconnect_is_a_fresh_runtime_without_replaying_tools_or_opening_muted_micro():
+    async def scenario():
+        first = components()
+        first_events = []
+        runtime = LiveRuntime(first_events.append, factory=lambda: first, prepare=lambda: None)
+        task = asyncio.create_task(runtime.run())
+        await until(lambda: runtime.ready)
+        first.session.handlers['close'](NS(error=None))  # Unexpected closure must be visible.
+        await asyncio.wait_for(task, 1)
+        assert first_events[-1]['state'] == 'error' and first_events[-1]['retryable']
+        assert first.audio.closed and first.session.closed
+        second = components()
+        second_events = []
+        fresh = LiveRuntime(second_events.append, factory=lambda: second, prepare=lambda: None)
+        fresh.set_muted(True)
+        new_task = asyncio.create_task(fresh.run())
+        await until(lambda: fresh.ready)
+        assert second is not first and not second.audio.mic_open
+        assert not any(e.get('mic_open') for e in second_events)
+        assert not any(e['type'] == 'activity' for e in second_events)
+        fresh.stop()
+        await asyncio.wait_for(new_task, 1)
+        assert second_events[-1]['state'] == 'off'
+    asyncio.run(scenario())
+
+
+def test_selected_devices_are_configured_before_connection():
+    async def scenario():
+        c = components()
+        chosen = []
+        c.audio.configure_devices = lambda a, b: chosen.append((a, b))
+        events = []
+        runtime = LiveRuntime(events.append, factory=lambda: c, prepare=lambda: None)
+        choice = {'name': 'Mic', 'hostapi': 'Core Audio'}
+        runtime.set_devices(choice, None)
+        task = asyncio.create_task(runtime.run())
+        await until(lambda: runtime.ready)
+        assert chosen == [(choice, None)]
+        runtime.stop()
+        await task
+    asyncio.run(scenario())

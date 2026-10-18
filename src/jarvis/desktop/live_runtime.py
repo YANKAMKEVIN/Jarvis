@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import uuid
 
 from jarvis.desktop.presentation import project_activity, project_task
+from jarvis.desktop.devices import AudioDeviceError
 
 
 class VoiceSetupError(Exception):
@@ -128,6 +129,11 @@ class LiveRuntime:
         self.cancel_task_requested = Event()
         self.observed_tools = set()
         self.last_task_snapshot = None
+        self.input_choice = self.output_choice = None
+        self.closing = False
+
+    def set_devices(self, input_choice, output_choice):
+        self.input_choice, self.output_choice = input_choice, output_choice
 
     def set_sounds(self, enabled):
         self.sounds_requested.set() if enabled else self.sounds_requested.clear()
@@ -169,9 +175,9 @@ class LiveRuntime:
                        "interrupted": bool(getattr(item, "interrupted", False))})
 
     def _error(self, event):
-        if not getattr(event.error, "recoverable", False):
+        if not self.closing and not self.stop_requested.is_set() and not getattr(event.error, "recoverable", False):
             self.failed = True
-            self.stop()
+            self.stop_requested.set()
 
     def _registry_activity(self, event):
         self.observed_tools.add(event['tool'])
@@ -195,8 +201,9 @@ class LiveRuntime:
                 self.emit(snapshot)
 
     def _closed(self, event):
-        self.failed = self.failed or getattr(event, "error", None) is not None
-        self.stop()
+        if not self.closing and not self.stop_requested.is_set():
+            self.failed = True
+            self.stop_requested.set()
 
     @staticmethod
     def _consume_interruption(task):
@@ -227,6 +234,9 @@ class LiveRuntime:
             setup_step("environment", self.prepare)
             self.components = self.factory()
             c = self.components
+            phase = "audio"
+            if self.input_choice is not None or self.output_choice is not None:
+                c.audio.configure_devices(self.input_choice, self.output_choice)
             if hasattr(c.assistant.registry, "set_activity_observer"):
                 c.assistant.registry.set_activity_observer(self._registry_activity)
             c.session.input.audio = c.audio.input
@@ -241,12 +251,12 @@ class LiveRuntime:
             if not started or self.stop_requested.is_set():
                 return
             phase = "audio"
-            c.audio.open()  # Micro state becomes active only after device start.
+            c.audio.open(microphone=not self.mute_requested.is_set())  # Never briefly reopen a muted microphone.
             self.ready = True
             sounds = self.sounds_requested.is_set()
             if sounds:
                 c.audio.play_cue("ready")
-            self.state("listening")
+            self.state("muted" if self.mute_requested.is_set() else "listening")
             phase = "session"
             from jarvis.live.prompts import LIVE_SESSION_GREETING
             c.session.generate_reply(instructions=LIVE_SESSION_GREETING)
@@ -254,6 +264,8 @@ class LiveRuntime:
             next_meter = 0.0
             next_task_poll = 0.0
             while not self.stop_requested.is_set():
+                if hasattr(c.audio, 'check_health'):
+                    c.audio.check_health()
                 if sounds != self.sounds_requested.is_set():
                     sounds = self.sounds_requested.is_set()
                     if not sounds:
@@ -292,7 +304,7 @@ class LiveRuntime:
                 await asyncio.sleep(0.05)
             if self.failed:
                 error_message = "La session Gemini s’est interrompue. Vérifiez la connexion, la clé et le modèle, puis relancez le vocal."
-        except VoiceSetupError as error:
+        except (VoiceSetupError, AudioDeviceError) as error:
             error_message = str(error)
         except Exception:
             error_message = {
@@ -302,6 +314,7 @@ class LiveRuntime:
                 "session": "La session vocale a rencontré un problème. Vérifiez la connexion et les périphériques audio.",
             }[phase]
         finally:
+            self.closing = True
             self.ready = False
             self.emit({"type": "audio_level", "input": 0.0, "output": 0.0})
             c = self.components
@@ -329,5 +342,8 @@ class LiveRuntime:
                         error_message = error_message or "La session vocale n’a pas pu être fermée correctement. Vérifiez les actions en cours."
             if self.failed and not error_message:
                 error_message = "La connexion Gemini s’est interrompue. Vérifiez la clé, le modèle et Internet."
-            self.emit({"type": "state", "state": "error" if error_message else "off",
-                       "mic_open": False, "message": error_message or ""})
+            final = {"type": "state", "state": "error" if error_message else "off",
+                     "mic_open": False, "message": error_message or ""}
+            if error_message:
+                final["retryable"] = phase in {"connection", "session"}
+            self.emit(final)

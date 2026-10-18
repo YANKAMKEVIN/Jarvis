@@ -290,7 +290,8 @@ Trois vues partagent la même session : orbe seul, compagnon compact et fenêtre
 complète, entièrement vocales : orbe, état d’écoute et commandes audio.
 Orbe réactif au son, capsule déplaçable avec position mémorisée, commandes
 discrètes et sons optionnels. Cartes d’agenda, rappels et réponses web, avec un
-suivi des actions et une annulation coopérative des tâches. Aucun champ de saisie
+suivi des actions et une annulation coopérative des tâches. Raccourci global
+macOS, choix/tests des périphériques et reconnexion explicite après coupure. Aucun champ de saisie
 ni fil de messages. Installation :
 
 ```bash

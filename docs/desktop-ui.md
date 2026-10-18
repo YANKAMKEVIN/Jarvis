@@ -176,8 +176,70 @@ menus, fermer la fenêtre demande la fermeture complète. `Ctrl+C` dans le termi
 demande aussi cet arrêt propre, même avec les animations réduites. `Échap` ne
 termine pas l’application.
 
-`⌘⇧Espace` sur Mac (`Ctrl+Shift+Space` ailleurs) ouvre le compagnon lorsque
-Jarvis est l’application active. Ce n’est pas encore un raccourci global.
+## Raccourci global
+
+Sur macOS, **⌘⇧Espace** fait apparaître le compagnon depuis une autre application,
+sans démarrer le vocal ni ouvrir le micro. Dans **Réglages**, l’option permet de
+l’activer ou le désactiver ; son état est mémorisé. Le message indique si
+l’enregistrement natif a réussi. Si la combinaison est réservée ou indisponible,
+vérifier les raccourcis macOS/autres applications puis utiliser **Réessayer le
+raccourci**. Le raccourci local reste disponible lorsque l’enregistrement global
+est inactif. Le raccourci est libéré à la fermeture.
+
+L’implémentation utilise une seule combinaison Carbon enregistrée exclusivement,
+avec filtrage de son identifiant ; elle ne lit pas les autres frappes. Les appels
+UI passent par un signal Qt en file d’attente. La démo et Qt offscreen n’installent
+aucun raccourci système ; hors macOS, seul le raccourci local est proposé.
+Le fonctionnement natif depuis une autre application doit être vérifié sur Mac.
+
+Référence des signatures/constantes : [en-tête Carbon du SDK Apple macOS](https://github.com/phracker/MacOSX-SDKs/blob/master/MacOSX10.15.sdk/System/Library/Frameworks/Carbon.framework/Versions/A/Frameworks/HIToolbox.framework/Versions/A/Headers/CarbonEvents.h).
+
+## Choix et tests audio
+
+Dans **Réglages**, arrêter le vocal puis utiliser **Actualiser** pour lire la
+liste des périphériques. Choisir le microphone et la sortie souhaités. Le choix
+est mémorisé par nom et système audio, puis résolu à chaque démarrage ; les indices
+PortAudio changeants ne sont pas enregistrés. Un périphérique absent ou ambigu
+ne bascule jamais silencieusement sur un autre. **Utiliser les périphériques
+système** rétablit explicitement le choix par défaut.
+
+- **Tester le micro** ouvre seulement l’entrée, montre son niveau réel et la ferme
+  au bout de cinq secondes ou avec **Arrêter le test**. Rien n’est enregistré ou
+  envoyé à Gemini.
+- **Tester la sortie** ouvre seulement la sortie et joue un bref signal local à
+  faible amplitude, puis ferme le périphérique. Le micro n’est pas ouvert.
+- Le niveau d’entrée peut aussi être consulté pendant la session vocale existante,
+  sans deuxième capture. Le réglage et les tests sont verrouillés pendant le vocal.
+- Les tests et le vocal sont exclusifs : démarrer l’un bloque l’autre jusqu’à la
+  fermeture du worker. Quitter pendant un test attend sa fermeture normale.
+- Pendant un test micro, la capsule et l’orbe indiquent **Test micro local**, et
+  distinguent cette capture de la voix transmise à Gemini.
+- Le format reste mono PCM16 à 24 kHz. Les tests détectent l’indisponibilité ou le
+  format non pris en charge. Un flux arrêté en cours de session est signalé au
+  lieu de laisser croire que Jarvis écoute encore.
+
+La recherche de périphériques et les tests sont exécutés hors du thread UI. La
+démo n’énumère et n’ouvre aucun périphérique. Les changements de périphériques
+se font session arrêtée, puis sont appliqués au prochain démarrage.
+
+## Reconnexion après coupure
+
+Une fermeture imprévue ou une erreur de connexion met fin à la session et ferme
+l’audio. Le bouton **Reconnecter** devient disponible après la fin du nettoyage.
+Il ouvre une nouvelle session après une action explicite ; aucune demande, action,
+transcription ou approbation de la session interrompue n’est renvoyée. Les cartes
+et l’activité précédentes restent consultables pour vérifier ce qui a déjà été
+fait. Les tâches sans résultat final restent marquées comme telles.
+
+Le micro coupé par l’utilisateur reste coupé à la reconnexion : même le démarrage
+du nouveau flux n’ouvre pas brièvement l’entrée. Les périphériques choisis sont
+à nouveau vérifiés. Une erreur de préparation ou de configuration propose
+**Réessayer**, avec son message utile. Un arrêt demandé ne déclenche pas de
+reconnexion automatique. Le SDK conserve sa gestion interne des erreurs
+récupérables ; le bouton traite la fin effective de la session desktop.
+
+La nouvelle conversation n’efface pas la mémoire durable existante de Jarvis ;
+elle ne rejoue pas le contexte conversationnel de la session interrompue.
 
 ## Captures réelles
 
@@ -185,6 +247,7 @@ Mode démo, rendu Qt offscreen sous Linux, sans activation audio :
 
 ![Assistant vocal](screenshots/desktop-home.png)
 ![Compagnon compact](screenshots/compact-idle.png)
+![Réglages audio en démo](screenshots/audio-settings.png)
 
 L’orbe capturé par Qt est présenté sur un fond sombre uni pour rendre sa
 transparence lisible dans les lecteurs d’images :
@@ -216,9 +279,11 @@ Le test de préchargement utilise le vrai plugin Google, sans démarrer de conne
 
 Sur Mac, vérifier Finder/Dock, permissions Microphone, une salutation, la pause
 micro pendant une réponse sur haut-parleurs, l’interruption, la reprise d’écoute,
-le changement de vue et l’arrêt. Le rendu Linux ne valide pas le son ou TCC.
+le changement de vue et l’arrêt. Vérifier aussi ⌘⇧Espace depuis Safari,
+le choix d’un micro/casque, les tests locaux et une reconnexion après coupure
+avec le micro préalablement coupé. Le rendu Linux ne valide pas le son ou TCC.
 
-Résultat sous Linux/Python 3.13 : **50 tests desktop passants**. Suite complète :
-842 tests et 149 sous-tests passants, avec les mêmes 207 échecs de frameworks
+Résultat sous Linux/Python 3.13 : **64 tests desktop passants**. Suite complète :
+856 tests et 149 sous-tests passants, avec les mêmes 207 échecs de frameworks
 macOS absents que le snapshot de référence ; aucun nouvel identifiant en échec.
 La suite complète n’est donc pas déclarée verte sur Linux.

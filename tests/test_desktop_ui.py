@@ -324,3 +324,115 @@ def test_dragging_orb_moves_it_without_opening_companion(app, monkeypatch):
     finally:
         shell.finish_transfer()
         for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_reconnect_preserves_review_history_and_mute_but_never_starts_twice(app, monkeypatch):
+    from threading import Event
+    from PySide6.QtCore import QThread, Signal
+    from jarvis.desktop import live_worker
+    created = []
+    class Worker(QThread):
+        event = Signal(object)
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.closed = Event()
+            self.muted = False
+            self.devices = None
+            created.append(self)
+        def set_muted(self, value): self.muted = value
+        def set_devices(self, a, b): self.devices = (a, b)
+        def run(self):
+            self.event.emit({'type': 'state', 'state': 'muted' if self.muted else 'listening', 'mic_open': not self.muted})
+            self.closed.wait(3)
+            self.event.emit({'type': 'state', 'state': 'error', 'mic_open': False,
+                             'retryable': True, 'message': 'Connexion coupée'})
+        def stop(self): self.closed.set()
+    monkeypatch.setattr('jarvis.desktop.live_runtime.preload_live_plugins', lambda: None)
+    monkeypatch.setattr(live_worker, 'LiveWorker', Worker)
+    controller, shell = make_shell(app, monkeypatch)
+    try:
+        controller.reduced_motion = True
+        shell.show_full()
+        controller.start_voice()
+        wait_until(app, lambda: controller.voice_mic_open)
+        controller.toggle_microphone()
+        assert controller.microphone_muted
+        controller.voice_event({'type': 'activity', 'id': 'old-action', 'label': 'Application', 'status': 'verified', 'card': None})
+        created[0].closed.set()
+        wait_until(app, lambda: controller.voice_worker is None)
+        assert controller.can_reconnect and shell.full.assistant.voice_button.text() == 'Reconnecter'
+        shell.full.assistant.voice_button.click()
+        controller.start_voice()
+        wait_until(app, lambda: controller.voice_state == 'muted')
+        assert len(created) == 2 and created[1].muted
+        assert 'old-action' in controller.activity
+        assert not controller.voice_mic_open
+    finally:
+        controller.stop_voice()
+        wait_until(app, lambda: controller.voice_worker is None)
+        shell.finish_transfer()
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_audio_job_is_exclusive_and_quit_waits_for_cleanup(app, monkeypatch):
+    from threading import Event
+    from PySide6.QtCore import QThread, Signal, QEvent
+    from jarvis.desktop import audio_settings
+    class Job(QThread):
+        event = Signal(object)
+        def __init__(self, kind, a, b, parent=None):
+            super().__init__(parent)
+            self.closed = Event()
+        def run(self): self.closed.wait(3)
+        def stop(self): self.closed.set()
+    monkeypatch.setattr(audio_settings, 'AudioJob', Job)
+    controller, shell = make_shell(app, monkeypatch)
+    ready = []
+    controller.exit_ready.connect(lambda: ready.append(True))
+    try:
+        controller.start_audio_job('microphone')
+        job = controller.audio_worker
+        assert job is not None
+        controller.handle_audio_event({'type': 'audio_test', 'state': 'microphone', 'message': 'Test local'})
+        assert controller.local_mic_open
+        shell.show_orb()
+        assert 'Test micro local' in shell.orb_window.status.text()
+        controller.start_audio_job('speaker')
+        controller.start_voice()
+        assert controller.audio_worker is job and controller.voice_worker is None
+        assert shell.quit_guard.eventFilter(app, QEvent(QEvent.Type.Quit))
+        wait_until(app, lambda: controller.audio_worker is None)
+        assert ready and job.closed.is_set()
+        assert not controller.local_mic_open
+    finally:
+        if controller.audio_worker:
+            controller.stop_audio_job()
+            wait_until(app, lambda: controller.audio_worker is None)
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_device_preferences_are_saved_and_invalid_preferences_block_capture(app, monkeypatch, tmp_path):
+    import json
+    from PySide6.QtCore import QSettings
+    settings = QSettings(str(tmp_path / 'devices.ini'), QSettings.Format.IniFormat)
+    settings.setValue('audio/input_device', 'broken-json')
+    monkeypatch.setattr('jarvis.desktop.app.QSystemTrayIcon.isSystemTrayAvailable', lambda: False)
+    controller = Controller()
+    shell = DesktopShell(app, controller, settings=settings)
+    try:
+        assert controller.device_config_invalid
+        controller.start_voice()
+        assert controller.voice_worker is None and not controller.voice_mic_open
+        shell.full.audio_settings.reset_selection()
+        assert not controller.device_config_invalid
+        choice = {'name': 'USB mic', 'hostapi': 'Core Audio'}
+        controller.set_devices(choice, None)
+        assert json.loads(settings.value('audio/input_device')) == choice
+        assert controller.input_choice == choice
+        controller.voice_worker = object()
+        controller.set_devices(None, None)
+        assert controller.input_choice == choice  # A live session cannot be rerouted.
+    finally:
+        controller.voice_worker = None
+        shell.finish_transfer()
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()

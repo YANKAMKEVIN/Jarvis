@@ -1,6 +1,6 @@
 """Small, draggable voice presence. Clicking never starts a microphone."""
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
 from jarvis.desktop.visuals import Orb
 
@@ -69,6 +69,8 @@ class OrbWindow(QWidget):
         layout.addWidget(self.status)
         controller.audio_levels.connect(self.orb.set_levels)
         controller.changed.connect(self.render)
+        self.shortcut = QShortcut(QKeySequence("Ctrl+Shift+Space"), self)
+        self.shortcut.activated.connect(shell.show_compact)
         self.render()
 
     def paintEvent(self, event):
@@ -88,6 +90,8 @@ class OrbWindow(QWidget):
         state = states.get(c.voice_state, 'Jarvis')
         if c.input_suppressed:
             state = 'Écoute en pause'
+        if c.audio_worker is not None:
+            state = 'Test micro local' if c.local_mic_open else 'Préparation audio' if c.audio_job_state == 'preparing' else 'Audio local'
         if c.demo:
             state = 'Démo · micro fermé'
         count = len(c.cards)
@@ -102,9 +106,9 @@ class OrbWindow(QWidget):
             menu.addAction(title, callback)
         menu.addSeparator()
         active = self.controller.voice_worker is not None
-        action = menu.addAction('Arrêter le vocal' if active else 'Démarrer Jarvis',
+        action = menu.addAction('Arrêter le vocal' if active else 'Reconnecter' if self.controller.can_reconnect else 'Démarrer Jarvis',
                                 self.controller.stop_voice if active else self.controller.start_voice)
-        action.setEnabled(not self.controller.demo and self.controller.voice_state not in {'starting', 'stopping'})
+        action.setEnabled(not self.controller.demo and self.controller.voice_state not in {'starting', 'stopping'} and self.controller.audio_worker is None)
         if active:
             menu.addAction('Couper le micro' if self.controller.voice_mic_open else 'Réactiver le micro', self.controller.toggle_microphone)
             menu.addAction('Interrompre la réponse', self.controller.interrupt_voice)

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from array import array
-from math import pi, sin, sqrt
+from math import pi, sin
 from collections import deque
 from queue import Empty, Full, Queue
 from threading import Lock
@@ -15,17 +15,11 @@ from time import monotonic
 
 from livekit import rtc
 from livekit.agents.voice.io import AudioInput, AudioOutput, AudioOutputCapabilities
+from jarvis.desktop.devices import AudioDeviceError, pcm_level, resolve_device
 
 SAMPLE_RATE = 24000
 BLOCK_SAMPLES = 480  # 20 ms, mono PCM16
 ECHO_TAIL_SECONDS = 0.25
-
-
-def pcm_level(data):
-    """RMS of one native mono PCM16 block; no samples retained by the meter."""
-    samples = array("h")
-    samples.frombytes(data)
-    return sqrt(sum(value * value for value in samples) / len(samples)) / 32768 if samples else 0.0
 
 
 class MicrophoneInput(AudioInput):
@@ -172,6 +166,21 @@ class LocalAudio:
         self.output_meter = (0.0, 0.0)
         self.cue_lock = Lock()
         self.cue = b""
+        self.input_device = None
+        self.output_device = None
+
+    def configure_devices(self, input_choice, output_choice):
+        self.input_device = resolve_device(self.devices, input_choice, 'input')
+        self.output_device = resolve_device(self.devices, output_choice, 'output')
+
+    def check_health(self):
+        try:
+            healthy = (self.speaker is not None and self.speaker.active
+                       and (not self.mic_open or (self.microphone is not None and self.microphone.active)))
+        except Exception:
+            healthy = False
+        if not healthy:
+            raise AudioDeviceError('Un périphérique audio s’est arrêté. Vérifiez sa connexion et les choix dans Réglages.')
 
     def play_cue(self, kind):
         """Quiet optional tones use this same output and its feedback guard."""
@@ -225,12 +234,13 @@ class LocalAudio:
                 self.input.clear()
         data[:] = pcm
 
-    def open(self):
+    def open(self, microphone=True):
         try:
-            self.speaker = self.devices.RawOutputStream(samplerate=SAMPLE_RATE,
+            self.speaker = self.devices.RawOutputStream(device=self.output_device, samplerate=SAMPLE_RATE,
                 channels=1, dtype="int16", blocksize=BLOCK_SAMPLES, callback=self._output_callback)
             self.speaker.start()
-            self.set_microphone(True)
+            if microphone:
+                self.set_microphone(True)
         except Exception:
             self.close()
             raise
@@ -240,7 +250,7 @@ class LocalAudio:
             self.input.clear()
             try:
                 if self.microphone is None:
-                    self.microphone = self.devices.RawInputStream(samplerate=SAMPLE_RATE,
+                    self.microphone = self.devices.RawInputStream(device=self.input_device, samplerate=SAMPLE_RATE,
                         channels=1, dtype="int16", blocksize=BLOCK_SAMPLES, callback=self._input_callback)
                 self.microphone.start()
                 self.mic_open = True
