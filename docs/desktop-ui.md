@@ -39,6 +39,42 @@ Cette protection audio fonctionne en alternant écoute et réponse ; ce n’est 
 une annulation acoustique d’écho permettant de parler simultanément à Jarvis.
 Le son réel et les latences des périphériques restent à vérifier sur le Mac.
 
+## Présence holographique
+
+L’orbe combine un cœur lumineux, des filaments, des points et des anneaux de
+verre. Le bleu glacier accompagne l’écoute, le violet la réflexion, le rose les
+erreurs et le gris le micro coupé. Son mouvement de fond est décoratif ; ses
+pulsations supplémentaires dépendent du niveau RMS réellement mesuré dans les
+blocs PCM du micro ou de la sortie audio. Aucun échantillon ne traverse le pont
+Qt : seuls deux nombres sont émis, au maximum dix fois par seconde. Les niveaux
+périmés, coupés ou suspendus sont ramenés à zéro. La démo ne simule pas de voix.
+
+Les commandes restent accessibles et s’estompent légèrement au repos. Le survol
+ou le focus clavier rétablit leur contraste. Le réglage **Réduire les animations**
+arrête la respiration, les pulsations et les fondus ainsi que le transfert animé
+de l’orbe entre les vues. Ce réglage est mémorisé. Les fenêtres partagent toujours
+une seule session.
+
+Le compagnon est une capsule sans bordure, au premier plan. Faire glisser la
+zone **JARVIS** dans son en-tête pour le déplacer. Sa position est mémorisée dans
+les préférences locales à la fin du déplacement, au changement de vue et à la
+fermeture ; une position sur un écran débranché est replacée sur l’écran actuel.
+La démo ne sauvegarde pas sa position. Le verre utilise de la transparence peinte,
+sans flou d’arrière-plan natif macOS.
+
+Après le retour réel d’un outil, une carte temporaire remplace le sous-titre :
+**Résultat reçu**, **Accord vocal attendu** ou **L’outil signale un problème**.
+Elle ne contient ni argument, cible personnelle, jeton ou sortie brute. Elle ne
+prétend pas qu’un effet système a été vérifié et ne remplace pas la confirmation
+vocale. Il n’y a toujours aucun fil de messages.
+
+Dans **Réglages**, activer les sons discrets pour entendre un court signal au
+démarrage de l’écoute et à la coupure/reprise du micro. L’option est désactivée par
+défaut et mémorisée. Les sons sont synthétisés localement dans la sortie audio
+existante, laissent la priorité à la parole de Jarvis et bénéficient du même
+blocage de retour dans le micro. Ils ne nécessitent aucun périphérique ou fichier
+supplémentaire. La démo reste silencieuse.
+
 ## Finder et Dock
 
 Créer une fois le lanceur depuis l’environnement activé :
@@ -102,7 +138,7 @@ Sur Mac, vérifier Finder/Dock, permissions Microphone, une salutation, la pause
 micro pendant une réponse sur haut-parleurs, l’interruption, la reprise d’écoute,
 le changement de vue et l’arrêt. Le rendu Linux ne valide pas le son ou TCC.
 
-Résultat sous Linux/Python 3.13 : **30 tests desktop passants**. Suite complète :
-822 tests et 149 sous-tests passants, avec les mêmes 207 échecs de frameworks
+Résultat sous Linux/Python 3.13 : **37 tests desktop passants**. Suite complète :
+829 tests et 149 sous-tests passants, avec les mêmes 207 échecs de frameworks
 macOS absents que le snapshot de référence ; aucun nouvel identifiant en échec.
 La suite complète n’est donc pas déclarée verte sur Linux.

@@ -6,6 +6,8 @@ PortAudio callbacks never touch Qt or the asyncio session directly.
 from __future__ import annotations
 
 import asyncio
+from array import array
+from math import pi, sin, sqrt
 from collections import deque
 from queue import Empty, Full, Queue
 from threading import Lock
@@ -17,6 +19,13 @@ from livekit.agents.voice.io import AudioInput, AudioOutput, AudioOutputCapabili
 SAMPLE_RATE = 24000
 BLOCK_SAMPLES = 480  # 20 ms, mono PCM16
 ECHO_TAIL_SECONDS = 0.25
+
+
+def pcm_level(data):
+    """RMS of one native mono PCM16 block; no samples retained by the meter."""
+    samples = array("h")
+    samples.frombytes(data)
+    return sqrt(sum(value * value for value in samples) / len(samples)) / 32768 if samples else 0.0
 
 
 class MicrophoneInput(AudioInput):
@@ -159,6 +168,33 @@ class LocalAudio:
         self.clock = clock
         self.capture_lock = Lock()
         self.suppress_until = 0.0
+        self.input_meter = (0.0, 0.0)
+        self.output_meter = (0.0, 0.0)
+        self.cue_lock = Lock()
+        self.cue = b""
+
+    def play_cue(self, kind):
+        """Quiet optional tones use this same output and its feedback guard."""
+        frequencies = (660, 440) if kind == "muted" else (660, 880)
+        samples = array("h")
+        count = int(SAMPLE_RATE * 0.065)
+        for frequency in frequencies:
+            for index in range(count):
+                envelope = sin(pi * index / count) ** 2
+                samples.append(int(1800 * envelope * sin(2 * pi * frequency * index / SAMPLE_RATE)))
+        with self.cue_lock:
+            self.cue = samples.tobytes()  # Replace, never accumulate notifications.
+
+    def clear_cue(self):
+        with self.cue_lock:
+            self.cue = b""
+
+    def levels(self):
+        now = self.clock()
+        incoming, input_time = self.input_meter
+        outgoing, output_time = self.output_meter
+        return (incoming if self.mic_open and not self.input_suppressed and now - input_time < 0.15 else 0.0,
+                outgoing if not self.output.closed and now - output_time < 0.15 else 0.0)
 
     @property
     def input_suppressed(self):
@@ -168,10 +204,17 @@ class LocalAudio:
         with self.capture_lock:
             if self.mic_open and not self.input_suppressed:
                 self.input.push(data)
+                self.input_meter = (pcm_level(data), self.clock())
 
     def _output_callback(self, data, frames, timing, status):
         latency = max(0, timing.outputBufferDacTime - timing.currentTime) + frames / SAMPLE_RATE
         pcm = self.output.read(len(data), latency)
+        if not any(pcm):
+            with self.cue_lock:
+                cue, self.cue = self.cue[:len(data)], self.cue[len(data):]
+            if cue:
+                pcm = cue + bytes(len(data) - len(cue))
+        self.output_meter = (pcm_level(pcm), self.clock())
         if any(pcm):
             # Half duplex, not acoustic echo cancellation: don't feed Jarvis's
             # own speaker audio back to Gemini. Include hardware latency and
@@ -215,6 +258,7 @@ class LocalAudio:
 
     def close(self):
         self.mic_open = False
+        self.clear_cue()
         self.input.closed = True
         self.input.clear()
         self.output.closed = True

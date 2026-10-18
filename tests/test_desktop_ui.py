@@ -29,7 +29,11 @@ def wait_until(app, predicate):
 def make_shell(app, monkeypatch, demo=False):
     monkeypatch.setattr("jarvis.desktop.app.QSystemTrayIcon.isSystemTrayAvailable", lambda: False)
     controller = Controller(demo=demo)
-    return controller, DesktopShell(app, controller)
+    class Settings:
+        def __init__(self): self.values = {}
+        def value(self, key, default=None): return self.values.get(key, default)
+        def setValue(self, key, value): self.values[key] = value
+    return controller, DesktopShell(app, controller, settings=Settings())
 
 
 def test_demo_has_no_text_input_and_cannot_activate_voice(app, monkeypatch):
@@ -121,5 +125,92 @@ def test_voice_controls_share_one_worker_and_cleanup_before_quit(app, monkeypatc
         if controller.voice_worker:
             controller.stop_voice()
             wait_until(app, lambda: controller.voice_worker is None)
+        shell.full.hide()
+        shell.compact.hide()
+
+
+def test_audio_changes_orb_without_rebuilding_controls_and_motion_can_stop(app, monkeypatch):
+    controller, shell = make_shell(app, monkeypatch, demo=True)
+    try:
+        shell.show_full()
+        controller.voice_event({'type': 'audio_level', 'input': 0.25, 'output': 0.0})
+        assert shell.full.assistant.orb.target > 0
+        assert shell.full.assistant.orb.target == shell.compact.assistant.orb.target
+        shell.full.assistant.orb.tick()
+        assert shell.full.assistant.orb.energy > 0
+        controller.reduced_motion = True
+        controller.changed.emit()
+        assert not shell.full.assistant.orb.timer.isActive()
+        assert shell.full.assistant.orb.energy == 0
+        assert shell.full.assistant.controls.fade.state().name == 'Stopped'
+        controller.voice_event({'type': 'audio_level', 'input': 0.0, 'output': 0.0})
+        assert shell.full.assistant.orb.target == 0
+        controller.voice_event({'type': 'tool_receipt', 'label': 'Rappel', 'status': 'confirmation'})
+        assert 'Accord vocal attendu' in shell.compact.assistant.hint.text()
+        assert shell.compact.assistant.hint.text() == shell.full.assistant.hint.text()
+        controller.clear_tool_notice()
+        assert 'Accord vocal' not in shell.full.assistant.hint.text()
+    finally:
+        shell.finish_transfer()
+        shell.full.hide()
+        shell.compact.hide()
+
+
+def test_transfer_cleans_up_on_rapid_switch_and_reduced_motion(app, monkeypatch):
+    controller, shell = make_shell(app, monkeypatch, demo=True)
+    try:
+        shell.show_full()
+        shell.show_compact()
+        assert shell.transfer is not None
+        shell.show_full()  # Cancel in-flight animation, don't leave an invisible orb.
+        assert shell.transfer is not None
+        controller.reduced_motion = True
+        controller.changed.emit()
+        assert shell.transfer is None
+        assert shell.full.assistant.orb.graphicsEffect() is None
+        assert shell.compact.assistant.orb.graphicsEffect() is None
+        shell.show_compact()
+        assert shell.transfer is None
+        assert shell.compact.isVisible()
+        image = shell.compact.grab().toImage()
+        assert image.pixelColor(0, 0).alpha() == 0
+        shell.show_full()
+        shell.full.navigate(2)
+        controller.reduced_motion = False
+        controller.changed.emit()
+        shell.show_compact()
+        assert shell.transfer is None  # No ghost orb from the Settings page.
+        shell.show_full()
+        assert shell.full.pages.currentIndex() == 0
+        wait_until(app, lambda: shell.transfer is None)
+        assert shell.full.assistant.orb.graphicsEffect() is None
+    finally:
+        shell.finish_transfer()
+        shell.full.hide()
+        shell.compact.hide()
+
+
+def test_companion_remembers_position_and_recovers_from_missing_monitor(app, monkeypatch, tmp_path):
+    from PySide6.QtCore import QPoint, QSettings
+    from PySide6.QtGui import QGuiApplication
+    monkeypatch.setattr('jarvis.desktop.app.QSystemTrayIcon.isSystemTrayAvailable', lambda: False)
+    settings = QSettings(str(tmp_path / 'desktop.ini'), QSettings.Format.IniFormat)
+    settings.setValue('companion/position', QPoint(99999, 99999))
+    controller = Controller()
+    controller.reduced_motion = True
+    shell = DesktopShell(app, controller, settings=settings)
+    try:
+        shell.show_compact()
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        assert area.contains(shell.compact.geometry())
+        position = area.topLeft() + QPoint(25, 25)
+        shell.compact.move(position)
+        shell.show_full()
+        assert settings.value('companion/position') == position
+        shell.position_restored = False
+        shell.show_compact()
+        assert shell.compact.pos() == position
+    finally:
+        shell.finish_transfer()
         shell.full.hide()
         shell.compact.hide()

@@ -1,20 +1,22 @@
 """Voice-only desktop companion; typed commands remain in the separate CLI."""
 from __future__ import annotations
 
-import math
 import signal
 
-from PySide6.QtCore import QObject, QPointF, QTimer, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient, QShortcut, QLinearGradient
+from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QTimer, Qt, Signal
+from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QMainWindow,
-    QMenu, QPushButton, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
+    QGraphicsOpacityEffect, QMenu, QPushButton, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
+
+from jarvis.desktop.visuals import Orb
+from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, OrbTransfer
 
 STYLE = """
 QWidget { background: transparent; color: #dce8f6; font-family: '.AppleSystemUIFont', 'Inter', 'DejaVu Sans'; font-size: 13px; }
 QMainWindow { background: #0b111b; }
-QWidget#shell { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #152334, stop:0.42 #0d1622, stop:1 #0a1019); }
+QWidget#shell { background: qradialgradient(cx:0.60, cy:0.36, radius:0.8, fx:0.60, fy:0.36, stop:0 #182c3d, stop:0.42 #0c1826, stop:1 #070e18); }
 QLabel#wordmark { color: #e4f3ff; font-size: 18px; font-weight: 600; }
 QLabel#greeting { color: #eef7ff; font-size: 26px; font-weight: 500; }
 QLabel#intro { color: #94abc1; font-size: 14px; }
@@ -25,7 +27,8 @@ QLabel { background: transparent; }
 QLabel#eyebrow { color: #7794af; font-size: 10px; font-weight: 600; }
 QLabel#title { font-size: 27px; font-weight: 600; }
 QLabel#subtitle { color: #91a9c1; font-size: 12px; }
-QFrame#sidebar { background: rgba(10, 18, 29, 170); border-right: 1px solid #223044; }
+QFrame#sidebar { background: rgba(7, 14, 24, 175); border-right: 1px solid #1d3041; }
+QFrame#controlDock { background: rgba(20, 36, 51, 105); border: 1px solid rgba(119, 180, 212, 30); border-radius: 17px; }
 QFrame#card { background: rgba(26, 43, 61, 155); border: 1px solid #293e52; border-radius: 16px; }
 QPushButton { background: #1a2a3d; border: 1px solid #2b435c; border-radius: 9px; padding: 10px 14px; }
 QPushButton:hover { background: #243d57; border-color: #517ca2; }
@@ -41,6 +44,8 @@ QScrollBar:vertical { background: #101927; width: 7px; }
 QScrollBar::handle:vertical { background: #344c63; border-radius: 3px; min-height: 24px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QCheckBox { spacing: 10px; padding: 8px 0; }
+QCheckBox::indicator { width: 15px; height: 15px; border: 1px solid #52708a; border-radius: 4px; background: #0b1825; }
+QCheckBox::indicator:checked { background: #87dcff; border-color: #b5edff; }
 QToolTip { background: #23384f; color: #e1efff; border: 1px solid #527494; }
 QMenu { background: #152235; border: 1px solid #344d67; }
 QMenu::item { padding: 8px 20px; }
@@ -75,95 +80,9 @@ def card(title, text):
     return frame
 
 
-class Orb(QWidget):
-    """Painted at device resolution, with no downloaded assets or web view."""
-    def __init__(self, size=148):
-        super().__init__()
-        self.setFixedSize(size, size)
-        self.phase = 0.0
-        self.busy = False
-        self.pending = False
-        self.error = False
-        self.motion = True
-        self.setAccessibleName("État de Jarvis")
-        self.timer = QTimer(self)
-        self.timer.setInterval(50)
-        self.timer.timeout.connect(self.tick)
-
-    def showEvent(self, event):
-        if self.motion:
-            self.timer.start()
-        super().showEvent(event)
-
-    def hideEvent(self, event):
-        self.timer.stop()
-        super().hideEvent(event)
-
-    def set_motion(self, enabled):
-        self.motion = enabled
-        if enabled and self.isVisible():
-            self.timer.start()
-        else:
-            self.timer.stop()
-        self.update()
-
-    def tick(self):
-        self.phase += 0.045 if self.busy else 0.014
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        size = self.width()
-        center = QPointF(size / 2, size / 2)
-        radius = size * (0.29 + 0.008 * math.sin(self.phase * 2))
-        accent = QColor("#edbd7b" if self.pending else "#dd8893" if self.error else "#86d6ff")
-        glow = QColor(accent)
-        glow.setAlpha(65)
-        halo = QRadialGradient(center, size * 0.49)
-        halo.setColorAt(0, glow)
-        halo.setColorAt(0.65, QColor(accent.red(), accent.green(), accent.blue(), 22))
-        halo.setColorAt(1, QColor(0, 0, 0, 0))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(halo)
-        painter.drawEllipse(center, size * 0.49, size * 0.49)
-        sphere = QRadialGradient(center - QPointF(radius * 0.3, radius * 0.5), radius * 1.8)
-        sphere.setColorAt(0, accent.lighter(115))
-        sphere.setColorAt(0.28, QColor("#4486ae") if not self.pending else QColor("#ad8753"))
-        sphere.setColorAt(0.65, QColor("#122b46"))
-        sphere.setColorAt(1, QColor("#070e1d"))
-        painter.setBrush(sphere)
-        painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 170), 1))
-        painter.drawEllipse(center, radius, radius)
-        clip = QPainterPath()
-        clip.addEllipse(center, radius - 0.8, radius - 0.8)
-        painter.save()
-        painter.setClipPath(clip)
-        painter.translate(center)
-        # Flowing translucent ribbons replace the intersecting orbital rings.
-        # These are decorative: no invented microphone or progress information.
-        for index in range(4):
-            painter.save()
-            painter.rotate(index * 87 + self.phase * 14)
-            wave = math.sin(self.phase + index) * radius * 0.12
-            ribbon = QPainterPath(QPointF(-radius * 1.1, radius * 0.4))
-            ribbon.cubicTo(-radius * 0.45, -radius * 0.95 + wave,
-                           radius * 0.35, radius * 1.05, radius * 1.1, -radius * 0.35)
-            ribbon.cubicTo(radius * 0.35, radius * 0.45 + wave,
-                           -radius * 0.45, -radius * 0.45, -radius * 1.1, radius * 0.4)
-            gradient = QLinearGradient(-radius, -radius, radius, radius)
-            gradient.setColorAt(0, QColor(accent.red(), accent.green(), accent.blue(), 8))
-            gradient.setColorAt(0.5, QColor(accent.red(), accent.green(), accent.blue(), 140))
-            gradient.setColorAt(1, QColor(accent.red(), accent.green(), accent.blue(), 10))
-            painter.setBrush(gradient)
-            painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 90), 0.7))
-            painter.drawPath(ribbon)
-            painter.restore()
-        painter.restore()
-
-
 class Controller(QObject):
     changed = Signal()
+    audio_levels = Signal(float, float)
     exit_ready = Signal()
 
     def __init__(self, demo=False):
@@ -177,6 +96,21 @@ class Controller(QObject):
         self.voice_error = ""
         self.voice_turns = 0
         self.quit_after_voice = False
+        self.sounds_enabled = False
+        self.tool_notice = ""
+        self.tool_timer = QTimer(self)
+        self.tool_timer.setSingleShot(True)
+        self.tool_timer.setInterval(6000)
+        self.tool_timer.timeout.connect(self.clear_tool_notice)
+
+    def clear_tool_notice(self):
+        self.tool_notice = ""
+        self.changed.emit()
+
+    def set_sounds(self, enabled):
+        self.sounds_enabled = enabled
+        if self.voice_worker:
+            self.voice_worker.set_sounds(enabled)
 
     def start_voice(self):
         if self.demo or self.voice_worker is not None:
@@ -184,6 +118,8 @@ class Controller(QObject):
         from jarvis.desktop.live_runtime import VoiceSetupError, preload_live_plugins
         self.voice_state, self.voice_error = "starting", ""
         self.voice_turns = 0
+        self.tool_timer.stop()
+        self.tool_notice = ""
         self.changed.emit()
         try:
             preload_live_plugins()
@@ -194,6 +130,8 @@ class Controller(QObject):
         from jarvis.desktop.live_worker import LiveWorker
         worker = LiveWorker(self)
         self.voice_worker = worker
+        if self.sounds_enabled:
+            worker.set_sounds(True)
         self.voice_mic_open = False
         self.input_suppressed = False
         worker.event.connect(self.voice_event)
@@ -208,6 +146,16 @@ class Controller(QObject):
             self.changed.emit()
 
     def voice_event(self, event):
+        if event.get("type") == "tool_receipt":
+            states = {"received": "Résultat reçu", "confirmation": "Accord vocal attendu",
+                      "error": "L’outil signale un problème"}
+            self.tool_notice = f"{event['label']} · {states.get(event.get('status'), 'Résultat reçu')}"
+            self.tool_timer.start()
+            self.changed.emit()
+            return
+        if event.get("type") == "audio_level":
+            self.audio_levels.emit(event.get("input", 0.0), event.get("output", 0.0))
+            return
         if event.get("type") == "transcript":
             # Only a counter enters the UI: no transcript, chat message, draft,
             # or spoken phrase is submitted to another executor.
@@ -227,6 +175,7 @@ class Controller(QObject):
     def voice_finished(self, worker):
         if self.voice_worker is worker:
             self.voice_worker = None
+            self.audio_levels.emit(0.0, 0.0)
             self.voice_mic_open = False
             self.input_suppressed = False
             if self.voice_state != "error":
@@ -252,9 +201,10 @@ class VoicePanel(QWidget):
         self.compact = compact
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(14)
+        layout.setSpacing(12)
         layout.addStretch(1)
-        self.orb = Orb(180 if compact else 280)
+        self.orb = Orb(220 if compact else 360)
+        controller.audio_levels.connect(self.orb.set_levels)
         layout.addWidget(self.orb, 0, Qt.AlignmentFlag.AlignHCenter)
         self.status = label("Votre assistant vocal", "greeting")
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -263,9 +213,13 @@ class VoicePanel(QWidget):
         layout.addWidget(self.status)
         self.hint = label("Parlez-moi simplement.", "intro")
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hint.setMinimumHeight(40)
         layout.addWidget(self.hint)
         layout.addStretch(2)
-        controls = QHBoxLayout()
+        self.controls = ControlDock(controller)
+        controls = QHBoxLayout(self.controls)
+        controls.setContentsMargins(8, 8, 8, 8)
+        controls.setSpacing(8)
         self.voice_button = button("Démarrer Jarvis", self.toggle_voice, True)
         self.voice_button.setAccessibleName("Démarrer ou arrêter l’assistant vocal")
         controls.addWidget(self.voice_button)
@@ -274,7 +228,7 @@ class VoicePanel(QWidget):
         self.interrupt_button = button("Interrompre", controller.interrupt_voice)
         self.interrupt_button.setToolTip("Couper la réponse orale pour reprendre la parole. Les actions système déjà lancées peuvent continuer.")
         controls.addWidget(self.interrupt_button)
-        layout.addLayout(controls)
+        layout.addWidget(self.controls)
         self.voice_notice = label("", "subtitle")
         self.voice_notice.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.voice_notice)
@@ -291,8 +245,10 @@ class VoicePanel(QWidget):
         c = self.controller
         active = c.voice_worker is not None
         state = c.voice_state
-        self.orb.busy = state in {"thinking", "speaking"}
-        self.orb.error = state == "error"
+        self.orb.state = state
+        self.orb.update()
+        self.controls.active = active
+        self.controls.refresh()
         self.orb.set_motion(not c.reduced_motion)
         states = {"off": "Votre assistant vocal", "starting": "Connexion en cours…",
                   "listening": "Je vous écoute", "thinking": "Je réfléchis…",
@@ -305,6 +261,11 @@ class VoicePanel(QWidget):
         if c.input_suppressed and state == "listening":
             self.status.setText("Reprise de l’écoute…")
             self.hint.setText("Un instant, le temps que la sortie audio se termine.")
+        if c.tool_notice and not c.voice_error:
+            self.hint.setText(c.tool_notice)
+            self.hint.setStyleSheet("color: #bfe5f6; font-size: 12px; background: rgba(63, 106, 136, 35); border: 1px solid #284357; border-radius: 12px; padding: 5px;")
+        else:
+            self.hint.setStyleSheet("color: #94abc1; font-size: " + ("12px;" if self.compact else "14px;"))
         self.voice_button.setText("Arrêt en cours…" if state == "stopping" else "Arrêter" if active else "Démarrer Jarvis")
         self.voice_button.setEnabled(not c.demo and state not in {"starting", "stopping"})
         for control in (self.mic_button, self.interrupt_button):
@@ -316,7 +277,7 @@ class VoicePanel(QWidget):
         elif c.demo:
             notice = "Démonstration visuelle · micro désactivé"
         elif c.input_suppressed:
-            notice = "Écoute en pause pendant la réponse de Jarvis"
+            notice = "Écoute en pause pendant la sortie audio"
         elif c.voice_mic_open:
             notice = "Micro ouvert · voix envoyée à Gemini"
         elif active:
@@ -335,12 +296,15 @@ class DesktopWindow(QMainWindow):
         self.controller = controller
         self.compact = compact
         self.setWindowTitle("Jarvis · " + ("Compagnon" if compact else "Assistant vocal"))
-        self.resize(460, 520) if compact else self.resize(1080, 760)
-        self.setMinimumSize(420, 510) if compact else self.setMinimumSize(800, 650)
+        self.resize(460, 560) if compact else self.resize(1080, 800)
+        self.setMinimumSize(440, 550) if compact else self.setMinimumSize(800, 730)
         if compact:
-            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        root = QWidget()
-        root.setObjectName("shell")
+            self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint |
+                                Qt.WindowType.WindowStaysOnTopHint)
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+            self.setStyleSheet("QMainWindow { background: transparent; }")
+        root = GlassSurface() if compact else QWidget()
+        root.setObjectName("capsule" if compact else "shell")
         self.setCentralWidget(root)
         row = QHBoxLayout(root)
         row.setContentsMargins(0, 0, 0, 0)
@@ -366,14 +330,21 @@ class DesktopWindow(QMainWindow):
             nav.addWidget(label("Parlez. Jarvis s’occupe de la suite.", "subtitle"))
             row.addWidget(sidebar)
         workspace = QVBoxLayout()
-        workspace.setContentsMargins(22 if compact else 32, 22, 22 if compact else 32, 22)
+        workspace.setContentsMargins(28 if compact else 40, 26, 28 if compact else 40, 28)
         workspace.setSpacing(16)
         heading = QHBoxLayout()
-        heading.addWidget(label("J A R V I S" if compact else "VOTRE COMPAGNON", "eyebrow"))
+        heading.addWidget(DragHandle("◌   J A R V I S") if compact else label("COMPAGNON VOCAL     /     JARVIS", "eyebrow"), 1)
         heading.addStretch()
         switch = button("Agrandir ↗" if compact else "Mode compact ↙", shell.switch_view)
         switch.setObjectName("quiet")
         heading.addWidget(switch)
+        if compact:
+            close = button("×", self.close)
+            close.setObjectName("quiet")
+            close.setFixedSize(32, 32)
+            close.setStyleSheet("padding: 0; font-size: 20px;")
+            close.setAccessibleName("Fermer le compagnon")
+            heading.addWidget(close)
         workspace.addLayout(heading)
         self.pages = QStackedWidget()
         self.assistant = VoicePanel(controller, compact)
@@ -397,8 +368,13 @@ class DesktopWindow(QMainWindow):
             settings_layout.addWidget(card("CONFIDENTIALITÉ",
                 "Cette interface n’affiche et n’enregistre aucun texte de transcription. La session Gemini utilise le contexte de votre conversation ; les outils gardent leurs règles existantes de mémoire et de journalisation."))
             reduce = QCheckBox("Réduire les animations")
+            reduce.setChecked(controller.reduced_motion)
             reduce.toggled.connect(self.set_reduced_motion)
             settings_layout.addWidget(reduce)
+            sounds = QCheckBox("Sons discrets à l’activation et au changement du micro")
+            sounds.setChecked(controller.sounds_enabled)
+            sounds.toggled.connect(self.set_sounds)
+            settings_layout.addWidget(sounds)
             settings_layout.addWidget(label("⌘⇧Espace : mode compact lorsque Jarvis est actif.", "subtitle"))
             settings_layout.addStretch()
             self.pages.addWidget(settings)
@@ -417,7 +393,12 @@ class DesktopWindow(QMainWindow):
 
     def set_reduced_motion(self, checked):
         self.controller.reduced_motion = checked
+        self.shell.settings.setValue("appearance/reduced_motion", checked)
         self.controller.changed.emit()
+
+    def set_sounds(self, checked):
+        self.controller.set_sounds(checked)
+        self.shell.settings.setValue("audio/sounds", checked)
 
     def render_activity(self):
         c = self.controller
@@ -425,6 +406,9 @@ class DesktopWindow(QMainWindow):
         self.activity_summary.setText(f"Session : {state}\nDemandes vocales reçues : {c.voice_turns}")
 
     def closeEvent(self, event):
+        if self.compact:
+            self.shell.remember_companion()
+        self.shell.finish_transfer()
         event.ignore()
         if self.shell.has_tray:
             self.hide()
@@ -433,8 +417,14 @@ class DesktopWindow(QMainWindow):
 
 
 class DesktopShell:
-    def __init__(self, app, controller):
+    def __init__(self, app, controller, settings=None):
         self.app, self.controller = app, controller
+        self.settings = settings if settings is not None else QSettings("Jarvis", "Desktop")
+        controller.sounds_enabled = self.settings.value("audio/sounds", False) in (True, "true")
+        controller.reduced_motion = self.settings.value("appearance/reduced_motion", controller.reduced_motion) in (True, "true")
+        self.position_restored = False
+        self.transfer = None
+        controller.changed.connect(self.motion_changed)
         self.has_tray = QSystemTrayIcon.isSystemTrayAvailable()
         controller.exit_ready.connect(app.quit)
         self.full = DesktopWindow(controller, self)
@@ -465,24 +455,75 @@ class DesktopShell:
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.show_compact()
 
+    def restore_companion(self):
+        if self.position_restored:
+            return
+        self.position_restored = True
+        point = self.settings.value("companion/position")
+        screens = QGuiApplication.screens()
+        screen = next((s for s in screens if isinstance(point, QPoint) and
+                       s.availableGeometry().contains(point)), QGuiApplication.primaryScreen())
+        if screen is None:
+            return
+        area = screen.availableGeometry()
+        if not isinstance(point, QPoint):
+            point = QPoint(area.right() - self.compact.width() - 24,
+                           area.bottom() - self.compact.height() - 24)
+        x = max(area.left(), min(point.x(), area.right() - self.compact.width() + 1))
+        y = max(area.top(), min(point.y(), area.bottom() - self.compact.height() + 1))
+        self.compact.move(x, y)
+
+    def remember_companion(self):
+        if self.position_restored and not self.controller.demo:
+            self.settings.setValue("companion/position", self.compact.pos())
+
+    def finish_transfer(self):
+        if self.transfer is not None:
+            self.transfer.complete()
+
+    def motion_changed(self):
+        if self.controller.reduced_motion:
+            self.finish_transfer()
+
+    def present(self, target, source):
+        self.finish_transfer()
+        animate = source.assistant.orb.isVisible() and not target.isVisible() and not self.controller.reduced_motion
+        pixmap = source.assistant.orb.grab() if animate else None
+        start = QRect(source.assistant.orb.mapToGlobal(QPoint()), source.assistant.orb.size())
+        if source is self.compact:
+            self.remember_companion()
+        target.show()
+        source.hide()
+        target.raise_()
+        target.activateWindow()
+        # Keep command controls discoverable, with no forced focus on an action.
+        if animate:
+            orb = target.assistant.orb
+            end = QRect(orb.mapToGlobal(QPoint()), orb.size())
+            effect = QGraphicsOpacityEffect(orb)
+            effect.setOpacity(0.0)
+            orb.setGraphicsEffect(effect)
+            def finished():
+                orb.setGraphicsEffect(None)
+                self.transfer = None
+            self.transfer = OrbTransfer(pixmap, start, end, finished)
+            self.transfer.begin()
+
     def show_full(self):
-        self.compact.hide()
-        self.full.show()
-        self.full.raise_()
-        self.full.activateWindow()
-        self.full.assistant.voice_button.setFocus()
+        if self.compact.isVisible():
+            self.full.navigate(0)
+        self.present(self.full, self.compact)
 
     def show_compact(self):
-        self.full.hide()
-        self.compact.show()
-        self.compact.raise_()
-        self.compact.activateWindow()
-        self.compact.assistant.voice_button.setFocus()
+        self.restore_companion()
+        self.present(self.compact, self.full)
 
     def switch_view(self):
         self.show_full() if self.compact.isVisible() else self.show_compact()
 
     def quit(self):
+        self.finish_transfer()
+        self.remember_companion()
         if self.controller.voice_worker:
             self.controller.quit_after_voice = True
             self.controller.stop_voice()

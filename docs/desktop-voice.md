@@ -87,8 +87,9 @@ le Mac ; le changement d’Info.plist ne garantit pas à lui seul l’accord de 
   aucun fichier audio ni stockage durable de transcriptions.
 - L’interface est entièrement vocale, sans saisie ni fil de messages. Les mots
   transcrits restent dans le contexte de la session SDK/Gemini ; ils ne sont pas
-  recopiés vers l’interface. Seules des notifications de tour alimentent le
-  compteur d’activité. Un même identifiant de message SDK n’est compté qu’une
+  recopiés vers l’interface. Le pont transmet des notifications de tour pour le
+  compteur, des niveaux audio numériques pour l’orbe et des libellés génériques
+  d’outils sans arguments pour les cartes temporaires. Un même identifiant de message SDK n’est compté qu’une
   fois (fenêtre de 512 identifiants). Deux demandes identiques avec des
   identifiants différents restent deux demandes légitimes.
 - Les confirmations des outils Live se font **vocalement selon le protocole
@@ -117,6 +118,10 @@ La connexion Gemini avec une vraie clé, le son et les permissions TCC ne sont
 pas validés dans l’environnement Linux de développement. Sur Mac : commencer
 par une salutation, couper/réactiver le micro, interrompre une réponse, passer
 entre les deux vues, puis arrêter et vérifier que le micro est libéré.
+
+Les sons optionnels d’activation et de changement du micro utilisent la même
+sortie et la même protection de capture que les réponses. Ils sont désactivés
+par défaut et activables dans Réglages ; le mode démo reste silencieux.
 
 Références SDK : [sessions](https://docs.livekit.io/agents/logic/sessions/),
 [événements](https://docs.livekit.io/agents/events/).

@@ -39,6 +39,14 @@ class FakeAudio:
         self.input, self.output = object(), object()
         self.mic_open = self.opened = self.closed = False
         self.failure = failure
+        self.cues = []
+        self.cue_cleared = False
+
+    def play_cue(self, kind):
+        self.cues.append(kind)
+
+    def clear_cue(self):
+        self.cue_cleared = True
 
     def open(self):
         self.opened = self.mic_open = True
@@ -85,6 +93,7 @@ def test_voice_lifecycle_mute_interrupt_transcripts_and_cleanup():
         task = asyncio.create_task(runtime.run())
         await until(lambda: runtime.ready)
         assert any(e.get("mic_open") for e in events)
+        assert not c.audio.cues
         assert [e["role"] for e in events if e["type"] == "transcript"] == ["user", "assistant"]
         runtime.set_muted(True)
         await until(lambda: not c.audio.mic_open)
@@ -220,6 +229,42 @@ def test_suppression_changes_are_reported_without_closing_microphone():
         assert c.audio.mic_open
         c.audio.input_suppressed = False
         await until(lambda: events[-1].get("input_suppressed") is False)
+        runtime.stop()
+        await asyncio.wait_for(task, 1)
+    asyncio.run(scenario())
+
+
+def test_tool_receipts_are_based_on_real_results_and_omit_private_data():
+    events = []
+    runtime = LiveRuntime(events.append)
+    calls = [NS(name='open_app', arguments='PRIVATE_APP'), NS(name='set_reminder'),
+             NS(name='open_file'), NS(name='unknown_PRIVATE_NAME')]
+    outputs = [NS(is_error=False, output='{"ok": true, "secret": "PRIVATE_TOKEN"}'),
+               NS(is_error=False, output='{"requires_confirmation": true, "token": "PRIVATE_TOKEN"}'),
+               NS(is_error=False, output='{"ok": false, "error": "PRIVATE_ERROR"}'),
+               NS(is_error=True, output='PRIVATE_PROVIDER_PAYLOAD')]
+    runtime._tools_executed(NS(function_calls=calls, function_call_outputs=outputs))
+    assert [e['status'] for e in events] == ['received', 'confirmation', 'error', 'error']
+    assert [e['label'] for e in events] == ['Application', 'Rappel', 'Fichier', 'Outil Jarvis']
+    assert 'PRIVATE' not in str(events)
+
+
+def test_optional_cues_follow_ready_and_mute_and_can_be_disabled():
+    async def scenario():
+        c = components()
+        runtime = LiveRuntime(lambda e: None, factory=lambda: c, prepare=lambda: None)
+        runtime.set_sounds(True)
+        task = asyncio.create_task(runtime.run())
+        await until(lambda: runtime.ready)
+        assert c.audio.cues == ['ready']
+        runtime.set_muted(True)
+        await until(lambda: not c.audio.mic_open)
+        assert c.audio.cues[-1] == 'muted'
+        runtime.set_sounds(False)
+        await until(lambda: c.audio.cue_cleared)
+        runtime.set_muted(False)
+        await until(lambda: c.audio.mic_open)
+        assert c.audio.cues == ['ready', 'muted']
         runtime.stop()
         await asyncio.wait_for(task, 1)
     asyncio.run(scenario())

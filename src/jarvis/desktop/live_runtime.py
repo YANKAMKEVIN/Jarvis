@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import traceback
 from collections import deque
@@ -119,6 +120,10 @@ class LiveRuntime:
         self.components = None
         self.interruption_task = None
         self.seen_items = deque(maxlen=512)
+        self.sounds_requested = Event()
+
+    def set_sounds(self, enabled):
+        self.sounds_requested.set() if enabled else self.sounds_requested.clear()
 
     def stop(self):
         self.stop_requested.set()
@@ -158,6 +163,31 @@ class LiveRuntime:
             self.failed = True
             self.stop()
 
+    def _tools_executed(self, event):
+        labels = {"open_app": "Application", "open_file": "Fichier", "open_folder": "Dossier",
+                  "search_the_web": "Recherche web", "web_answer": "Recherche web",
+                  "summarize_url": "Page web", "set_reminder": "Rappel",
+                  "list_reminders": "Rappels", "schedule_message": "Message planifié",
+                  "confirm_action": "Confirmation", "run_task": "Tâche",
+                  "task_status": "Tâche", "remember_context": "Mémoire",
+                  "capture_screen": "Écran", "ask_about_screen": "Écran"}
+        for call, output in zip(event.function_calls, event.function_call_outputs):
+            # Never send arguments, tokens, provider output, or personal data to Qt.
+            status = "error" if output.is_error else "received"
+            raw = output.output
+            if not output.is_error and isinstance(raw, str) and len(raw) < 65536:
+                try:
+                    result = json.loads(raw)
+                except (ValueError, TypeError):
+                    result = None
+                if isinstance(result, dict):
+                    if result.get("requires_confirmation") is True:
+                        status = "confirmation"
+                    elif result.get("ok") is False:
+                        status = "error"
+            self.emit({"type": "tool_receipt", "label": labels.get(call.name, "Outil Jarvis"),
+                       "status": status})
+
     def _closed(self, event):
         self.failed = self.failed or getattr(event, "error", None) is not None
         self.stop()
@@ -196,6 +226,7 @@ class LiveRuntime:
             c.session.on("agent_state_changed", self._agent_changed)
             c.session.on("conversation_item_added", self._conversation)
             c.session.on("error", self._error)
+            c.session.on("function_tools_executed", self._tools_executed)
             c.session.on("close", self._closed)
             phase = "connection"
             started = await asyncio.wait_for(self._start(), timeout=30)
@@ -204,12 +235,25 @@ class LiveRuntime:
             phase = "audio"
             c.audio.open()  # Micro state becomes active only after device start.
             self.ready = True
+            sounds = self.sounds_requested.is_set()
+            if sounds:
+                c.audio.play_cue("ready")
             self.state("listening")
             phase = "session"
             from jarvis.live.prompts import LIVE_SESSION_GREETING
             c.session.generate_reply(instructions=LIVE_SESSION_GREETING)
             suppressed = False
+            next_meter = 0.0
             while not self.stop_requested.is_set():
+                if sounds != self.sounds_requested.is_set():
+                    sounds = self.sounds_requested.is_set()
+                    if not sounds:
+                        c.audio.clear_cue()
+                now = asyncio.get_running_loop().time()
+                if now >= next_meter:
+                    incoming, outgoing = c.audio.levels() if hasattr(c.audio, "levels") else (0.0, 0.0)
+                    self.emit({"type": "audio_level", "input": incoming, "output": outgoing})
+                    next_meter = now + 0.1
                 current_suppression = bool(getattr(c.audio, "input_suppressed", False))
                 if current_suppression != suppressed:
                     suppressed = current_suppression
@@ -217,6 +261,8 @@ class LiveRuntime:
                 wanted = not self.mute_requested.is_set()
                 if wanted != c.audio.mic_open:
                     c.audio.set_microphone(wanted)
+                    if sounds:
+                        c.audio.play_cue("ready" if wanted else "muted")
                     self.state(self.agent_state if wanted else "muted")
                 if self.interrupt_requested.is_set():
                     self.interrupt_requested.clear()
@@ -240,6 +286,7 @@ class LiveRuntime:
             }[phase]
         finally:
             self.ready = False
+            self.emit({"type": "audio_level", "input": 0.0, "output": 0.0})
             c = self.components
             if c is not None:
                 # Cut capture/playback before any potentially slow tool cleanup.

@@ -128,3 +128,61 @@ def test_speaker_feedback_is_blocked_through_hardware_latency_and_echo_tail():
         finally:
             audio.close()
     asyncio.run(scenario())
+
+
+def test_audio_meter_reads_pcm_and_clears_when_muted_suppressed_or_stale():
+    from jarvis.desktop.live_audio import pcm_level
+    from array import array
+    from cffi import FFI  # Actual PortAudio callbacks expose a CFFI buffer.
+    pcm = array('h', [16384, -16384] * 240).tobytes()
+    ffi = FFI()
+    buf = ffi.new('char[]', pcm)
+    assert pcm_level(ffi.buffer(buf, len(pcm))) == pytest.approx(0.5)
+    async def scenario():
+        now = [20.0]
+        audio = LocalAudio(asyncio.get_running_loop(),
+            NS(RawOutputStream=FakeStream, RawInputStream=FakeStream), clock=lambda: now[0])
+        audio.open()
+        try:
+            audio._input_callback(pcm, 480, None, None)
+            assert audio.levels() == pytest.approx((0.5, 0.0))
+            await audio.output.capture_frame(frame(pcm))
+            audio._output_callback(bytearray(960), 480,
+                NS(outputBufferDacTime=0, currentTime=0), None)
+            assert audio.levels() == pytest.approx((0.0, 0.5))
+            now[0] += 0.5
+            assert audio.levels() == (0.0, 0.0)
+            audio._input_callback(pcm, 480, None, None)
+            audio.set_microphone(False)
+            assert audio.levels()[0] == 0.0
+        finally:
+            audio.close()
+        assert audio.levels() == (0.0, 0.0)
+    asyncio.run(scenario())
+
+
+def test_optional_tones_defer_to_speech_and_share_the_feedback_guard():
+    async def scenario():
+        audio = LocalAudio(asyncio.get_running_loop(),
+            NS(RawOutputStream=FakeStream, RawInputStream=FakeStream))
+        audio.open()
+        try:
+            audio.play_cue('ready')
+            audio.play_cue('muted')
+            assert len(audio.cue) == int(SAMPLE_RATE * 0.065) * 4
+            await audio.output.capture_frame(frame())
+            audio.output.flush()
+            out = bytearray(960)
+            timing = NS(outputBufferDacTime=0, currentTime=0)
+            audio._output_callback(out, 480, timing, None)
+            assert bytes(out) == bytes(frame().data)  # Never replace Jarvis's speech.
+            audio._output_callback(out, 480, timing, None)
+            assert any(out) and audio.input_suppressed
+            audio._input_callback(out, 480, None, None)
+            assert audio.input.frames.empty()
+            audio.clear_cue()
+            audio._output_callback(out, 480, timing, None)
+            assert not any(out)
+        finally:
+            audio.close()
+    asyncio.run(scenario())

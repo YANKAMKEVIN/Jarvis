@@ -288,7 +288,8 @@ PYTHONPATH=src .venv/bin/python scripts/diagnose_accessibility.py --app Safari
 
 Deux vues partagent la même session : un compagnon compact et une fenêtre
 complète, entièrement vocales : orbe, état d’écoute et commandes audio.
-Aucun champ de saisie ni fil de messages. Installation :
+Orbe réactif au son, capsule déplaçable avec position mémorisée, commandes
+discrètes et sons optionnels. Aucun champ de saisie ni fil de messages. Installation :
 
 ```bash
 python -m pip install -e '.[desktop,live]'
