@@ -90,6 +90,8 @@ class OrbWindow(QWidget):
         state = states.get(c.voice_state, 'Jarvis')
         if c.input_suppressed:
             state = 'Écoute en pause'
+        if c.screen_operations and c.voice_state not in {'off', 'error', 'stopping'}:
+            state = 'Observation d’écran'
         if c.audio_worker is not None:
             state = 'Test micro local' if c.local_mic_open else 'Préparation audio' if c.audio_job_state == 'preparing' else 'Audio local'
         if c.demo:

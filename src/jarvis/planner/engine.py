@@ -172,6 +172,7 @@ class PlannerEngine:
         self.max_consecutive_failures = max(1, int(max_consecutive_failures))
         self.clock = clock if clock is not None else time.monotonic
         self.system_prompt = system_prompt
+        self.on_action = None
 
     async def run(
         self,
@@ -227,7 +228,11 @@ class PlannerEngine:
                         pending={"question": question},
                     )
 
-                result = await self._execute(call)
+                self._notify_action(call.name)
+                try:
+                    result = await self._execute(call)
+                finally:
+                    self._notify_action(None)
                 record = StepRecord(
                     tool=call.name,
                     ok=bool(result.get("ok")),
@@ -275,6 +280,13 @@ class PlannerEngine:
                         f"(dernier : {call.name}, {record.error_code or 'erreur'}).",
                         steps,
                     )
+
+    def _notify_action(self, name):
+        if self.on_action is not None:
+            try:
+                self.on_action(name)
+            except Exception:
+                pass
 
     def _check_limits(self, cancel, started, steps) -> TaskOutcome | None:
         if cancel.is_set():
@@ -329,3 +341,4 @@ class PlannerEngine:
         if len(text) > MAX_TOOL_RESULT_CHARS:
             text = text[:MAX_TOOL_RESULT_CHARS] + "... (tronque)"
         return text
+

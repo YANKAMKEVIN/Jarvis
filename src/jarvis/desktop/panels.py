@@ -3,7 +3,7 @@ from urllib.parse import urlsplit
 from PySide6.QtCore import QUrl, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
-from jarvis.desktop.presentation import STATUS_TEXT, TASK_TEXT, safe_url
+from jarvis.desktop.presentation import MISSION_GUIDANCE, STATUS_TEXT, TASK_TEXT, safe_url
 
 
 def text(value, name=None):
@@ -55,8 +55,8 @@ class DetailPanel(QWidget):
 
     def render(self):
         c = self.controller
-        can_cancel = bool(c.voice_worker) and c.voice_state not in {'starting', 'stopping'}
-        signature = repr((c.task, c.activity if self.activity else c.cards, can_cancel))
+        can_cancel = bool(c.voice_worker) and c.voice_state not in {'starting', 'stopping', 'error'}
+        signature = repr((c.task, c.mission_history if self.activity else None, c.activity if self.activity else c.cards, can_cancel))
         if signature == self.signature:
             return
         self.signature = signature
@@ -67,14 +67,22 @@ class DetailPanel(QWidget):
                 widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
-        if c.task:
+        missions = ([c.task] if c.task else []) + (list(reversed(c.mission_history.values())) if self.activity else [])
+        for mission_index, task in enumerate(missions):
             frame, row = box()
-            task = c.task
+            row.addWidget(text('MISSION ACTUELLE' if mission_index == 0 else 'MISSION PRÉCÉDENTE · CETTE SESSION', 'eyebrow'))
+            if task.get('objective'):
+                row.addWidget(text(task['objective'], 'greeting'))
             row.addWidget(text(TASK_TEXT.get(task['status'], TASK_TEXT['unknown']), 'wordmark'))
             row.addWidget(text(f"{task['step_count']} étape(s) traitée(s)", 'subtitle'))
-            for step in task['steps']:
-                row.addWidget(text(f"{step['label']} · {STATUS_TEXT.get(step['status'], '')}"))
-            if task['status'] in {'running', 'cancelling'}:
+            if task.get('current') and task['status'] in {'running', 'cancelling'}:
+                row.addWidget(text('En cours · ' + task['current']))
+            for index, step in enumerate(task['steps'], 1):
+                row.addWidget(text(f"{index:02d} · {step['label']} · {STATUS_TEXT.get(step['status'], '')}"))
+            if task['step_count'] > len(task['steps']):
+                row.addWidget(text(f"{len(task['steps'])} premières étapes affichées sur {task['step_count']}.", 'subtitle'))
+            row.addWidget(text(MISSION_GUIDANCE.get(task['status'], MISSION_GUIDANCE['unknown']), 'subtitle'))
+            if mission_index == 0 and task['status'] in {'running', 'cancelling'}:
                 row.addWidget(text('Une action déjà lancée peut finir avant l’arrêt.', 'subtitle'))
                 cancel = QPushButton('Annulation demandée…' if task['status'] == 'cancelling' else 'Annuler la tâche')
                 cancel.setObjectName('cancelTask')
@@ -116,4 +124,6 @@ class DetailPanel(QWidget):
                                'Les outils réellement utilisés et les étapes des tâches apparaîtront ici.'))
             self.rows.addWidget(frame)
         self.rows.addStretch()
-        self.clear.setEnabled(bool(entries) and (not self.activity or not any(e['status'] == 'running' for e in entries)))
+        has_activity = bool(entries or c.task or c.mission_history) if self.activity else bool(entries)
+        busy = self.activity and (any(e['status'] == 'running' for e in entries) or bool(c.task and c.task['status'] in {'running', 'cancelling'}))
+        self.clear.setEnabled(has_activity and (not self.activity or not busy))

@@ -51,3 +51,26 @@ def test_task_projection_drops_pending_tokens_summaries_goals_and_error_details(
     assert task['status'] == 'needs_confirmation'
     assert task['steps'] == [{'label': 'Application', 'status': 'received'}]
     assert 'PRIVATE' not in str(task)
+
+
+def test_screen_card_contains_only_bounded_analysis_and_capture_scope():
+    result = {'ok': True, 'analysis': '<b>Lecture</b>' + 'a' * 2000, 'source': 'screen',
+              'image_path': '/PRIVATE_FILE.png', 'model': 'PRIVATE_MODEL', 'token': 'PRIVATE_TOKEN',
+              'target_app': 'PRIVATE_APP', 'question': 'PRIVATE_QUESTION'}
+    card = project_card('ask_about_screen', result)
+    assert card['kind'] == 'screen' and len(card['body']) == 1600
+    assert card['body'].startswith('<b>Lecture</b>')
+    assert card['sources'] == [] and 'Écran entier' in card['items'][0]
+    assert 'PRIVATE' not in str(card)
+    assert project_card('describe_screen', {**result, 'ok': False}) is None
+    assert project_card('ask_about_screen', {'ok': True, 'message': 'PRIVATE_FALLBACK'}) is None
+    assert project_card('capture_screen', {'ok': True, 'state_confirmed': True})['title'] == 'Capture effectuée'
+    assert project_card('capture_screen', {'ok': True}) is None
+
+
+def test_mission_projection_accepts_only_explicit_objective_and_known_tool_labels():
+    task = project_task({'id': 'a', 'status': 'running', 'objective': 'x' * 500,
+                         'current_tool': 'open_app', 'steps': [],
+                         'goal': 'PRIVATE_GOAL', 'summary': 'PRIVATE_SUMMARY', 'pending': {'token': 'PRIVATE'}})
+    assert len(task['objective']) == 300 and task['current'] == 'Application'
+    assert 'PRIVATE' not in str(task)

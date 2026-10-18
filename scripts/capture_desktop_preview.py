@@ -72,11 +72,27 @@ def main():
             header.setText('DÉMONSTRATION · RÉSULTATS SIMULÉS')
             save(shell.full, 'context-cards.png')
             controller.voice_event({'type': 'task_progress', 'id': 'sample-task',
+                'objective': 'Exemple · Préparer les informations de ma journée',
+                'current': 'Agenda',
                 'status': 'running', 'step_count': 2, 'steps': [
                     {'label': 'Fichiers', 'status': 'received'},
                     {'label': 'Recherche web', 'status': 'verified'}]})
             shell.full.navigate(2)
             save(shell.full, 'task-progress.png')
+            controller.voice_event({'type': 'task_progress', 'id': 'sample-task',
+                'objective': 'Exemple · Préparer les informations de ma journée',
+                'current': '', 'status': 'completed', 'step_count': 2, 'steps': [
+                    {'label': 'Fichiers', 'status': 'received'},
+                    {'label': 'Recherche web', 'status': 'verified'}]})
+            controller.voice_event(project_activity('ask_about_screen', {'ok': True,
+                'analysis': 'EXEMPLE SIMULÉ · Une fenêtre affiche une erreur de connexion. Le détail est trop petit pour être lu avec certitude.',
+                'source': 'window'}, 'sample-screen'))
+            shell.full.navigate(1)
+            save(shell.full, 'screen-analysis.png')
+            controller.voice_state = 'thinking'
+            controller.voice_event(project_activity('describe_screen', None, 'sample-screen-busy', 'started'))
+            shell.full.navigate(0)
+            save(shell.full, 'screen-observation.png')
     finally:
         shell.finish_transfer()
         for window in (shell.full, shell.compact, shell.orb_window):

@@ -293,7 +293,8 @@ discrètes et sons optionnels. Cartes d’agenda, rappels et réponses web, avec
 suivi des actions et une annulation coopérative des tâches. Raccourci global
 macOS, choix/tests des périphériques et reconnexion explicite après coupure.
 Menu permanent avec état de capture et commandes vocales, même fenêtres masquées. Aucun champ de saisie
-ni fil de messages. Installation :
+ni fil de messages. Les missions présentent leur objectif, l’outil en cours et
+leurs bilans ; l’analyse d’écran à la demande dispose d’un indicateur et d’une carte de résultat. Installation :
 
 ```bash
 python -m pip install -e '.[desktop,live]'

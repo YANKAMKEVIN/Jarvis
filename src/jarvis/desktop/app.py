@@ -118,6 +118,8 @@ class Controller(QObject):
         self.cards = OrderedDict()
         self.activity = OrderedDict()
         self.task = None
+        self.mission_history = OrderedDict()
+        self.screen_operations = set()
         self.input_choice = self.output_choice = None
         self.device_config_invalid = False
         self.audio_worker = None
@@ -194,13 +196,16 @@ class Controller(QObject):
         self.changed.emit()
 
     def clear_activity(self):
-        if not any(e['status'] == 'running' for e in self.activity.values()):
+        if (not any(e['status'] == 'running' for e in self.activity.values())
+                and not (self.task and self.task['status'] in {'running', 'cancelling'})):
             self.activity.clear()
+            self.mission_history.clear()
+            self.task = None
             self.changed.emit()
 
     def cancel_task(self):
         if (self.voice_worker and self.task and self.task['status'] == 'running'
-                and self.voice_state not in {'starting', 'stopping'}):
+                and self.voice_state not in {'starting', 'stopping', 'error'}):
             self.voice_worker.cancel_task()
 
     def clear_tool_notice(self):
@@ -232,6 +237,8 @@ class Controller(QObject):
             self.cards.clear()
             self.activity.clear()
             self.task = None
+            self.mission_history.clear()
+        self.screen_operations.clear()
         self.tool_timer.stop()
         self.tool_notice = ""
         self.changed.emit()
@@ -267,6 +274,11 @@ class Controller(QObject):
 
     def voice_event(self, event):
         if event.get('type') == 'activity':
+            if event.get('screen'):
+                if event['status'] == 'running':
+                    self.screen_operations.add(event['id'])
+                else:
+                    self.screen_operations.discard(event['id'])
             now = datetime.now().strftime('%H:%M:%S')
             self.activity[event['id']] = {'label': event['label'], 'status': event['status'], 'time': now}
             self.activity.move_to_end(event['id'])
@@ -283,6 +295,13 @@ class Controller(QObject):
             self.changed.emit()
             return
         if event.get('type') == 'task_progress':
+            if self.task and self.task['id'] != event['id']:
+                previous = dict(self.task)
+                if previous['status'] in {'running', 'cancelling'}:
+                    previous['status'] = 'unknown'
+                self.mission_history[previous['id']] = previous
+                while len(self.mission_history) > 4:
+                    self.mission_history.popitem(last=False)
             self.task = event
             self.changed.emit()
             return
@@ -315,6 +334,7 @@ class Controller(QObject):
             if state in {'listening', 'muted', 'speaking', 'thinking'}:
                 self.reconnecting = False
             if state in {'off', 'error'}:
+                self.screen_operations.clear()
                 for entry in self.activity.values():
                     if entry['status'] == 'running':
                         entry['status'] = 'unknown'
@@ -453,6 +473,10 @@ class VoicePanel(QWidget):
             control.setVisible(active)
             control.setEnabled(active and state not in {"starting", "stopping", "error"})
         self.mic_button.setText("Couper le micro" if c.voice_mic_open else "Réactiver le micro")
+        if c.screen_operations and state not in {'off', 'error', 'stopping'}:
+            self.status.setText('Observation d’écran en cours')
+            self.hint_area.setCurrentIndex(0)
+            self.hint.setText('Capture ou analyse ponctuelle demandée · aucun suivi continu de l’écran.')
         if c.audio_worker is not None:
             self.status.setText('Micro en test local' if c.local_mic_open else 'Test audio local' if c.audio_job_kind != 'scan' else 'Périphériques audio')
             self.hint_area.setCurrentIndex(0)

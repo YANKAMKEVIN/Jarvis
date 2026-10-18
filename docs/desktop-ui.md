@@ -87,7 +87,8 @@ dans la fenêtre complète ; **Voir les détails** ouvre l’onglet **Cartes**. 
 capsule et l’orbe indiquent la présence de cartes sans afficher leurs contenus
 personnels sur le bureau miniature.
 
-- Quatre cartes au maximum : dernière réponse web/page, agenda, rappels et volume.
+- Quatre cartes au maximum parmi les catégories web/page, agenda, rappels,
+  volume et écran. La plus ancienne est remplacée lorsque cette limite est atteinte.
 - Agenda et rappels : six lignes affichées au maximum, avec le nombre total dans
   le résultat. Dates formatées dans le fuseau local lorsque leur format le permet.
 - Réponse web : extrait limité et jusqu’à quatre sources. Les liens s’ouvrent
@@ -98,7 +99,7 @@ personnels sur le bureau miniature.
   prochaine activation du vocal et ne sont jamais enregistrées sur disque.
 
 Ces cartes peuvent contenir les titres de rendez-vous, textes de rappels et
-réponses web demandés : elles sont visibles dans la fenêtre complète. Il n’y a
+réponses web ou analyses d’écran demandées : elles sont visibles dans la fenêtre complète. Il n’y a
 ni transcription ni collecte supplémentaire en arrière-plan. Les autres outils
 continuent de répondre vocalement, avec leur état dans Activité.
 
@@ -113,7 +114,26 @@ non instrumentées apparaissent après le retour SDK. Le planificateur fournit s
 **L’outil signale un problème** restent distincts. « État vérifié » exige un
 résultat `state_confirmed=true`. Aucun pourcentage, plan ou succès système n’est
 inventé. Les noms génériques d’outils sont affichés sans arguments, chemins,
-objectifs, messages d’erreur bruts ou jetons de confirmation.
+messages d’erreur bruts ou jetons de confirmation.
+
+La carte **Mission actuelle** ajoute l’objectif transmis au planificateur
+(300 caractères maximum), l’outil effectivement en cours et un bilan lié à
+l’état final. L’objectif est une donnée de mission affichée volontairement,
+pas une transcription de la conversation. Aucun résumé libre du modèle,
+argument d’outil ou contenu de confirmation n’est copié dans cette carte.
+Au maximum 25 étapes sont détaillées, avec le nombre total si la liste est plus longue.
+Une fin du planificateur ne transforme pas un simple résultat reçu en effet vérifié.
+Le bilan décrit le dernier retour du planificateur : une action préparée puis
+confirmée vocalement est suivie séparément dans Activité, sans réécrire
+automatiquement ce bilan ni reprendre le plan.
+
+Les quatre missions précédentes restent consultables dans **Activité**, avec
+l’actuelle, uniquement en mémoire pendant la session. **Effacer l’activité**
+efface aussi leurs bilans quand aucune action ou mission n’est en cours.
+Une reconnexion conserve ce suivi pour vérification, mais ne relance rien.
+Un démarrage vocal neuf le vide ; aucune reprise automatique n’est proposée.
+
+![Mission et étape actuelle · données simulées](screenshots/task-progress.png)
 
 **Annuler la tâche** utilise l’annulation coopérative existante du planificateur.
 L’interface indique d’abord la demande, puis l’issue réelle ; une action déjà
@@ -121,6 +141,37 @@ lancée peut finir. **Interrompre** reste réservé à la réponse audio et n’
 pas la tâche. Les actions en attente d’accord restent confirmées vocalement :
 aucun bouton ne contourne leur protocole. Une fin de session sans résultat laisse
 un état « Résultat indisponible », sans faux succès.
+
+## Compréhension de l’écran à la demande
+
+Les outils existants `describe_screen` et `ask_about_screen` sont reliés à
+l’interface. Demander par exemple : « Décris ce qui est visible dans Safari »
+ou « Que dit l’erreur affichée dans cette fenêtre ? ». Une capture reste une
+opération ponctuelle ; aucune surveillance continue n’est ajoutée.
+
+Pendant l’appel d’un outil de capture ou d’analyse, **Observation d’écran en cours**
+apparaît dans la fenêtre, le compagnon, l’orbe et la barre de menus. Le signal
+couvre l’attente de capture et d’analyse ; il ne prétend pas mesurer la durée
+exacte de la capture système. Plusieurs opérations concurrentes restent signalées
+jusqu’à leur fin, échec ou annulation. Une fin de session efface cet indicateur.
+
+Une analyse réussie fournit une carte **Analyse de l’écran**, limitée à 1 600
+caractères, avec la portée fenêtre/écran. Elle peut contenir des informations
+personnelles visibles sur l’écran : seule la fenêtre complète en affiche le
+contenu. Aucun fichier image, miniature, chemin local, modèle ou question brute
+n’est ajouté à la carte. Une capture seule n’est jamais présentée comme une
+analyse. Les captures PNG conservent le stockage du moteur existant ; masquer
+la carte ne supprime pas ces fichiers.
+
+La vision doit déjà être activée par `JARVIS_VISION_ENABLED=1`, avec la clé
+Gemini et l’autorisation macOS de capture d’écran. L’interface n’active pas cette
+option automatiquement. Une vision désactivée ou une permission refusée fournit
+une erreur, sans carte de succès. La fenêtre active peut être Jarvis : nommer
+l’application souhaitée pour que le moteur cible sa fenêtre vérifiée.
+Une observation n’exécute aucune action sur ce qu’elle voit.
+
+![Analyse d’écran · résultat simulé dans la vraie interface Qt](screenshots/screen-analysis.png)
+![Indicateur d’observation · simulation sans capture réelle](screenshots/screen-observation.png)
 
 Pour essayer : « Quels sont mes rendez-vous ? », « Liste mes rappels », puis une
 demande nécessitant plusieurs étapes. Le moteur de recherche web conserve sa
@@ -319,9 +370,11 @@ avec le micro préalablement coupé. Le rendu Linux ne valide pas le son ou TCC.
 Vérifier aussi les commandes vocales depuis le menu avec toutes les fenêtres
 masquées, la distinction capture/écoute, l’accès aux réglages et Quitter pendant
 un test micro local.
+Tester aussi une observation de fenêtre nommée, une vision désactivée, un refus
+de capture macOS, une mission en cours puis terminée et ses bilans après reconnexion.
 
-Résultat sous Linux/Python 3.13 : **68 tests desktop passants**. Suite complète du
-lot précédent (avant les 4 tests du menu) :
-856 tests et 149 sous-tests passants, avec les mêmes 207 échecs de frameworks
+Résultat sous Linux/Python 3.13 : **75 tests desktop passants**. Suite complète
+exécutée pendant ce lot, avant le dernier test de rendu Qt :
+866 tests et 149 sous-tests passants, avec les mêmes 207 échecs de frameworks
 macOS absents que le snapshot de référence ; aucun nouvel identifiant en échec.
 La suite complète n’est donc pas déclarée verte sur Linux.

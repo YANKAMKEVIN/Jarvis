@@ -39,6 +39,7 @@ class TaskManager:
         self._started = 0.0
         self._outcome: TaskOutcome | None = None
         self._id: str | None = None
+        self._current_tool = None
 
     @property
     def running(self) -> bool:
@@ -62,6 +63,7 @@ class TaskManager:
         self._id = uuid.uuid4().hex
         self._cancel = threading.Event()
         self._steps = []
+        self._current_tool = None
         self._outcome = None
         self._started = self.clock()
         self._task = asyncio.get_running_loop().create_task(self._run(self._goal, self._cancel))
@@ -134,6 +136,20 @@ class TaskManager:
                 return self._goal, tools
         return None
 
+    def presentation(self) -> dict[str, Any] | None:
+        """Desktop-only mission objective; no tool arguments or model summary.
+
+        Unlike progress(), this deliberately exposes the task objective for
+        the local session card. Never journal or persist this snapshot.
+        """
+        snapshot = self.progress()
+        if snapshot is not None:
+            snapshot.update(objective=self._goal, current_tool=self._current_tool)
+        return snapshot
+
+    def _action_changed(self, name):
+        self._current_tool = name
+
     async def wait(self) -> TaskOutcome | None:
         """Await the current task (tests and shutdown)."""
         if self._task is not None:
@@ -143,10 +159,13 @@ class TaskManager:
     async def _run(self, goal: str, cancel: threading.Event) -> None:
         try:
             engine = self.engine_factory()
+            if isinstance(engine, PlannerEngine):
+                engine.on_action = self._action_changed
             outcome = await engine.run(goal, cancel, on_step=self._steps.append)
         except Exception as error:
             outcome = TaskOutcome("failed", f"Erreur interne de la tache : {error}", list(self._steps))
         self._outcome = outcome
+        self._current_tool = None
 
         if self.on_finished is not None:
             try:

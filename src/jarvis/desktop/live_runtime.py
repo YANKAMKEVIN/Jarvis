@@ -195,7 +195,7 @@ class LiveRuntime:
         registry = self.components.assistant.registry
         tasks = getattr(registry, 'tasks', None)
         if tasks is not None and hasattr(tasks, 'progress'):
-            snapshot = project_task(tasks.progress())
+            snapshot = project_task(tasks.presentation() if hasattr(tasks, 'presentation') else tasks.progress())
             if snapshot is not None and snapshot != self.last_task_snapshot:
                 self.last_task_snapshot = snapshot
                 self.emit(snapshot)

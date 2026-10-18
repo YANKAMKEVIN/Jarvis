@@ -18,6 +18,8 @@ def presence(controller):
         return 'Arrêt en cours', '#aebdd0', c.voice_mic_open
     if state == 'starting':
         return 'Reconnexion…' if c.reconnecting else 'Connexion…', '#aebdd0', False
+    if c.screen_operations:
+        return 'Observation d’écran en cours', '#c5adff', c.voice_mic_open
     if state == 'speaking':
         return 'Jarvis répond · écoute suspendue', '#c5adff', c.voice_mic_open
     if state == 'thinking':

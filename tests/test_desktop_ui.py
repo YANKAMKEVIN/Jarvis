@@ -36,6 +36,75 @@ def make_shell(app, monkeypatch, demo=False):
     return controller, DesktopShell(app, controller, settings=Settings())
 
 
+def test_screen_indicator_follows_overlapping_operations_and_session_end(app, monkeypatch):
+    from jarvis.desktop.presentation import project_activity
+    from jarvis.desktop.tray import presence
+    c, shell = make_shell(app, monkeypatch)
+    try:
+        c.voice_state = 'thinking'
+        c.voice_event(project_activity('describe_screen', None, 'a', 'started'))
+        c.voice_event(project_activity('capture_window', None, 'b', 'started'))
+        assert len(c.screen_operations) == 2
+        assert shell.full.assistant.status.text() == 'Observation d’écran en cours'
+        assert 'Observation' in shell.orb_window.status.text()
+        assert presence(c)[0] == 'Observation d’écran en cours'
+        c.voice_event(project_activity('describe_screen', {'ok': False}, 'a'))
+        assert c.screen_operations == {'b'}
+        c.voice_event(project_activity('capture_window', None, 'b', 'cancelled'))
+        assert not c.screen_operations
+        c.voice_event(project_activity('ask_about_screen', None, 'c', 'started'))
+        c.voice_event({'type': 'state', 'state': 'error', 'retryable': True})
+        assert not c.screen_operations
+        assert shell.full.assistant.status.text() == 'Vocal indisponible'
+    finally:
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_missions_keep_bounded_session_bilans_and_clear_only_when_idle(app, monkeypatch):
+    from jarvis.desktop.presentation import project_task
+    c, shell = make_shell(app, monkeypatch)
+    try:
+        for i in range(7):
+            c.voice_event(project_task({'id': str(i), 'status': 'completed',
+                'objective': '<b>Mission</b> ' + str(i), 'steps': [{'tool': 'open_app', 'ok': True}]}))
+        assert len(c.mission_history) == 4
+        texts = [w.text() for w in shell.full.findChildren(QLabel)]
+        assert '<b>Mission</b> 6' in texts
+        c.voice_event(project_task({'id': 'current', 'status': 'running',
+            'objective': 'Objectif en cours', 'current_tool': 'open_app', 'steps': []}))
+        c.clear_activity()
+        assert c.task['id'] == 'current' and len(c.mission_history) == 4
+        assert any(w.text() == 'En cours · Application' for w in shell.full.findChildren(QLabel))
+        c.voice_event({'type': 'state', 'state': 'error'})
+        assert c.task['status'] == 'unknown'
+        c.clear_activity()
+        assert c.task is None and not c.mission_history
+    finally:
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
+def test_screen_card_and_mission_render_without_swallowed_qt_slot_errors(app, monkeypatch):
+    import sys
+    from jarvis.desktop.presentation import project_activity, project_task
+    errors = []
+    monkeypatch.setattr(sys, 'excepthook', lambda *args: errors.append(args))
+    c, shell = make_shell(app, monkeypatch)
+    try:
+        c.voice_event(project_activity('ask_about_screen', {'ok': True,
+            'analysis': '<b>Résultat lisible</b>', 'source': 'window', 'image_path': 'PRIVATE_PATH'}, 'screen'))
+        c.voice_event(project_task({'id': 'a', 'status': 'completed', 'objective': 'Comprendre l’erreur', 'steps': []}))
+        panel = shell.full.pages.widget(1)
+        assert panel.clear.isEnabled()
+        labels = panel.findChildren(QLabel)
+        assert any(w.text() == '<b>Résultat lisible</b>' for w in labels)
+        assert all('PRIVATE' not in w.text() for w in labels)
+        c.clear_cards()
+        assert not panel.clear.isEnabled()
+        assert not errors
+    finally:
+        for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+
 def test_demo_has_no_text_input_and_cannot_activate_voice(app, monkeypatch):
     controller, shell = make_shell(app, monkeypatch, demo=True)
     try:

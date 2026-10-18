@@ -2453,6 +2453,7 @@ class ToolRegistry:
                 "cliquer ou taper, utilise Accessibility, jamais ce tool."
             ),
         )
+        @self._journaled('describe_screen')
         async def describe_screen(
             target: str = "window",
             app_name: str | None = None,
@@ -2483,6 +2484,7 @@ class ToolRegistry:
                 "action. Pour agir, utilise Accessibility."
             ),
         )
+        @self._journaled('ask_about_screen')
         async def ask_about_screen(
             question: str,
             target: str = "window",
