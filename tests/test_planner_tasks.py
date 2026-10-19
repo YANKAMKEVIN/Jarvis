@@ -405,8 +405,11 @@ class ProcedureToolTest(unittest.TestCase):
         started = asyncio.run(scenario())
 
         self.assertTrue(started["task_started"])
-        self.assertIn("open_app", registry.tasks._goal)
-        self.assertIn("browse_open_url", registry.tasks._goal)
+        # Multi-mission model: the goal lives on the started mission, read via
+        # status(task_id), not the manager's legacy single _goal.
+        goal = registry.tasks.status(started["task_id"])["goal"]
+        self.assertIn("open_app", goal)
+        self.assertIn("browse_open_url", goal)
 
     def test_run_unknown_procedure_refuses_without_starting(self):
         registry, tools, _memory = self.build()

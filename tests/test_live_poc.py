@@ -1896,10 +1896,20 @@ class LiveMediaToolTest(unittest.TestCase):
         results = asyncio.run(run_tools())
 
         self.assertTrue(all(result["ok"] for result in results))
-        self.assertEqual(order[0], "start:next_track")
-        self.assertEqual(order[1], "end:next_track")
-        self.assertEqual(order[2], "start:get_media_state")
-        self.assertEqual(order[3], "end:get_media_state")
+        # The two media calls serialize on the shared media lock: neither
+        # interleaves with the other (each start is immediately followed by its
+        # own end). Which one runs first is not guaranteed -- next_track now also
+        # acquires the desktop lease, so get_media_state (a read) may reach the
+        # lock first. The invariant under test is serialization, not order.
+        self.assertEqual(len(order), 4)
+        self.assertEqual(order[0].split(":")[0], "start")
+        self.assertEqual(order[1].split(":")[0], "end")
+        self.assertEqual(order[0].split(":")[1], order[1].split(":")[1])
+        self.assertEqual(order[2].split(":")[0], "start")
+        self.assertEqual(order[3].split(":")[0], "end")
+        self.assertEqual(order[2].split(":")[1], order[3].split(":")[1])
+        self.assertEqual({order[0].split(":")[1], order[2].split(":")[1]},
+                         {"next_track", "get_media_state"})
 
     def test_audio_and_app_tools_remain_exposed(self):
         tools = self.make_tools()
