@@ -613,6 +613,33 @@ def group_memory(ctx: Context, step) -> None:
     step("forget", forget)
 
 
+def group_missions(ctx: Context, step) -> None:
+    # Mission history persists in the throwaway memory DB (JARVIS_MEMORY_PATH).
+    # A finished mission is written straight to the store (no planner needed),
+    # then read back and purged through the real voice tools.
+    from jarvis.memory.store import MemoryStore
+
+    db = Path(os.environ["JARVIS_MEMORY_PATH"])
+    store = MemoryStore(path=db)
+
+    def log_and_read():
+        store.log_mission("ranger le bureau (smoke)", "completed", 3)
+        result = call_ok(ctx, "recent_missions", 10)
+        goals = [m.get("goal") for m in result.get("missions", [])]
+        expect("ranger le bureau (smoke)" in goals, f"mission absente : {goals}")
+
+    def purge():
+        prep = call_ok(ctx, "clear_personal_data", "missions")
+        confirmed = call_ok(ctx, "confirm_action", prep["token"])
+        expect(confirmed.get("cleared", {}).get("missions", 0) >= 1,
+               f"missions non effacees : {confirmed}")
+        after = call_ok(ctx, "recent_missions", 10)
+        expect(after.get("count") == 0, f"historique non vide apres effacement : {after}")
+
+    step("recent_missions (persiste)", log_and_read, critical=True)
+    step("clear_personal_data missions", purge)
+
+
 def group_knowledge(ctx: Context, step) -> None:
     # Exercises the real production search path (SearXNG if up, else keyless
     # Google News / DuckDuckGo). Read-only, no Mac UI, no LLM synthesis -- fast.
@@ -1133,6 +1160,7 @@ GROUPS = {
     "messaging": group_messaging,
     "whatsapp": group_whatsapp,
     "memory": group_memory,
+    "missions": group_missions,
     "knowledge": group_knowledge,
     "compute": group_compute,
     "webread": group_webread,

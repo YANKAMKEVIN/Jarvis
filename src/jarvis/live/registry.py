@@ -96,7 +96,7 @@ SAFE_MODE_ALLOWED = frozenset({
     "set_reminder", "cancel_reminder", "list_reminders",
     "save_macro", "list_macros", "delete_macro", "save_task_procedure",
     # Activity / privacy introspection and safe stops.
-    "recent_activity", "privacy_overview", "task_status",
+    "recent_activity", "recent_missions", "privacy_overview", "task_status",
     "list_scheduled_messages", "cancel_scheduled_message",
     "cancel_action", "cancel_task", "pause_task", "resume_task",
     # Missions may still be launched: their own outward sub-actions run through
@@ -352,6 +352,13 @@ class ToolRegistry:
     async def _on_task_finished(self, goal: str, outcome: TaskOutcome) -> None:
         await self._log_action(f"task_{outcome.status}", None,
                                {"ok": outcome.status in ("completed", "needs_confirmation")})
+        # Mission history survives a restart (the live task does not): objective
+        # and final status only, so the user can review past missions later.
+        steps = getattr(outcome, "steps", None)
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.memory.log_mission, goal, outcome.status,
+            len(steps) if isinstance(steps, list) else 0,
+        )
         if not hasattr(self, "task_announcement_lock"):
             self.task_announcement_lock = asyncio.Lock()
         async with self.task_announcement_lock:
@@ -421,6 +428,8 @@ class ToolRegistry:
             )
         if scope in ("checklists", "all"):
             counts["checklists"] = checklist_store(self).clear()
+        if scope in ("missions", "all"):
+            counts["missions"] = self.memory.clear_missions()
         total = sum(counts.values())
         return ToolResult.success(
             action="clear_personal_data",
@@ -2290,6 +2299,26 @@ class ToolRegistry:
             return result.to_livekit_dict()
 
         @function_tool(
+            name="recent_missions",
+            description=(
+                "Liste les dernieres missions en arriere-plan (run_task) avec leur "
+                "objectif, leur statut final (terminee, echec, annulee...) et "
+                "l'heure. Contrairement a task_status qui ne voit que la session "
+                "en cours, cet historique est conserve localement et SURVIT a un "
+                "redemarrage de Jarvis. Utilise ce tool pour 'quelles etaient mes "
+                "dernieres missions', 'qu'est-ce que tu as lance tout a l'heure', "
+                "'la mission d'hier a-t-elle abouti'."
+            ),
+        )
+        async def recent_missions(limit: int = 10) -> dict:
+            """Read the most recent persisted missions (survives restarts)."""
+            debug_live("tool_call", tool="recent_missions", limit=limit)
+            async with self.memory_lock:
+                result = await asyncio.to_thread(self.memory.recent_missions, limit)
+            self._debug_tool_result("recent_missions", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
             name="confirm_action",
             description=(
                 "Execute reellement une action preparee (envoi de message ou "
@@ -3317,6 +3346,7 @@ class ToolRegistry:
             async with self.memory_lock:
                 mem = await asyncio.to_thread(self.memory.list_memories)
                 act = await asyncio.to_thread(self.memory.recent_activity, 50)
+                missions = await asyncio.to_thread(self.memory.recent_missions, 100)
             scheduled = await asyncio.to_thread(self.schedule_store.list, "pending")
             reminders = await asyncio.to_thread(self.reminder_store.list, "pending")
             checklists_count = 0
@@ -3326,15 +3356,18 @@ class ToolRegistry:
                 checklists_count = len(overview.data.get('lists', [])) if overview.ok else 0
             memory_count = mem.data.get("count", 0) if mem.ok else 0
             activity_count = len(act.data.get("episodes", [])) if act.ok else 0
+            mission_count = missions.data.get("count", 0) if missions.ok else 0
             return ToolResult.success(
                 action="privacy_overview",
                 message=(
                     f"Je garde {memory_count} souvenir(s), {len(scheduled)} message(s) "
                     f"planifie(s) et {len(reminders)} rappel(s) en attente ; "
-                    f"{activity_count} action(s) recente(s) au journal ; {checklists_count} checklist(s) locale(s)."
+                    f"{activity_count} action(s) recente(s) au journal ; "
+                    f"{mission_count} mission(s) dans l'historique ; {checklists_count} checklist(s) locale(s)."
                 ),
                 memory_count=memory_count,
                 activity_count=activity_count,
+                mission_count=mission_count,
                 scheduled_count=len(scheduled),
                 reminder_count=len(reminders),
                 checklists_count=checklists_count,
@@ -3345,8 +3378,9 @@ class ToolRegistry:
             description=(
                 "EFFACE des donnees que Jarvis garde, apres confirmation. scope : "
                 "'context' (notes de contexte de conversation), 'reminders' (rappels "
-                "en attente), 'scheduled' (messages planifies en attente), ou 'all' "
-                "(ces donnees et les checklists). scope checklists efface uniquement les checklists. Renvoie un token et requires_confirmation : annonce ce "
+                "en attente), 'scheduled' (messages planifies en attente), 'missions' "
+                "(historique des missions), ou 'all' (ces donnees et les checklists). "
+                "scope checklists efface uniquement les checklists. Renvoie un token et requires_confirmation : annonce ce "
                 "qui sera efface, puis confirm_action seulement sur un oui clair. Pour "
                 "effacer un souvenir precis, utilise plutot forget."
             ),
@@ -3356,10 +3390,10 @@ class ToolRegistry:
             """Prepare a confirmed purge of the data Jarvis stores."""
             debug_live("tool_call", tool="clear_personal_data", scope=scope)
             choice = (scope or "all").strip().lower()
-            if choice not in ("context", "reminders", "scheduled", "checklists", "all"):
+            if choice not in ("context", "reminders", "scheduled", "checklists", "missions", "all"):
                 return ToolResult.failure(
                     action="clear_personal_data",
-                    message="scope doit etre context, reminders, scheduled, checklists ou all.",
+                    message="scope doit etre context, reminders, scheduled, checklists, missions ou all.",
                     error_code="invalid_scope",
                 ).to_livekit_dict()
 
@@ -3512,6 +3546,7 @@ class ToolRegistry:
             list_memories,
             forget,
             recent_activity,
+            recent_missions,
             browse_open_url,
             browse_search_web,
             browse_get_active_tab,

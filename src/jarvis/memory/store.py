@@ -29,6 +29,13 @@ MEMORY_SOURCES = ("user", "inferred")
 EPISODE_RETENTION_SECONDS = 30 * 24 * 3600
 MAX_EPISODE_FIELD_LENGTH = 80
 
+# Mission history survives restarts (the running coroutine does not): only the
+# objective, final status and step count are kept, with the same 30-day
+# retention as the activity journal.
+MISSION_RETENTION_SECONDS = EPISODE_RETENTION_SECONDS
+MAX_MISSION_GOAL_LENGTH = 200
+MAX_MISSION_STATUS_LENGTH = 40
+
 MAX_SUBJECT_LENGTH = 120
 MAX_CONTENT_LENGTH = 500
 # A learned procedure stores a small JSON plan (tool + target per step), which
@@ -64,6 +71,19 @@ CREATE TABLE IF NOT EXISTS episodes (
 );
 
 CREATE INDEX IF NOT EXISTS episodes_at ON episodes(at);
+
+-- Mission history: the objective, final status and step count of finished
+-- background missions. It survives a restart (the live task does not). Kept
+-- 30 days. No step arguments, tool results or message content.
+CREATE TABLE IF NOT EXISTS missions (
+    id INTEGER PRIMARY KEY,
+    at REAL NOT NULL,
+    goal TEXT NOT NULL,
+    status TEXT NOT NULL,
+    step_count INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS missions_at ON missions(at);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
     subject,
@@ -141,6 +161,23 @@ class Episode:
         if self.error_code:
             payload["error_code"] = self.error_code
         return payload
+
+
+@dataclass(frozen=True)
+class Mission:
+    id: int
+    at: float
+    goal: str
+    status: str
+    step_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "at": time.strftime("%Y-%m-%d %H:%M", time.localtime(self.at)),
+            "goal": self.goal,
+            "status": self.status,
+            "step_count": self.step_count,
+        }
 
 
 def default_memory_path() -> Path:
@@ -340,6 +377,48 @@ class MemoryStore:
         with self._connect() as conn:
             return conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
 
+    def log_mission(self, goal: str, status: str, step_count: int = 0) -> None:
+        """Record a finished mission (objective + final status), never content."""
+        goal = " ".join(goal.split())[:MAX_MISSION_GOAL_LENGTH] if isinstance(goal, str) else ""
+        if not goal:
+            goal = "(objectif indisponible)"
+        status = (" ".join(status.split())[:MAX_MISSION_STATUS_LENGTH]
+                  if isinstance(status, str) and status.strip() else "unknown")
+        try:
+            step_count = max(0, int(step_count))
+        except (TypeError, ValueError):
+            step_count = 0
+
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO missions (at, goal, status, step_count) VALUES (?, ?, ?, ?)",
+                (self._clock(), goal, status, step_count),
+            )
+
+    def recent_missions(self, limit: int = 20) -> list[Mission]:
+        limit = max(1, min(int(limit), 100))
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM missions ORDER BY at DESC, id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            Mission(
+                id=row["id"],
+                at=row["at"],
+                goal=row["goal"],
+                status=row["status"],
+                step_count=row["step_count"],
+            )
+            for row in rows
+        ]
+
+    def clear_missions(self) -> int:
+        with self._connect() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM missions").fetchone()[0]
+            conn.execute("DELETE FROM missions")
+            return count
+
     # --- internals ------------------------------------------------------------
 
     def _connect(self) -> sqlite3.Connection:
@@ -367,6 +446,10 @@ class MemoryStore:
         conn.execute(
             "DELETE FROM episodes WHERE at <= ?",
             (now - EPISODE_RETENTION_SECONDS,),
+        )
+        conn.execute(
+            "DELETE FROM missions WHERE at <= ?",
+            (now - MISSION_RETENTION_SECONDS,),
         )
         return _ClosingConnection(conn)
 

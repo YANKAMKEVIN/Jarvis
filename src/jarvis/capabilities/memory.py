@@ -189,6 +189,37 @@ class MemoryCapability:
             count=len(episodes),
         )
 
+    def log_mission(self, goal: str, status: str, step_count: int = 0) -> None:
+        """Persist a finished mission (objective + final status). Never raises."""
+        try:
+            self.store.log_mission(goal, status, step_count)
+        except Exception:
+            pass
+
+    def recent_missions(self, limit: int = 10) -> ToolResult:
+        try:
+            missions = self.store.recent_missions(limit)
+        except Exception as error:
+            return self._system_error_result("recent_missions", error)
+
+        return ToolResult.success(
+            action="recent_missions",
+            message=(
+                f"{len(missions)} mission(s) recente(s), de la plus recente a la plus ancienne."
+                if missions
+                else "Aucune mission enregistree."
+            ),
+            missions=[mission.to_dict() for mission in missions],
+            count=len(missions),
+        )
+
+    def clear_missions(self) -> int:
+        """Delete all persisted mission history. Returns the count removed."""
+        try:
+            return self.store.clear_missions()
+        except Exception:
+            return 0
+
     def preferred_media_app(self) -> str | None:
         """'Spotify' / 'Music' from a stored music preference, else None.
 

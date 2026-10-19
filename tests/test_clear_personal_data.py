@@ -13,6 +13,9 @@ class FakeMemory:
     def log_action(self, *a, **k):
         return None
 
+    def clear_missions(self):
+        return 0
+
 
 class ClearPersonalDataTests(unittest.TestCase):
     def _tools(self):

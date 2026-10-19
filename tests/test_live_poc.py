@@ -112,6 +112,7 @@ EXPECTED_LIVE_TOOL_NAMES = sorted([
     "read_whatsapp_conversation",
     "recall",
     "recall_context",
+    "recent_missions",
     "recent_activity",
     "remember",
     "remember_context",

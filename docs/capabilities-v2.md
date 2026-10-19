@@ -94,6 +94,19 @@ Les plafonds existants restent deux exécutions et six demandes actives. Les
 missions qui pilotent le bureau restent sérialisées. Les actions extérieures
 conservent le mécanisme existant de confirmation vocale.
 
+## Historique des missions (persistant)
+
+`task_status` ne voit que la session en cours. `recent_missions` relit un
+**historique conservé localement** qui **survit à un redémarrage** : pour chaque
+mission terminée, son objectif, son statut final (terminée, échec, annulée…),
+l'heure et le nombre d'étapes. On ne reprend pas une coroutine interrompue — ce
+qui est persisté, c'est le compte rendu, pas la mission vivante. L'historique est
+stocké dans la base mémoire locale (`~/Library/Application Support/Jarvis/memory.db`,
+0600), sans arguments d'étape, résultat d'outil ni contenu de message, avec une
+rétention de 30 jours comme le journal d'activité. `privacy_overview` en donne le
+compte ; `clear_personal_data` accepte le périmètre `missions` (et `all`) pour
+l'effacer après la confirmation vocale habituelle.
+
 ## Mode sécurité (lecture seule global)
 
 « Passe en mode sécurité », « mode lecture seule », « ne touche à rien » active
