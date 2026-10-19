@@ -333,3 +333,8 @@ Pour actualiser un lanceur existant : `python scripts/build_desktop_app.py --upd
 Voir [le guide vocal](docs/desktop-voice.md) et [le guide desktop](docs/desktop-ui.md)
 pour les limites, les tests et les prochaines étapes.
 
+
+Dix capacités vocales supplémentaires : minuteurs multiples, recherche et ajout aux notes,
+checklists persistantes, disponibilités et conflits d’agenda, comparaison et extraction
+de documents, dépendances et pause des missions en attente.
+Voir [les commandes et leurs limites](docs/capabilities-v2.md).

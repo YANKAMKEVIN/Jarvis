@@ -202,7 +202,7 @@ class Controller(QObject):
 
     def clear_activity(self):
         if (not any(e['status'] == 'running' for e in self.activity.values())
-                and not any(m['status'] in {'queued', 'running', 'cancelling'} for m in self.mission_list())):
+                and not any(m['status'] in {'queued', 'waiting_dependency', 'paused', 'running', 'cancelling'} for m in self.mission_list())):
             self.activity.clear()
             self.mission_history.clear()
             self.missions.clear()
@@ -213,7 +213,7 @@ class Controller(QObject):
         return list(self.missions.values()) if self.missions else ([self.task] if self.task else [])
 
     def focus_missions(self):
-        active = [m for m in self.mission_list() if m['status'] in {'queued', 'running', 'cancelling', 'needs_confirmation', 'needs_clarification'}]
+        active = [m for m in self.mission_list() if m['status'] in {'queued', 'waiting_dependency', 'paused', 'running', 'cancelling', 'needs_confirmation', 'needs_clarification'}]
         if active:
             return sorted(active, key=lambda m: m['id'] != self.selected_mission_id)
         return [self.task] if self.task else []
@@ -226,7 +226,7 @@ class Controller(QObject):
             self.changed.emit()
 
     def cancel_task(self, task_id=None):
-        candidates = [m for m in self.mission_list() if m['status'] in {'queued', 'running'} and (task_id is None or m['id'] == task_id)]
+        candidates = [m for m in self.mission_list() if m['status'] in {'queued', 'waiting_dependency', 'paused', 'running'} and (task_id is None or m['id'] == task_id)]
         if len(candidates) != 1 or not self.voice_worker or self.voice_state in {'starting', 'stopping', 'error'}:
             return
         if self.missions:
@@ -324,12 +324,12 @@ class Controller(QObject):
             return
         if event.get('type') == 'missions':
             self.missions = OrderedDict((m['id'], m) for m in event['missions'] if m is not None)
-            active = [m for m in self.missions.values() if m["status"] in {"queued", "running", "cancelling", "needs_confirmation", "needs_clarification"}]
+            active = [m for m in self.missions.values() if m["status"] in {"queued", "waiting_dependency", "paused", "running", "cancelling", "needs_confirmation", "needs_clarification"}]
             chosen = next((m for m in active if m['id'] == self.selected_mission_id), None)
             self.task = chosen or (active[0] if active else next(reversed(self.missions.values()), None))
             self.selected_mission_id = self.task['id'] if self.task else None
             self.mission_history = OrderedDict((m['id'], m) for m in self.missions.values()
-                if m is not self.task and m['status'] not in {'queued', 'running', 'cancelling', 'needs_confirmation', 'needs_clarification'})
+                if m is not self.task and m['status'] not in {'queued', 'waiting_dependency', 'paused', 'running', 'cancelling', 'needs_confirmation', 'needs_clarification'})
             while len(self.mission_history) > 4:
                 self.mission_history.popitem(last=False)
             self.changed.emit()
@@ -379,7 +379,7 @@ class Controller(QObject):
                     if entry['status'] == 'running':
                         entry['status'] = 'unknown'
                 for mission in self.mission_list():
-                    if mission['status'] in {'queued', 'running', 'cancelling'}:
+                    if mission['status'] in {'queued', 'waiting_dependency', 'paused', 'running', 'cancelling'}:
                         mission['status'] = 'unknown'
             self.changed.emit()
 

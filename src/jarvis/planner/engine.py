@@ -63,6 +63,8 @@ PLANNER_TOOL_NAMES = (
     "recall",
     "recent_activity",
     "web_answer",
+    "search_notes", "read_note", "compare_documents", "extract_document_actions",
+    "find_free_slots", "calendar_conflicts",
 )
 
 DEFAULT_MAX_STEPS = 25

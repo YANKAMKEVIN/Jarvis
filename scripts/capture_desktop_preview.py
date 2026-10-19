@@ -119,6 +119,25 @@ def main():
             controller.voice_event({'type': 'missions', 'missions': missions})
             shell.show_full()
             save(shell.full, 'missions-queue.png')
+            controller.voice_event({'type': 'missions', 'missions': []})
+            controller.cards.clear()
+            controller.voice_event(project_activity('manage_checklist', {'ok': True,
+                'title': 'Exemple · Préparer mon départ', 'items': [
+                    {'text': 'Préparer les documents', 'done': True},
+                    {'text': 'Vérifier le chargeur', 'done': False}]}, 'sample-checklist'))
+            controller.voice_event(project_activity('timer_finished', {'ok': True,
+                'id': 'sample-timer', 'label': 'Exemple · Pause thé', 'state': 'completed', 'seconds': 180}, 'sample-timer'))
+            controller.voice_event(project_activity('extract_document_actions', {'ok': True,
+                'truncated': True, 'items': [{'text': 'EXEMPLE SIMULÉ · Envoyer le dossier avant vendredi.'}]}, 'sample-document'))
+            shell.full.navigate(1)
+            save(shell.full, 'productivity-cards.png')
+            controller.voice_event({'type': 'missions', 'missions': [project_task({
+                'id': 'sample-paused', 'objective': 'Exemple · Ranger les documents',
+                'status': 'paused', 'steps': []}), project_task({
+                'id': 'sample-dependent', 'objective': 'Exemple · Comparer après la recherche',
+                'status': 'waiting_dependency', 'steps': []})]})
+            shell.full.navigate(0)
+            save(shell.full, 'mission-dependencies.png')
     finally:
         shell.finish_transfer()
         for window in (shell.full, shell.compact, shell.orb_window):

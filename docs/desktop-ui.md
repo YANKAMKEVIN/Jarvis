@@ -479,3 +479,22 @@ exécutée pendant ce lot, avant le dernier test de rendu Qt :
 macOS absents que le snapshot de référence ; aucun nouvel identifiant en échec.
 La suite complète n’est donc pas déclarée verte sur Linux.
 
+
+### Dix capacités vocales supplémentaires
+
+Le [guide des capacités](capabilities-v2.md) décrit les dix ajouts, leurs exemples
+vocaux et leurs limites. Les missions dépendantes et en pause restent visibles
+près de la sphère ; les résultats de checklists, minuteurs, documents et agenda
+utilisent la vue Cartes. Aucun champ de saisie n’est ajouté.
+Les captures suivantes sont des rendus Qt réels alimentés par des données simulées :
+
+![Checklists, minuteurs et documents simulés](screenshots/productivity-cards.png)
+
+![Missions simulées en pause et dépendantes](screenshots/mission-dependencies.png)
+
+Validation de ce lot : **134 tests ciblés passants** (capacités, notes, agenda,
+concurrence et desktop). Suite complète : **902 tests et 149 sous-tests passants**,
+avec les mêmes **210 échecs préexistants** que le snapshot de référence Linux
+(207 liés aux frameworks macOS absents et 3 à `pypdf` absent). Aucun nouvel
+identifiant de test en échec. Les derniers ajustements de stockage ont été
+revérifiés par la suite ciblée ; la validation native reste à faire sur Mac.

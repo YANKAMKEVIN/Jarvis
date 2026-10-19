@@ -4,6 +4,11 @@ import json
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 LABELS = {
+    'start_timer': 'Minuteur', 'list_timers': 'Minuteurs', 'cancel_timer': 'Minuteur', 'timer_finished': 'Minuteur termine',
+    'search_notes': 'Recherche de notes', 'read_note': 'Lecture de note', 'append_note': 'Ajout a une note',
+    'manage_checklist': 'Checklist', 'find_free_slots': 'Disponibilites', 'calendar_conflicts': 'Conflits d’agenda',
+    'compare_documents': 'Comparaison de documents', 'extract_document_actions': 'Extraction du document',
+    'pause_task': 'Pause de mission', 'resume_task': 'Reprise de mission',
     'open_app': 'Application', 'close_app': 'Application', 'focus_window': 'Fenêtre',
     'open_file': 'Fichier', 'open_folder': 'Dossier', 'list_files': 'Fichiers',
     'find_files': 'Recherche de fichiers', 'move_file': 'Déplacement', 'rename_file': 'Renommage',
@@ -24,6 +29,7 @@ STATUS_TEXT = {
 }
 TASK_TEXT = {
     'queued': 'En attente de ressources',
+    'paused': 'Mission en pause', 'waiting_dependency': 'Attend la mission precedente', 'blocked': 'Suite non lancee',
     'running': 'Tâche en cours', 'cancelling': 'Annulation demandée',
     'completed': 'Tâche terminée', 'cancelled': 'Tâche annulée',
     'needs_confirmation': 'Action préparée · accord vocal requis', 'needs_clarification': 'Précision vocale attendue',
@@ -32,6 +38,9 @@ TASK_TEXT = {
 }
 SCREEN_TOOLS = frozenset({'describe_screen', 'ask_about_screen', 'capture_screen', 'capture_window', 'capture_region'})
 MISSION_GUIDANCE = {
+    'paused': 'Mission en attente mise en pause. Demandez vocalement sa reprise pour la remettre en file.',
+    'waiting_dependency': 'Attend la fin de la mission precedente, sans reserver le bureau.',
+    'blocked': 'La mission precedente n’a pas termine avec le statut completed. Cette suite n’a execute aucune action.',
     'queued': 'Cette mission attend une place ou la libération du bureau. Aucune action n’a encore été lancée.',
     'running': 'Jarvis traite votre objectif. Les étapes apparaissent après leur exécution.',
     'cancelling': 'Annulation demandée. L’action déjà lancée peut encore se terminer.',
@@ -99,7 +108,36 @@ def project_card(name, result):
     if result.get('ok') is not True or result.get('requires_confirmation'):
         return None
     kind, title, body, items, sources = '', '', '', [], []
-    if name in {'describe_screen', 'ask_about_screen'}:
+    if name in {'start_timer', 'cancel_timer', 'timer_finished', 'list_timers'}:
+        kind, title = 'timers', 'Vos minuteurs'
+        states = {'running': 'En cours', 'completed': 'Termine', 'cancelled': 'Annule'}
+        rows = result.get('timers', []) if name == 'list_timers' else [result]
+        for timer in rows[:6] if isinstance(rows, list) else []:
+            if isinstance(timer, dict):
+                items.append(plain(timer.get('label'), 100) + ' · ' + states.get(timer.get('state'), 'Etat inconnu'))
+        body = 'Etat au moment du resultat. Les minuteurs cessent a la fermeture de Jarvis.'
+    elif name == 'manage_checklist' and isinstance(result.get('items'), list):
+        kind, title = 'checklist', plain(result.get('title'), 100) or 'Votre checklist'
+        for item in result['items'][:6]:
+            if isinstance(item, dict):
+                items.append(('✓ ' if item.get('done') else '○ ') + plain(item.get('text'), 180))
+        body = f"{len(result['items'])} element(s) · {len(items)} affiche(s)"
+    elif name in {'find_free_slots', 'calendar_conflicts'}:
+        kind, title = 'calendar', 'Plages disponibles' if name == 'find_free_slots' else 'Chevauchements d’agenda'
+        rows = result.get('slots', []) if name == 'find_free_slots' else result.get('conflicts', [])
+        for row in rows[:6] if isinstance(rows, list) else []:
+            if isinstance(row, dict):
+                items.append(date_text(row.get('start')) + ' → ' + date_text(row.get('end')))
+        body = plain(result.get('message'), 300)
+    elif name in {'compare_documents', 'extract_document_actions'} and isinstance(result.get('items'), list):
+        kind, title = 'document', 'Analyse d’extraits à vérifier'
+        body = 'Proposition générée à vérifier. Citations dans le résultat vocal. Aucune action lancée.'
+        if result.get('truncated'):
+            body += ' Document tronqué : analyse partielle.'
+        for row in result['items'][:6]:
+            if isinstance(row, dict):
+                items.append(plain(row.get('text'), 180))
+    elif name in {'describe_screen', 'ask_about_screen'}:
         analysis = plain(result.get('analysis'), 1600)
         if not analysis:
             return None

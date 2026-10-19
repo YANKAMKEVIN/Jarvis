@@ -14,6 +14,7 @@ import time
 import uuid
 from typing import Any, Awaitable, Callable
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from collections import OrderedDict, deque
 from jarvis.planner.resources import DesktopGate, WaitingCancelled, acquire
 
@@ -47,6 +48,9 @@ class _SingleTask:
         self.read_only = False
         self.desktop_gate = None
         self.slots = None
+        self.dependency = None
+        self.resume_event = asyncio.Event()
+        self.resume_event.set()
 
     @property
     def running(self) -> bool:
@@ -152,7 +156,7 @@ class _SingleTask:
         """
         snapshot = self.progress()
         if snapshot is not None:
-            snapshot.update(objective=self._goal, current_tool=self._current_tool, read_only=self.read_only)
+            snapshot.update(objective=self._goal, current_tool=self._current_tool, read_only=self.read_only, after_id=self.dependency._id if self.dependency else None)
         return snapshot
 
     def _action_changed(self, name):
@@ -177,23 +181,54 @@ class _SingleTask:
                 async with acquire(self.slots, cancel):
                     yield
 
+    async def _ready(self, cancel):
+        while True:
+            if cancel.is_set():
+                raise WaitingCancelled()
+            if not self.resume_event.is_set():
+                self.phase = 'paused'
+            elif self.dependency is not None and self.dependency._outcome is None:
+                self.phase = 'waiting_dependency'
+            else:
+                if self.dependency is not None and self.dependency._outcome.status != 'completed':
+                    return False
+                self.phase = 'queued'
+                return True
+            await asyncio.sleep(0.05)
+
     async def _run(self, goal: str, cancel: threading.Event) -> None:
         try:
-            async with self.resources(cancel):
-                if cancel.is_set():
-                    raise WaitingCancelled()
-                self.phase = "running"
-                engine = self.engine_factory()
-                if self.read_only:
-                    if not isinstance(engine, PlannerEngine):
-                        raise ValueError("Research requires a restricted planner")
-                    engine.tools = {name: tool for name, tool in engine.tools.items() if name in RESEARCH_TOOLS}
-                    engine.schemas = [schema for schema in engine.schemas if schema["function"]["name"] in RESEARCH_TOOLS | {"ask_clarification"}]
-                if isinstance(engine, PlannerEngine):
-                    engine.on_action = self._action_changed
-                outcome = await engine.run(goal, cancel, on_step=self._steps.append)
+            while True:
+                if not await self._ready(cancel):
+                    outcome = TaskOutcome('blocked', 'La mission precedente n’est pas terminee avec le statut completed. Aucune action lancee.')
+                    break
+                stop = SimpleNamespace(is_set=lambda: cancel.is_set() or not self.resume_event.is_set())
+                try:
+                    async with self.resources(stop):
+                        # A pause requested while waiting must release all resources.
+                        if not self.resume_event.is_set():
+                            continue
+                        if cancel.is_set():
+                            raise WaitingCancelled()
+                        self.phase = "running"
+                        engine = self.engine_factory()
+                        if self.read_only:
+                            if not isinstance(engine, PlannerEngine):
+                                raise ValueError("Research requires a restricted planner")
+                            engine.tools = {name: tool for name, tool in engine.tools.items() if name in RESEARCH_TOOLS}
+                            engine.schemas = [schema for schema in engine.schemas if schema["function"]["name"] in RESEARCH_TOOLS | {"ask_clarification"}]
+                        if isinstance(engine, PlannerEngine):
+                            engine.on_action = self._action_changed
+                        outcome = await engine.run(goal, cancel, on_step=self._steps.append)
+                        break
+                except WaitingCancelled:
+                    if cancel.is_set():
+                        raise
+                    # A queued pause withdraws from resource waiters immediately.
+                    continue
+
         except WaitingCancelled:
-            outcome = TaskOutcome("cancelled", "Mission annulee avant son execution.", list(self._steps))
+            outcome = TaskOutcome("cancelled", "Mission annulee avant son execution ou l’etape suivante.", list(self._steps))
         except Exception as error:
             outcome = TaskOutcome("failed", f"Erreur interne de la tache : {error}", list(self._steps))
         self._outcome = outcome
@@ -207,8 +242,8 @@ class _SingleTask:
 
 # Strict subset of the planner allowlist. No browser, clipboard, capture,
 # filesystem mutation, UI inspection, keyboard, mouse or message preparation.
-RESEARCH_TOOLS = frozenset({"web_answer", "recall", "recent_activity", "list_files", "find_files", "get_file_info", "get_volume", "is_app_running", "get_media_state"})
-ACTIVE_STATES = {"queued", "running", "cancelling"}
+RESEARCH_TOOLS = frozenset({"web_answer", "recall", "recent_activity", "list_files", "find_files", "get_file_info", "get_volume", "is_app_running", "get_media_state", "search_notes", "read_note", "compare_documents", "extract_document_actions", "find_free_slots", "calendar_conflicts"})
+ACTIVE_STATES = {"queued", "waiting_dependency", "paused", "running", "cancelling"}
 
 
 class TaskManager(_SingleTask):
@@ -229,7 +264,9 @@ class TaskManager(_SingleTask):
     def running(self):
         return any(mission.running and mission._outcome is None for mission in self.missions.values())
 
-    def start(self, goal, read_only=False):
+    def start(self, goal, read_only=False, after_id=None):
+        if after_id is not None and (not isinstance(after_id, str) or after_id not in self.missions):
+            return {"ok": False, "error_code": "dependency_not_found", "message": "La mission precedente est introuvable."}
         if self.stopping:
             return {"ok": False, "error_code": "session_stopping", "message": "La session se ferme."}
         if not isinstance(read_only, bool):
@@ -242,6 +279,7 @@ class TaskManager(_SingleTask):
                 await self.on_finished(goal, outcome)
         mission = _SingleTask(self.engine_factory, finished, self.clock)
         mission.read_only = read_only
+        mission.dependency = self.missions.get(after_id)
         mission.desktop_gate, mission.slots = self.desktop_gate, self.slots
         result = mission.start(goal)
         if not result.get("ok"):
@@ -253,7 +291,7 @@ class TaskManager(_SingleTask):
             if oldest is None:
                 break
             del self.missions[oldest]
-        return result
+        return {**result, "after_id": after_id}
 
     def _primary(self):
         return next((m for m in self.missions.values() if m.running and m._outcome is None), next(reversed(self.missions.values()), None))
@@ -279,6 +317,26 @@ class TaskManager(_SingleTask):
         if len(active) > 1:
             return {"ok": False, "error_code": "ambiguous_task", "message": "Plusieurs missions sont actives. Demande laquelle annuler puis utilise son task_id.", "tasks": [{"task_id": m._id, "goal": m._goal} for m in active]}
         return active[0].cancel() if active else {"ok": True, "cancel_requested": False, "message": "Aucune tache en cours a annuler."}
+
+    def pause(self, task_id):
+        mission = self.missions.get(task_id)
+        if mission is None:
+            return {"ok": False, "error_code": "task_not_found", "message": "Mission introuvable."}
+        if mission._outcome is not None or mission.phase not in {'queued', 'waiting_dependency', 'paused'} or mission._cancel.is_set():
+            return {"ok": False, "error_code": "task_not_pauseable", "message": "Seule une mission en attente peut etre mise en pause. Une action lancee n’est pas interrompue."}
+        mission.resume_event.clear()
+        mission.phase = 'paused'
+        return {"ok": True, "task_id": task_id, "state": 'paused'}
+
+    def resume(self, task_id):
+        mission = self.missions.get(task_id)
+        if mission is None:
+            return {"ok": False, "error_code": "task_not_found", "message": "Mission introuvable."}
+        if mission._outcome is not None or mission._cancel.is_set() or mission.resume_event.is_set():
+            return {"ok": False, "error_code": "task_not_paused", "message": "Cette mission n’est pas en pause."}
+        mission.resume_event.set()
+        mission.phase = 'queued'
+        return {"ok": True, "task_id": task_id, "state": 'queued'}
 
     def cancel_all(self):
         self.stopping = True

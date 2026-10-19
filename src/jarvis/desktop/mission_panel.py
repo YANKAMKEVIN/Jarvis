@@ -3,7 +3,7 @@ from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt
 from PySide6.QtWidgets import QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 from jarvis.desktop.presentation import MISSION_GUIDANCE, STATUS_TEXT, TASK_TEXT
 
-EXPANDED_STATES = {'queued', 'running', 'cancelling', 'needs_confirmation', 'needs_clarification'}
+EXPANDED_STATES = {'queued', 'waiting_dependency', 'paused', 'running', 'cancelling', 'needs_confirmation', 'needs_clarification'}
 
 
 def caption(name=None):
@@ -97,7 +97,7 @@ class MissionPanel(QFrame):
         self.setStyleSheet('QFrame#missionPanel { background: rgba(22, 40, 57, 195); border: 1px solid #2b455c; '
                           'border-left: 2px solid ' + color + '; border-radius: 14px; } '
                           'QPushButton#missionSummary { text-align: left; background: transparent; border: 0; padding: 0; }')
-        self.heading.setText('EN ATTENTE' if status == 'queued' else 'MISSION EN COURS' if status in {'queued', 'running', 'cancelling'} else 'VOTRE ACCORD VOCAL' if status == 'needs_confirmation' else 'PRÉCISION DEMANDÉE')
+        self.heading.setText('EN PAUSE' if status == 'paused' else 'EN ATTENTE' if status in {'queued', 'waiting_dependency'} else 'MISSION EN COURS' if status in {'running', 'cancelling'} else 'VOTRE ACCORD VOCAL' if status == 'needs_confirmation' else 'PRÉCISION DEMANDÉE')
         available = max(150, self.width()-36)
         self.objective.setText(self.objective.fontMetrics().elidedText(objective, Qt.TextElideMode.ElideRight, int(available * (1.7 if self.expanded and not dense else 1))))
         self.objective.setToolTip(objective)
@@ -123,10 +123,10 @@ class MissionPanel(QFrame):
         self.summary.setToolTip(objective + '\n' + state + '\nOuvrir les détails de la mission')
         self.summary.setAccessibleName('Mission : ' + objective + '. ' + state + '. Ouvrir les détails.')
         self.details.setVisible(not self.compact)
-        self.cancel.setVisible(not self.compact and status in {'queued', 'running', 'cancelling'})
+        self.cancel.setVisible(not self.compact and status in {'queued', 'waiting_dependency', 'paused', 'running', 'cancelling'})
         self.cancel.setText('Annulation demandée…' if status == 'cancelling' else 'Annuler' if dense else 'Annuler la mission')
         self.cancel.setAccessibleName('Annuler la mission : ' + objective)
-        self.cancel.setEnabled(status in {'queued', 'running'} and c.voice_worker is not None and c.voice_state not in {'starting', 'stopping', 'error'} and not c.demo)
+        self.cancel.setEnabled(status in {'queued', 'waiting_dependency', 'paused', 'running'} and c.voice_worker is not None and c.voice_state not in {'starting', 'stopping', 'error'} and not c.demo)
         self.dismiss.setVisible(not self.compact and not self.expanded)
         self.layout().setContentsMargins(12 if dense else 16, 10 if dense else 14, 12 if dense else 16, 10 if dense else 14)
         self.layout().setSpacing(5 if dense else 9)

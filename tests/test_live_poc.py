@@ -30,7 +30,7 @@ from jarvis.security import SecurityDecision
 from jarvis.voice_mode import VoiceMode
 
 
-EXPECTED_LIVE_TOOL_NAMES = [
+EXPECTED_LIVE_TOOL_NAMES = sorted([
     "activate_ui_element",
     "arrange_windows",
     "ask_about_document",
@@ -139,7 +139,20 @@ EXPECTED_LIVE_TOOL_NAMES = [
     "summarize_url",
     "task_status",
     "type_text",
-]
+    "start_timer",
+    "list_timers",
+    "cancel_timer",
+    "search_notes",
+    "read_note",
+    "append_note",
+    "manage_checklist",
+    "find_free_slots",
+    "calendar_conflicts",
+    "compare_documents",
+    "extract_document_actions",
+    "pause_task",
+    "resume_task",
+])
 
 
 class FakeRealtime:
@@ -3776,3 +3789,4 @@ class LiveConfirmationToolTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

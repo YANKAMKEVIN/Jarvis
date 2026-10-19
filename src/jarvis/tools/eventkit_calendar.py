@@ -33,7 +33,7 @@ class EventKitCalendarReader:
         self._backend = backend if backend is not None else _RealEventKitBackend()
         self._clock = clock if clock is not None else time.time
 
-    def read_today(self, day_offset: int = 0) -> dict[str, Any]:
+    def _authorize(self):
         status = self._backend.authorization_status()
         if status not in AUTHORIZED_STATUSES:
             if status == NOT_DETERMINED:
@@ -48,6 +48,8 @@ class EventKitCalendarReader:
                     "calendar_not_authorized",
                 )
 
+    def read_today(self, day_offset: int = 0) -> dict[str, Any]:
+        self._authorize()
         offset = int(day_offset)
         day_start = self._start_of_day(self._clock()) + offset * 86400.0
         day_end = day_start + 86400.0
@@ -62,6 +64,15 @@ class EventKitCalendarReader:
             for item in raw
         ]
         return {"day_offset": offset, "events": events, "event_count": len(events)}
+
+    def read_interval(self, start_epoch, end_epoch):
+        self._authorize()
+        if not 0 < end_epoch - start_epoch <= 7 * 86400:
+            raise CalendarError('Intervalle de sept jours maximum.', 'invalid_range')
+        events = self._backend.events_between(start_epoch, end_epoch)
+        if len(events) > 1000:
+            raise CalendarError('Trop d’evenements pour analyser cet intervalle.', 'too_many_events')
+        return {'events': events, 'event_count': len(events)}
 
     @staticmethod
     def _start_of_day(epoch: float) -> float:
@@ -135,3 +146,4 @@ class _RealEventKitBackend:
                 }
             )
         return out
+

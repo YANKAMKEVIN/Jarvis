@@ -59,6 +59,17 @@ class CalendarCapability:
             message = "Aucun evenement dans l'agenda pour ce jour."
         return ToolResult.success(action="list_calendar_events", message=message, **state)
 
+    def read_interval(self, start_epoch, end_epoch):
+        reader = self._reader()
+        if reader is None or not hasattr(reader, 'read_interval'):
+            return ToolResult.failure('read_calendar_interval', 'La lecture native de l’agenda est requise pour analyser les disponibilites.', 'eventkit_required')
+        try:
+            return ToolResult.success('read_calendar_interval', 'Intervalle lu.', **reader.read_interval(start_epoch, end_epoch))
+        except CalendarError as error:
+            return self._failure('read_calendar_interval', error)
+        except Exception:
+            return ToolResult.failure('read_calendar_interval', 'Lecture de l’agenda indisponible.', 'calendar_read_failed')
+
     def create_event(
         self,
         title: str,
@@ -121,3 +132,4 @@ def _parse_iso(value: str) -> datetime:
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     return datetime.fromisoformat(text)
+

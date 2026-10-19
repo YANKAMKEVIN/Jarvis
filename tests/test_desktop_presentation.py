@@ -74,3 +74,19 @@ def test_mission_projection_accepts_only_explicit_objective_and_known_tool_label
                          'goal': 'PRIVATE_GOAL', 'summary': 'PRIVATE_SUMMARY', 'pending': {'token': 'PRIVATE'}})
     assert len(task['objective']) == 300 and task['current'] == 'Application'
     assert 'PRIVATE' not in str(task)
+
+
+
+def test_productivity_cards_bound_items_and_drop_unprojected_payloads():
+    payload = {'ok': True, 'token': 'PRIVATE_TOKEN', 'path': '/PRIVATE_PATH',
+               'items': [{'text': 'Préparer', 'done': True, 'evidence': 'PRIVATE_QUOTE'}] * 20}
+    for tool, kind in [('manage_checklist', 'checklist'), ('extract_document_actions', 'document')]:
+        card = project_card(tool, payload)
+        assert card['kind'] == kind and len(card['items']) == 6
+        assert 'PRIVATE' not in str(card)
+    timer = project_card('list_timers', {'ok': True, 'timers': [
+        {'label': 'Thé', 'state': 'running', 'deadline': 'PRIVATE_DEADLINE'}] * 20})
+    assert len(timer['items']) == 6 and 'PRIVATE' not in str(timer)
+    assert 'moment' in timer['body']
+    for state in ['paused', 'waiting_dependency', 'blocked']:
+        assert project_task({'id': 'a', 'status': state, 'steps': []})['status'] == state

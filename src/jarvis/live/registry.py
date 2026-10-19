@@ -1,5 +1,6 @@
 import asyncio
 from jarvis.planner.resources import DesktopGate
+from jarvis.live.productivity import productivity_tools, checklist_store
 import functools
 import inspect
 import uuid
@@ -251,6 +252,8 @@ class ToolRegistry:
     async def aclose(self):
         """Stop session-owned background work cooperatively before shutdown."""
         self.task_notifier = None
+        if hasattr(self, "timers"):
+            await self.timers.aclose()
         if self.tasks is not None:
             self.tasks.cancel_all()
         pending = [task for task in (self._web_task, self._briefing_task)
@@ -326,6 +329,8 @@ class ToolRegistry:
                 1 for m in self.schedule_store.list("pending")
                 if self.schedule_store.cancel(m["id"])
             )
+        if scope in ("checklists", "all"):
+            counts["checklists"] = checklist_store(self).clear()
         total = sum(counts.values())
         return ToolResult.success(
             action="clear_personal_data",
@@ -2745,18 +2750,18 @@ class ToolRegistry:
                 "fin. N'utilise PAS ce tool pour une demande simple ou un enchainement "
                 "court que tu peux faire directement avec tes autres tools (volume, "
                 "media, ouvrir une app ou un site, envoyer un message). goal : "
-                "l'objectif complet et autonome, en francais. read_only=true pour une recherche sans action sur le Mac ; seuls les outils de lecture autorises seront disponibles. Sinon la mission reserve le bureau et attend son tour. Jusqu'a deux missions executent en parallele, six demandes actives maximum. Le retour contient task_id."
+                "l'objectif complet et autonome, en francais. read_only=true pour une recherche sans action sur le Mac ; seuls les outils de lecture autorises seront disponibles. Sinon la mission reserve le bureau et attend son tour. Jusqu'a deux missions executent en parallele, six demandes actives maximum. Le retour contient task_id. after_id optionnel lance cette mission seulement apres le statut completed d’une mission existante ; echec, annulation ou accord vocal requis bloquent la suite sans action. Aucun resultat ni argument n’est automatiquement recopie entre missions."
             ),
         )
         @self._journaled("run_task")
-        async def run_task(goal: str, read_only: bool = False) -> dict:
+        async def run_task(goal: str, read_only: bool = False, after_id: str | None = None) -> dict:
             """Start a multi-step planner task in the background."""
             debug_live(
                 "tool_call",
                 tool="run_task",
                 goal_length=len(goal) if isinstance(goal, str) else None,
             )
-            return self.tasks.start(goal, read_only=read_only)
+            return self.tasks.start(goal, read_only=read_only, after_id=after_id)
 
         @function_tool(
             name="task_status",
@@ -3224,6 +3229,11 @@ class ToolRegistry:
                 act = await asyncio.to_thread(self.memory.recent_activity, 50)
             scheduled = await asyncio.to_thread(self.schedule_store.list, "pending")
             reminders = await asyncio.to_thread(self.reminder_store.list, "pending")
+            checklists_count = 0
+            store = checklist_store(self)
+            if store.path.exists():
+                overview = await asyncio.to_thread(store.manage, 'list')
+                checklists_count = len(overview.data.get('lists', [])) if overview.ok else 0
             memory_count = mem.data.get("count", 0) if mem.ok else 0
             activity_count = len(act.data.get("episodes", [])) if act.ok else 0
             return ToolResult.success(
@@ -3231,12 +3241,13 @@ class ToolRegistry:
                 message=(
                     f"Je garde {memory_count} souvenir(s), {len(scheduled)} message(s) "
                     f"planifie(s) et {len(reminders)} rappel(s) en attente ; "
-                    f"{activity_count} action(s) recente(s) au journal."
+                    f"{activity_count} action(s) recente(s) au journal ; {checklists_count} checklist(s) locale(s)."
                 ),
                 memory_count=memory_count,
                 activity_count=activity_count,
                 scheduled_count=len(scheduled),
                 reminder_count=len(reminders),
+                checklists_count=checklists_count,
             ).to_livekit_dict()
 
         @function_tool(
@@ -3245,7 +3256,7 @@ class ToolRegistry:
                 "EFFACE des donnees que Jarvis garde, apres confirmation. scope : "
                 "'context' (notes de contexte de conversation), 'reminders' (rappels "
                 "en attente), 'scheduled' (messages planifies en attente), ou 'all' "
-                "(les trois). Renvoie un token et requires_confirmation : annonce ce "
+                "(ces donnees et les checklists). scope checklists efface uniquement les checklists. Renvoie un token et requires_confirmation : annonce ce "
                 "qui sera efface, puis confirm_action seulement sur un oui clair. Pour "
                 "effacer un souvenir precis, utilise plutot forget."
             ),
@@ -3255,10 +3266,10 @@ class ToolRegistry:
             """Prepare a confirmed purge of the data Jarvis stores."""
             debug_live("tool_call", tool="clear_personal_data", scope=scope)
             choice = (scope or "all").strip().lower()
-            if choice not in ("context", "reminders", "scheduled", "all"):
+            if choice not in ("context", "reminders", "scheduled", "checklists", "all"):
                 return ToolResult.failure(
                     action="clear_personal_data",
-                    message="scope doit etre context, reminders, scheduled ou all.",
+                    message="scope doit etre context, reminders, scheduled, checklists ou all.",
                     error_code="invalid_scope",
                 ).to_livekit_dict()
 
@@ -3388,6 +3399,8 @@ class ToolRegistry:
             recall_context,
             clear_personal_data,
         ]
+
+        tools.extend(productivity_tools(self))
 
         # The planner drives these very tools (same locks, journal and pending
         # action store), so a message it prepares is confirmable by voice. It
