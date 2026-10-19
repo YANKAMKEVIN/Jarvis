@@ -21,6 +21,7 @@ LABELS = {
     'remember_context': 'Mémoire', 'recall': 'Mémoire', 'recent_activity': 'Activité', 'capture_screen': 'Capture d’écran', 'ask_about_screen': 'Analyse d’écran',
     'describe_screen': 'Analyse d’écran', 'capture_window': 'Capture de fenêtre', 'capture_region': 'Capture de zone',
     'get_volume': 'Volume', 'set_volume': 'Volume', 'browse_open_url': 'Navigateur',
+    'enable_safe_mode': 'Mode sécurité', 'disable_safe_mode': 'Mode sécurité',
 }
 STATUS_TEXT = {
     'running': 'En cours', 'received': 'Résultat reçu', 'verified': 'État vérifié',

@@ -94,6 +94,26 @@ Les plafonds existants restent deux exécutions et six demandes actives. Les
 missions qui pilotent le bureau restent sérialisées. Les actions extérieures
 conservent le mécanisme existant de confirmation vocale.
 
+## Mode sécurité (lecture seule global)
+
+« Passe en mode sécurité », « mode lecture seule », « ne touche à rien » active
+`enable_safe_mode` ; « quitte le mode sécurité » appelle `disable_safe_mode`.
+Tant qu'il est actif, Jarvis peut encore lire, chercher, analyser, prendre des
+notes et gérer ses propres rappels, mais **toute action qui modifie le Mac ou
+envoie quelque chose vers l'extérieur** (ouvrir/fermer une app, fenêtres,
+fichiers, presse-papiers, clavier/souris, mail, agenda, messages, navigation
+web, confirmation d'action, effacement de données, rejeu de macro) est refusée
+avec `read_only_mode` **sans aucun effet** — rien n'est fait ni envoyé.
+
+La garde est un **point d'application unique** en politique *default-deny* : seuls
+les outils d'une liste explicite de lecture/stores privés passent ; tout outil
+ajouté plus tard est bloqué en mode sécurité tant qu'il n'y est pas inscrit
+délibérément. Les missions partagent la même garde : une mission ne peut pas
+agir vers l'extérieur en mode sécurité, et activer le mode stoppe aussi les
+actions sortantes d'une mission déjà en cours. Le mode est propre à la session
+et ne persiste pas après un redémarrage. L'interrupteur lui-même n'est jamais
+bloqué : il y a toujours un moyen d'en sortir.
+
 ## Vérification
 
 Les tests utilisent des horloges, agendas, documents, modèles et exécuteurs

@@ -54,6 +54,58 @@ from jarvis.tools.vision import VisionTools
 DIRECT_PROMPT_APPS = {"claude"}
 
 
+# Tools allowed while the session is in safe (read-only) mode. The posture is
+# DEFAULT-DENY: anything not listed here is refused when read_only_mode is on,
+# so a tool added later is blocked in safe mode until it is deliberately
+# cleared. The allowed set is reads/observations, Jarvis's own private stores
+# (notes, checklists, memory, local reminders — never outward, never touching
+# the Mac), safe stops, and the safe-mode switch itself (so there is always a
+# way back out). Everything that changes the Mac or sends anything outward
+# (apps, windows, files, clipboard, keyboard/mouse, mail, calendar, messaging,
+# browser navigation, action confirmation, data erase, action replay) is
+# blocked.
+SAFE_MODE_ALLOWED = frozenset({
+    # The safe-mode switch itself — never blocked, above all the way out.
+    "enable_safe_mode", "disable_safe_mode",
+    # System and media reads.
+    "get_volume", "get_media_state", "get_battery_status", "get_system_info",
+    "get_storage_status", "get_brightness", "self_check", "is_app_running",
+    "list_shortcuts", "calculate", "convert_units",
+    # File and document reads (no mutation).
+    "list_files", "find_files", "search_files_by_content", "get_file_info",
+    "ask_about_document",
+    # Window / UI / clipboard / pointer reads.
+    "get_active_window", "get_clipboard_text", "get_mouse_position",
+    "inspect_ui", "find_ui_elements",
+    # Screen observation only.
+    "capture_screen", "capture_region", "capture_window",
+    "describe_screen", "ask_about_screen",
+    # Calendar / mail / messaging reads.
+    "list_calendar_events", "list_unread_emails", "find_free_slots",
+    "calendar_conflicts", "read_whatsapp_conversation",
+    # Notes / checklists / document analysis (reads).
+    "list_notes", "search_notes", "read_note",
+    "compare_documents", "extract_document_actions",
+    # Web knowledge (read only; nothing is sent).
+    "search_the_web", "summarize_url", "morning_briefing", "web_answer",
+    "browse_get_active_tab", "browse_list_tabs",
+    # Jarvis's own private stores (local, never outward, never touch the Mac).
+    "save_note", "append_note", "manage_checklist",
+    "remember", "propose_memory", "forget", "recall", "list_memories",
+    "remember_context", "recall_context",
+    "set_reminder", "cancel_reminder", "list_reminders",
+    "save_macro", "list_macros", "delete_macro", "save_task_procedure",
+    # Activity / privacy introspection and safe stops.
+    "recent_activity", "privacy_overview", "task_status",
+    "list_scheduled_messages", "cancel_scheduled_message",
+    "cancel_action", "cancel_task", "pause_task", "resume_task",
+    # Missions may still be launched: their own outward sub-actions run through
+    # these same guarded tools, so they refuse too. A research (read_only)
+    # mission stays fully useful.
+    "run_task",
+})
+
+
 class ToolRegistry:
     def __init__(
         self,
@@ -248,6 +300,10 @@ class ToolRegistry:
         self.activity_observer = None
         self.desktop_gate = DesktopGate()
         self.task_announcement_lock = asyncio.Lock()
+        # Session-scoped safe mode: when True, only SAFE_MODE_ALLOWED tools run;
+        # every outward or system-mutating tool refuses without side effect.
+        # Defaults off and does not persist across restarts (see docs).
+        self.read_only_mode = False
 
     async def aclose(self):
         """Stop session-owned background work cooperatively before shutdown."""
@@ -314,6 +370,40 @@ class ToolRegistry:
             async with gate.hold():
                 return await fn(*args, **kwargs)
         return wrapper
+
+    def _guard_read_only(self, tool):
+        """Return a copy of a voice/planner tool that refuses in safe mode.
+
+        Single enforcement point for safe (read-only) mode. A tool whose name
+        is in SAFE_MODE_ALLOWED is returned unchanged; any other tool is wrapped
+        so that, while self.read_only_mode is on, it refuses with no side effect
+        and nothing sent. The wrapper keeps the original name, description and
+        signature, so the schema the model sees is identical — the model simply
+        gets a refusal result if it calls a blocked tool in safe mode. The flag
+        is read live, so entering safe mode also stops a mission's outward
+        sub-actions already in flight (they share these guarded tools).
+        """
+        name = tool.info.name
+        if name in SAFE_MODE_ALLOWED:
+            return tool
+        inner = tool._func
+
+        @functools.wraps(inner)
+        async def wrapper(*args, **kwargs):
+            if getattr(self, "read_only_mode", False):
+                return ToolResult.failure(
+                    action=name,
+                    message=(
+                        "Mode securite actif (lecture seule) : cette action "
+                        "modifierait le Mac ou enverrait quelque chose vers "
+                        "l'exterieur, donc elle est bloquee et rien n'a ete fait. "
+                        "Dis « quitte le mode securite » pour la reactiver."
+                    ),
+                    error_code="read_only_mode",
+                ).to_livekit_dict()
+            return await inner(*args, **kwargs)
+
+        return function_tool(name=name, description=tool.info.description)(wrapper)
 
     def _purge_personal_data(self, scope: str) -> ToolResult:
         counts: dict[str, int] = {}
@@ -3289,7 +3379,66 @@ class ToolRegistry:
                 scope=choice,
             ).to_livekit_dict()
 
+        @function_tool(
+            name="enable_safe_mode",
+            description=(
+                "Active le mode securite (lecture seule) pour la session : Jarvis "
+                "peut encore lire, chercher, analyser, prendre des notes et gerer "
+                "ses propres rappels, mais toute action qui modifie le Mac ou "
+                "envoie quelque chose vers l'exterieur (ouvrir/fermer une app, "
+                "fichiers, presse-papiers, clavier/souris, mail, agenda, messages, "
+                "navigation web, confirmation d'action, effacement) est bloquee. "
+                "Utilise ce tool quand l'utilisateur demande 'passe en mode "
+                "securite', 'mode lecture seule', 'ne touche a rien', 'mode sur'."
+            ),
+        )
+        @self._journaled("enable_safe_mode")
+        async def enable_safe_mode() -> dict:
+            """Turn on session safe (read-only) mode."""
+            debug_live("tool_call", tool="enable_safe_mode")
+            already = self.read_only_mode
+            self.read_only_mode = True
+            return ToolResult.success(
+                action="enable_safe_mode",
+                message=(
+                    "Mode securite deja actif." if already else
+                    "Mode securite active : je reste en lecture seule et ne "
+                    "modifie rien ni n'envoie rien tant qu'il est actif."
+                ),
+                read_only_mode=True,
+                state_confirmed=True,
+            ).to_livekit_dict()
+
+        @function_tool(
+            name="disable_safe_mode",
+            description=(
+                "Desactive le mode securite (lecture seule) et redonne a Jarvis "
+                "l'acces complet a ses actions. Utilise ce tool quand l'utilisateur "
+                "demande 'quitte le mode securite', 'reactive tout', 'desactive la "
+                "lecture seule'."
+            ),
+        )
+        @self._journaled("disable_safe_mode")
+        async def disable_safe_mode() -> dict:
+            """Turn off session safe (read-only) mode."""
+            debug_live("tool_call", tool="disable_safe_mode")
+            already = not self.read_only_mode
+            self.read_only_mode = False
+            return ToolResult.success(
+                action="disable_safe_mode",
+                message=(
+                    "Le mode securite n'etait pas actif." if already else
+                    "Mode securite desactive : je peux de nouveau agir sur le Mac "
+                    "et preparer des envois, toujours avec les confirmations "
+                    "habituelles."
+                ),
+                read_only_mode=False,
+                state_confirmed=True,
+            ).to_livekit_dict()
+
         tools = [
+            enable_safe_mode,
+            disable_safe_mode,
             set_volume,
             get_volume,
             open_app,
@@ -3402,11 +3551,16 @@ class ToolRegistry:
 
         tools.extend(productivity_tools(self))
 
+        # Single safe-mode enforcement point: every voice and planner tool is
+        # routed through the read-only guard, so a mission cannot perform an
+        # outward action in safe mode any more than the voice can.
+        tools = [self._guard_read_only(tool) for tool in tools]
+
         # The planner drives these very tools (same locks, journal and pending
         # action store), so a message it prepares is confirmable by voice. It
         # also gets web_answer, a blocking web search kept out of the voice
         # tool set (the voice uses the background search_the_web instead).
-        self.planner_tools = tools + [web_answer]
+        self.planner_tools = tools + [self._guard_read_only(web_answer)]
         if not hasattr(self, "desktop_gate"):
             self.desktop_gate = DesktopGate()
         self.tasks = TaskManager(

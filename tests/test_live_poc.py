@@ -33,6 +33,8 @@ from jarvis.voice_mode import VoiceMode
 EXPECTED_LIVE_TOOL_NAMES = sorted([
     "activate_ui_element",
     "arrange_windows",
+    "disable_safe_mode",
+    "enable_safe_mode",
     "ask_about_document",
     "ask_about_screen",
     "browse_activate_tab",

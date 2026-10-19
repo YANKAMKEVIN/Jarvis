@@ -202,6 +202,44 @@ def group_volume(ctx: Context, step) -> None:
         osascript(f"set volume output volume {original}", check=False)
 
 
+def group_safe_mode(ctx: Context, step) -> None:
+    # Prove the global read-only guard on the real tool path: a blocked outward
+    # action must refuse with read_only_mode AND leave the system untouched,
+    # while a read still works. Uses volume because it is independently
+    # observable; the volume is never actually changed here.
+    original = system_volume()
+    target = original - 7 if original >= 50 else original + 7
+
+    def enable():
+        result = call_ok(ctx, "enable_safe_mode")
+        expect(result.get("read_only_mode") is True, "enable_safe_mode sans read_only_mode")
+
+    def blocked_action_changes_nothing():
+        result = call(ctx, "set_volume", target)
+        expect(result.get("ok") is False, "set_volume aurait du etre refuse en mode securite")
+        expect(result.get("error_code") == "read_only_mode",
+               f"error_code={result.get('error_code')}, attendu read_only_mode")
+        actual = system_volume()
+        expect(abs(actual - original) <= 1,
+               f"le volume systeme a change ({actual}) alors que l'action etait bloquee")
+
+    def read_still_works():
+        call_ok(ctx, "get_volume")
+
+    def disable():
+        result = call_ok(ctx, "disable_safe_mode")
+        expect(result.get("read_only_mode") is False, "disable_safe_mode laisse read_only_mode")
+
+    try:
+        step("enable_safe_mode", enable)
+        step("set_volume bloque (systeme inchange)", blocked_action_changes_nothing)
+        step("get_volume (lecture autorisee)", read_still_works)
+        step("disable_safe_mode", disable)
+    finally:
+        # Never leave the session stuck in safe mode if a step raised.
+        call(ctx, "disable_safe_mode")
+
+
 def group_clipboard(ctx: Context, step) -> None:
     original = pbpaste()
 
@@ -1084,6 +1122,7 @@ def group_document_v2(ctx: Context, step) -> None:
 GROUPS = {
     "system": group_system,
     "volume": group_volume,
+    "safe_mode": group_safe_mode,
     "clipboard": group_clipboard,
     "files": group_files,
     "mouse": group_mouse,
