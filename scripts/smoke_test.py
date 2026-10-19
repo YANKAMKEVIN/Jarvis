@@ -914,6 +914,173 @@ def group_mail(ctx: Context, step) -> None:
     step("list_unread_emails (lecture)", read_unread)
 
 
+def group_timers(ctx: Context, step) -> None:
+    # Independent session timers on the real monotonic clock and event loop.
+    # One long timer is cancelled by id; one short timer must reach 'completed'.
+    def scenario():
+        async def run():
+            t = ctx.tools
+            long = await t["start_timer"](seconds=5, label="the")
+            short = await t["start_timer"](seconds=2, label="four")
+            expect(long.get("ok") and short.get("ok"), "les minuteurs ne demarrent pas")
+            ids = {long["id"], short["id"]}
+            expect(len(ids) == 2, "deux minuteurs doivent avoir des ids distincts")
+
+            listed = await t["list_timers"]()
+            running = {x["id"]: x for x in listed["timers"] if x["state"] == "running"}
+            expect(ids <= set(running), "les deux minuteurs ne tournent pas")
+            expect(0 < running[long["id"]]["remaining_seconds"] <= 5
+                   and 0 < running[short["id"]]["remaining_seconds"] <= 2,
+                   "temps restant hors bornes")
+
+            cancelled = await t["cancel_timer"](long["id"])
+            expect(cancelled.get("ok") and cancelled.get("state") == "cancelled",
+                   "annulation ciblee ratee")
+            after = {x["id"]: x["state"] for x in (await t["list_timers"]())["timers"]}
+            expect(after[long["id"]] == "cancelled", "le minuteur vise doit etre annule")
+            expect(after[short["id"]] == "running", "l'autre minuteur doit continuer")
+
+            await asyncio.sleep(2.4)
+            final = {x["id"]: x["state"] for x in (await t["list_timers"]())["timers"]}
+            expect(final[short["id"]] == "completed", "le minuteur court ne s'est pas termine")
+        asyncio.run(run())
+
+    step("start/list/cancel/fin de minuteurs", scenario)
+
+
+def group_checklists(ctx: Context, step) -> None:
+    # Persistent checklist against the throwaway db set in main() (never the
+    # real ~/Library store). Re-reads with a fresh capability = "after restart".
+    state = {}
+
+    def create():
+        result = call_ok(ctx, "manage_checklist", "create", text="Depart Smoke")
+        expect(isinstance(result.get("list_id"), int), "list_id manquant")
+        state["list"] = result["list_id"]
+
+    def add():
+        result = call_ok(ctx, "manage_checklist", "add", state["list"], "Preparer les documents")
+        expect(result["items"], "aucun element ajoute")
+        item = result["items"][-1]
+        expect(item["done"] == 0, "un element ajoute ne doit pas etre coche")
+        state["item"] = item["id"]
+
+    def check():
+        result = call_ok(ctx, "manage_checklist", "check", state["list"], None, state["item"], True)
+        done = {i["id"]: i["done"] for i in result["items"]}
+        expect(done[state["item"]] == 1, "l'element n'est pas coche")
+
+    def uncheck():
+        result = call_ok(ctx, "manage_checklist", "check", state["list"], None, state["item"], False)
+        done = {i["id"]: i["done"] for i in result["items"]}
+        expect(done[state["item"]] == 0, "l'element n'est pas decoche")
+
+    def persists():
+        from jarvis.capabilities.checklists import ChecklistsCapability
+        reopened = ChecklistsCapability().manage("show", state["list"])
+        expect(reopened.ok, f"relecture impossible : {reopened.error_code}")
+        expect(any(i["id"] == state["item"] for i in reopened.data["items"]),
+               "la checklist n'a pas survecu a une reouverture")
+
+    step("manage_checklist create", create, critical=True)
+    step("manage_checklist add", add, critical=True)
+    step("manage_checklist check", check)
+    step("manage_checklist uncheck", uncheck)
+    step("checklist persistee apres reouverture", persists)
+
+
+def _tomorrow_window():
+    tz = datetime.now().astimezone().tzinfo
+    base = (datetime.now(tz) + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+    return base.isoformat(timespec="minutes"), base.replace(hour=18).isoformat(timespec="minutes")
+
+
+def group_planning(ctx: Context, step) -> None:
+    # Read-only EventKit analysis. A denied read is skipped, never treated as
+    # free time. Creates nothing in the real calendar.
+    start, end = _tomorrow_window()
+
+    def free():
+        result = call(ctx, "find_free_slots", start, end, 60)
+        if not result.get("ok"):
+            raise Skipped(f"agenda non analysable : {result.get('error_code')}")
+        expect(isinstance(result.get("slots"), list), "slots manquant")
+
+    def conflicts():
+        result = call(ctx, "calendar_conflicts", start, end)
+        if not result.get("ok"):
+            raise Skipped(f"agenda non analysable : {result.get('error_code')}")
+        expect(isinstance(result.get("conflicts"), list), "conflicts manquant")
+
+    def refuses_naive():
+        result = call(ctx, "find_free_slots", "2026-10-20T09:00", "2026-10-20T18:00", 60)
+        expect(result.get("ok") is False and result.get("error_code") == "invalid_range",
+               "une date sans fuseau doit etre refusee")
+
+    step("find_free_slots (demain 9-18)", free)
+    step("calendar_conflicts (demain 9-18)", conflicts)
+    step("find_free_slots refuse une date sans fuseau", refuses_naive)
+
+
+def group_notes_v2(ctx: Context, step) -> None:
+    # search -> read -> append -> re-read, against the throwaway notes dir.
+    state = {}
+
+    def seed():
+        call_ok(ctx, "save_note", "Penser au chargeur pour le voyage.", "Voyage Smoke")
+
+    def search():
+        result = call_ok(ctx, "search_notes", "chargeur")
+        expect(result.get("notes"), "la note creee n'est pas retrouvee")
+        state["id"] = result["notes"][0]["note_id"]
+
+    def read():
+        result = call_ok(ctx, "read_note", state["id"])
+        expect("chargeur" in result.get("text", ""), "le texte lu ne contient pas le mot cherche")
+
+    def append():
+        call_ok(ctx, "append_note", state["id"], "Prendre aussi le passeport.")
+        result = call_ok(ctx, "read_note", state["id"])
+        text = result.get("text", "")
+        expect("chargeur" in text and "passeport" in text,
+               "l'ajout a ecrase ou n'a pas conserve le texte precedent")
+
+    step("save_note (amorce)", seed, critical=True)
+    step("search_notes retrouve la note", search, critical=True)
+    step("read_note relit la note", read)
+    step("append_note ajoute sans ecraser", append)
+
+
+def group_document_v2(ctx: Context, step) -> None:
+    # Real local files + configured local model + evidence verification. If the
+    # model can't produce verifiable quotes, the capability refuses: that's a
+    # skip here (plumbing ran), not a failure.
+    left = ctx.workdir / "cr_left.txt"
+    right = ctx.workdir / "cr_right.txt"
+
+    def seed():
+        left.write_text("Decision : le lancement est reporte au 5 novembre 2026. Action : Kevin prepare le budget.")
+        right.write_text("Decision : le lancement est reporte au 5 novembre 2026. Action : Sarah revoit le planning.")
+
+    def compare():
+        result = call(ctx, "compare_documents", str(left), str(right))
+        if result.get("error_code") in ("invalid_analysis", "model_error", "read_failed"):
+            raise Skipped(f"analyse non verifiable par le modele local : {result.get('error_code')}")
+        expect(result.get("ok") is True, f"compare -> {result.get('error_code')}")
+        expect(isinstance(result.get("items"), list), "items manquant")
+
+    def extract():
+        result = call(ctx, "extract_document_actions", str(left))
+        if result.get("error_code") in ("invalid_analysis", "model_error", "read_failed"):
+            raise Skipped(f"extraction non verifiable par le modele local : {result.get('error_code')}")
+        expect(result.get("ok") is True, f"extract -> {result.get('error_code')}")
+        expect(isinstance(result.get("items"), list), "items manquant")
+
+    step("documents (amorce)", seed, critical=True)
+    step("compare_documents (modele local)", compare)
+    step("extract_document_actions (modele local)", extract)
+
+
 GROUPS = {
     "system": group_system,
     "volume": group_volume,
@@ -946,6 +1113,11 @@ GROUPS = {
     "vision_click": group_vision_click,
     "scheduled": group_scheduled,
     "privacy": group_privacy,
+    "timers": group_timers,
+    "checklists": group_checklists,
+    "planning": group_planning,
+    "notes_v2": group_notes_v2,
+    "document_v2": group_document_v2,
 }
 
 
@@ -1020,6 +1192,7 @@ def main() -> int:
     os.environ["JARVIS_NOTES_DIR"] = str(workdir / "notes")
     os.environ["JARVIS_MACROS_PATH"] = str(workdir / "macros.db")
     os.environ["JARVIS_CONTEXT_PATH"] = str(workdir / "context.db")
+    os.environ["JARVIS_CHECKLISTS_PATH"] = str(workdir / "checklists.db")
 
     from jarvis.live.registry import create_live_tools
 

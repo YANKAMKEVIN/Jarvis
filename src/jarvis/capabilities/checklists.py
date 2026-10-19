@@ -8,7 +8,9 @@ from jarvis.capabilities.results import ToolResult
 
 class ChecklistsCapability:
     def __init__(self, path=None):
-        self.path = Path(path) if path is not None else Path.home() / 'Library/Application Support/Jarvis/checklists.db'
+        if path is None:
+            path = os.environ.get('JARVIS_CHECKLISTS_PATH')
+        self.path = Path(path).expanduser() if path else Path.home() / 'Library/Application Support/Jarvis/checklists.db'
 
     def _connect(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
