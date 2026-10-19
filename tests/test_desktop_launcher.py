@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import plistlib
 import subprocess
+import sys
 
 import pytest
 
@@ -48,3 +49,37 @@ def test_update_keeps_resources_and_adds_microphone_permission(tmp_path):
         plistlib.dump({"CFBundleIdentifier": "another.application"}, stream)
     with pytest.raises(ValueError):
         launcher.build_app(app, Path('/python'), tmp_path, update=True)
+
+
+def test_sign_app_is_best_effort_without_codesign(tmp_path, monkeypatch):
+    # On a host without codesign, signing must not raise and must not fail the
+    # build; it reports a warning instead.
+    app = launcher.build_app(tmp_path / "Jarvis.app", Path('/python'), tmp_path)
+
+    def no_codesign(*args, **kwargs):
+        raise FileNotFoundError("codesign")
+
+    monkeypatch.setattr(launcher.subprocess, "run", no_codesign)
+    ok, detail = launcher.sign_app(app)
+    assert ok is False
+    assert "codesign" in detail
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="codesign only exists on macOS")
+def test_sign_app_adhoc_signs_and_is_stable_across_rebuilds(tmp_path):
+    # Real ad-hoc signature: it must verify, and rebuilding the same launcher
+    # must yield the same code hash so macOS keeps the TCC grants.
+    app = launcher.build_app(tmp_path / "Jarvis.app", Path(sys.executable), tmp_path)
+    ok, detail = launcher.sign_app(app)
+    assert ok is True and detail == "ad-hoc"
+    assert subprocess.run(["codesign", "--verify", "--strict", str(app)]).returncode == 0
+
+    def cdhash() -> str:
+        out = subprocess.run(["codesign", "-dvvv", str(app)], capture_output=True, text=True)
+        line = next(l for l in (out.stderr + out.stdout).splitlines() if l.startswith("CDHash="))
+        return line.split("=", 1)[1]
+
+    first = cdhash()
+    launcher.build_app(app, Path(sys.executable), tmp_path, update=True)
+    launcher.sign_app(app)
+    assert cdhash() == first

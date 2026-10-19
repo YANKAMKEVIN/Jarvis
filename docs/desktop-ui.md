@@ -279,8 +279,16 @@ open ~/Applications/Jarvis.app
 
 Ensuite, double-cliquer sur `Jarvis.app` depuis Finder ou la garder dans le Dock.
 Ce lanceur de développement référence le chemin absolu du dépôt et du Python
-actuel : conserver le dépôt et `.venv` à leur place. Ce n’est pas une application
-encore autonome et signée pour distribution sur d’autres Macs.
+actuel : conserver le dépôt et `.venv` à leur place.
+
+Par défaut le lanceur est **signé en ad-hoc** (gratuit, sans compte Apple). macOS
+rattache alors les autorisations (Calendrier, Rappels, Automation, Micro) à
+l’empreinte de code du lanceur, qui reste identique d’une reconstruction à l’autre
+du même install : les autorisations ne sont donc pas redemandées ni perdues à
+chaque `--update`. Passer `--no-sign` pour l’éviter, ou `--sign-identity "<nom>"`
+pour un certificat auto-signé ou Developer ID. La signature ad-hoc ne lève pas
+l’avertissement Gatekeeper sur **un autre** Mac : une vraie distribution autonome
+demande encore un Developer ID et la notarisation.
 
 Pour actualiser un lanceur existant :
 
