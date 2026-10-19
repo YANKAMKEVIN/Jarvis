@@ -749,6 +749,21 @@ class DesktopShell:
         app.aboutToQuit.connect(self.hotkey.close)
         self.quit_guard = QuitGuard(self, app)
         app.installEventFilter(self.quit_guard)
+        self.onboarding = None
+        self.maybe_show_onboarding()
+
+    def maybe_show_onboarding(self):
+        """Show the first-run permission screen once, on a real desktop only."""
+        from jarvis.desktop import onboarding
+
+        if self.controller.demo or self.app.platformName() == "offscreen":
+            return None
+        if not onboarding.needs_onboarding(self.settings):
+            return None
+        self.onboarding = onboarding.make_onboarding_dialog(self.settings)
+        self.onboarding.show()
+        self.onboarding.raise_()
+        return self.onboarding
 
     def save_devices(self):
         self.settings.setValue('audio/input_device', json.dumps(self.controller.input_choice))

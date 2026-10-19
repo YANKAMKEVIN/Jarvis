@@ -299,6 +299,23 @@ python scripts/build_desktop_app.py --update
 Finder ne reprend pas les exports du terminal. Le vocal charge la configuration
 utilisateur puis celle du projet, sans remplacer les variables déjà exportées.
 
+## Autorisations au premier lancement
+
+macOS n’accorde une permission qu’au moment où l’API correspondante est
+sollicitée : sans accompagnement, les demandes Micro, Calendrier, Rappels et
+Automatisation surgissent dispersées pendant les premières phrases. Au premier
+lancement, Jarvis affiche donc un écran unique qui explique chaque permission et
+son usage, montre son état actuel, propose de demander celles qui peuvent l’être
+par programme (Calendrier, Rappels, Enregistrement de l’écran) et ouvre le bon
+volet de Réglages Système pour les autres (Micro, Automatisation, Accessibilité).
+Rien n’est obligatoire : chaque action reste sur demande, et tout se règle plus
+tard dans Réglages Système. L’écran ne s’affiche qu’une fois (mémorisé via
+`onboarding/version` dans les préférences, réaffiché si la liste des permissions
+évolue) ; il n’apparaît ni en mode démo ni hors session graphique. La logique
+(détection du premier lancement, liste des permissions et de leur état) est
+séparée du dialogue Qt pour rester testable hors Mac ; le déclenchement réel des
+invites TCC se vérifie lors d’un lancement natif.
+
 ## Démo et fermeture
 
 ```bash
