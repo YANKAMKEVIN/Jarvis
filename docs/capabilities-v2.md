@@ -61,9 +61,13 @@ pourrait produire une fausse disponibilité.
 Les formats déjà pris en charge par la lecture de fichiers restent applicables
 (notamment les PDF si `pypdf` est installé). Au maximum 12 000 caractères par
 document sont transmis au modèle de planification configuré ; la lecture PDF
-reste bornée aux 50 premières pages. Selon la configuration, ce modèle peut être
-local ou distant. Les documents sont des données, sans outils d’exécution donnés
-au modèle d’analyse.
+reste bornée aux 50 premières pages. Par défaut, ce modèle doit être **local**
+(Ollama sur une adresse de bouclage) : si le planificateur configuré est distant,
+`ask_about_document`, `compare_documents` et `extract_document_actions` refusent
+avec `remote_model_blocked` et **n’envoient rien**, afin qu’un document privé ne
+quitte pas la machine. L’envoi à un modèle distant doit être autorisé
+explicitement par la variable d’environnement `JARVIS_DOCUMENT_ALLOW_REMOTE`. Les
+documents sont des données, sans outils d’exécution donnés au modèle d’analyse.
 
 Chaque ligne retournée doit respecter un schéma et citer du texte réellement
 présent dans l’extrait correspondant. Une réponse mal formée ou une citation

@@ -8,6 +8,8 @@ network beyond the local/configured model.
 from __future__ import annotations
 
 import json
+import os
+from urllib.parse import urlparse
 
 from jarvis.capabilities.results import ToolResult
 from jarvis.tools.filesystem import FileSystemError, FileSystemTools
@@ -18,6 +20,19 @@ _SYSTEM = (
     "fourni. Si la reponse n'y figure pas, dis-le clairement sans inventer. "
     "Reste concis, pour une reponse vocale. Reponds dans la langue de la question."
 )
+
+# Document content (up to 12k chars) is sent to the planner model. By default
+# that model must be local, so a private document never leaves the machine.
+# A loopback host (or a model with no network endpoint, i.e. an injected test
+# model) counts as local. Set JARVIS_DOCUMENT_ALLOW_REMOTE to opt in to sending
+# document text to a remote planner backend.
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_ALLOW_REMOTE_VALUES = {"1", "true", "yes", "oui", "on"}
+
+
+def _endpoint_is_local(endpoint: str) -> bool:
+    host = (urlparse(endpoint).hostname or "").lower()
+    return not host or host in _LOOPBACK_HOSTS or host.endswith(".localhost")
 
 
 class DocumentCapability:
@@ -34,6 +49,23 @@ class DocumentCapability:
             self._model = build_planner_model()
         return self._model
 
+    def _remote_model_block(self, action):
+        """Refuse to ship document content to a non-local planner model, unless
+        the user explicitly opted in. Returns a failure ToolResult or None."""
+        if os.environ.get("JARVIS_DOCUMENT_ALLOW_REMOTE", "").strip().lower() in _ALLOW_REMOTE_VALUES:
+            return None
+        model = self._get_model()
+        endpoint = getattr(model, "url", None) or getattr(model, "base_url", None)
+        if endpoint is None or _endpoint_is_local(endpoint):
+            return None
+        return ToolResult.failure(
+            action,
+            "Analyse refusee : le planificateur configure n'est pas local, le contenu du document "
+            "sortirait de cette machine. Utilise un modele local (Ollama) ou autorise explicitement "
+            "l'envoi distant avec JARVIS_DOCUMENT_ALLOW_REMOTE.",
+            "remote_model_blocked",
+        )
+
     def ask(self, path: str, question: str) -> ToolResult:
         if not isinstance(question, str) or not question.strip():
             return ToolResult.failure(
@@ -41,6 +73,9 @@ class DocumentCapability:
                 message="La question est obligatoire.",
                 error_code="invalid_question",
             )
+        blocked = self._remote_model_block("ask_about_document")
+        if blocked is not None:
+            return blocked
         try:
             doc = self.filesystem_tools.read_text(path)
         except FileSystemError as error:
@@ -90,6 +125,9 @@ class DocumentCapability:
 
 
     def _structured(self, action, documents, instruction):
+        blocked = self._remote_model_block(action)
+        if blocked is not None:
+            return blocked
         try:
             docs = [self.filesystem_tools.read_text(path, max_chars=12000) for path in documents]
         except Exception:
