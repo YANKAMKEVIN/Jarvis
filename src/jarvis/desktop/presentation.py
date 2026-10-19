@@ -15,6 +15,7 @@ LABELS = {
     'search_the_web': 'Recherche web', 'web_answer': 'Recherche web', 'summarize_url': 'Page web',
     'set_reminder': 'Rappel', 'list_reminders': 'Rappels', 'cancel_reminder': 'Rappel',
     'list_calendar_events': 'Agenda', 'create_calendar_event': 'Agenda',
+    'list_unread_emails': 'Mails', 'summarize_unread_emails': 'Résumé des mails',
     'schedule_message': 'Message planifié', 'prepare_send_message': 'Message',
     'confirm_action': 'Confirmation', 'cancel_action': 'Annulation',
     'run_task': 'Tâche', 'task_status': 'Tâche', 'cancel_task': 'Tâche',
@@ -138,6 +139,14 @@ def project_card(name, result):
         for row in result['items'][:6]:
             if isinstance(row, dict):
                 items.append(plain(row.get('text'), 180))
+    elif name == 'summarize_unread_emails' and isinstance(result.get('items'), list):
+        kind, title = 'mail', 'Mails non lus (résumé)'
+        body = 'Résumé généré à vérifier. Aucun mail envoyé ni modifié ; non-lus conservés.'
+        for row in result['items'][:6]:
+            if isinstance(row, dict):
+                head = plain(row.get('subject'), 80) or plain(row.get('sender'), 80)
+                summary = plain(row.get('summary'), 180)
+                items.append(' · '.join(v for v in (head, summary) if v))
     elif name in {'describe_screen', 'ask_about_screen'}:
         analysis = plain(result.get('analysis'), 1600)
         if not analysis:

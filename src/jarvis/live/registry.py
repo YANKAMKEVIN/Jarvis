@@ -81,7 +81,8 @@ SAFE_MODE_ALLOWED = frozenset({
     "capture_screen", "capture_region", "capture_window",
     "describe_screen", "ask_about_screen",
     # Calendar / mail / messaging reads.
-    "list_calendar_events", "list_unread_emails", "find_free_slots",
+    "list_calendar_events", "list_unread_emails", "summarize_unread_emails",
+    "find_free_slots",
     "calendar_conflicts", "read_whatsapp_conversation",
     # Notes / checklists / document analysis (reads).
     "list_notes", "search_notes", "read_note",
@@ -251,7 +252,7 @@ class ToolRegistry:
         self.mail = (
             mail_capability
             if mail_capability is not None
-            else MailCapability()
+            else MailCapability(model=planner_model)
         )
         self.compute = ComputeCapability()
         self.notes = NotesCapability()
@@ -1061,6 +1062,25 @@ class ToolRegistry:
             debug_live("tool_call", tool="list_unread_emails")
             result = await asyncio.to_thread(self.mail.list_unread, limit)
             self._debug_tool_result("list_unread_emails", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="summarize_unread_emails",
+            description=(
+                "Resume les mails NON LUS de la boite de reception en une phrase "
+                "par mail, en local : 'resume mes mails', 'qu'est-ce que j'ai recu "
+                "d'important'. Lit le corps des messages sans les marquer comme lus, "
+                "et s'appuie uniquement sur leur contenu. Necessite IMAP configure. "
+                "Le resume est genere et doit etre verifie ; aucun mail n'est envoye "
+                "ni modifie. limit : nombre maximum de mails a resumer."
+            ),
+        )
+        @self._journaled("summarize_unread_emails")
+        async def summarize_unread_emails(limit: int = 5) -> dict:
+            """Summarize unread Apple Mail messages with the local model."""
+            debug_live("tool_call", tool="summarize_unread_emails", limit=limit)
+            result = await asyncio.to_thread(self.mail.summarize_unread, limit)
+            self._debug_tool_result("summarize_unread_emails", result)
             return result.to_livekit_dict()
 
         @function_tool(
@@ -3495,6 +3515,7 @@ class ToolRegistry:
             list_calendar_events,
             create_calendar_event,
             list_unread_emails,
+            summarize_unread_emails,
             draft_email,
             get_brightness,
             set_brightness,

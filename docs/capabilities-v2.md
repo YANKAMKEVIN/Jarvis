@@ -94,6 +94,20 @@ Les plafonds existants restent deux exécutions et six demandes actives. Les
 missions qui pilotent le bureau restent sérialisées. Les actions extérieures
 conservent le mécanisme existant de confirmation vocale.
 
+## Mails : résumé local des non-lus
+
+`summarize_unread_emails` lit le **corps** des mails non lus et en donne une
+phrase de résumé chacun. La lecture passe par IMAP en `BODY.PEEK[]`, donc
+résumer un mail **ne le marque pas comme lu** ; les pièces jointes sont ignorées
+et chaque corps est borné. Comme pour les documents, le contenu reste
+**on-device par défaut** : si le planificateur configuré n'est pas local, le
+résumé est refusé avec `remote_model_blocked` et **rien n'est lu ni envoyé**,
+sauf opt-in explicite `JARVIS_MAIL_ALLOW_REMOTE`. L'expéditeur et le sujet de
+chaque ligne proviennent des en-têtes réels, jamais du modèle, donc un résumé
+est toujours rattaché à un vrai message ; le texte est généré et à vérifier.
+IMAP est requis (les en-têtes seuls ne suffisent pas) : sans lui, Jarvis propose
+de lister les non-lus. Aucun mail n'est envoyé ni modifié.
+
 ## Historique des missions (persistant)
 
 `task_status` ne voit que la session en cours. `recent_missions` relit un
