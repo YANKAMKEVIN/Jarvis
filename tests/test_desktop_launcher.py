@@ -37,7 +37,12 @@ def test_update_keeps_resources_and_adds_microphone_permission(tmp_path):
     launcher.build_app(app, Path('/new-python'), tmp_path, update=True)
     assert marker.read_text() == "keep"
     with (app / "Contents/Info.plist").open('rb') as stream:
-        assert "NSMicrophoneUsageDescription" in plistlib.load(stream)
+        info = plistlib.load(stream)
+    # Usage descriptions so a real .app can actually prompt for these grants.
+    for key in ("NSMicrophoneUsageDescription", "NSCalendarsUsageDescription",
+                "NSRemindersUsageDescription", "NSAppleEventsUsageDescription"):
+        assert key in info, key
+    assert info["LSUIElement"] is True  # menu-bar/orb app, no Dock icon
     info_path = app / "Contents/Info.plist"
     with info_path.open('wb') as stream:
         plistlib.dump({"CFBundleIdentifier": "another.application"}, stream)

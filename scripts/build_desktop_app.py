@@ -43,7 +43,16 @@ def build_app(destination: Path, python: Path, source: Path, demo=False, update=
             "CFBundlePackageType": "APPL",
             "CFBundleShortVersionString": "0.9.0",
             "NSHighResolutionCapable": True,
+            # Menu-bar / orb companion: no Dock icon.
+            "LSUIElement": True,
             "NSMicrophoneUsageDescription": "Jarvis utilise le micro uniquement quand vous activez le vocal pour parler avec Gemini Live.",
+            # Needed so EventKit can actually prompt for Calendar/Reminders in a
+            # real .app (a bare interpreter never gets the prompt).
+            "NSCalendarsUsageDescription": "Jarvis lit et cree des evenements dans votre agenda uniquement a votre demande.",
+            "NSRemindersUsageDescription": "Jarvis lit et cree des rappels uniquement a votre demande.",
+            # Needed so AppleScript automations (Calendar, Mail, WhatsApp, etc.)
+            # can prompt for the Automation permission instead of being denied.
+            "NSAppleEventsUsageDescription": "Jarvis pilote d'autres applications (Mail, WhatsApp, Calendrier...) uniquement pour executer ce que vous demandez.",
         })
         plistlib.dump(info, stream)
     # Shell quoting must preserve spaces in both checkout and interpreter paths.
