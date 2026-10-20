@@ -34,7 +34,7 @@ atlases provide four poses. These are 2D transformations and crossfades, with no
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/test_desktop*.py -q
 ```
 
-177 desktop tests passed, including 72 avatar checks and the existing two-mission
+182 desktop tests passed, including 72 avatar checks and the existing two-mission
 cancellation/cycling tests. Coverage includes default and invalid preferences,
 on-disk persistence, all assets/poses, immediate changes preserving two missions
 and the voice worker, all three modes, keyboard activation, reduced motion,
@@ -78,8 +78,8 @@ jarvis-desktop --demo --orb
 On the Mac, verify native window placement/scaling, sustained animation
 performance, and microphone/speaker reactions during a real LiveKit/Gemini
 session with the configured credentials and permissions. Those live checks were
-not performed by the automated demo. Compact mode preserves the existing
-one-card mission carousel; full mode shows two independently controlled cards.
+not performed by the automated demo. Compact mode now shows the avatar alone with two hover controls; its menu opens
+missions in the full view, where two cards remain independently controlled.
 
 ## Individual choreography
 
@@ -152,3 +152,49 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_avatar_motion.py --ab
 Tests additionally verify motion at zero-audio idle for all ten abstract forms,
 distinct silent interaction trajectories and rendered frames, and progressive
 state interpolation. Native macOS fluidity/live audio remain manual checks.
+
+## Avatar-first compact companion
+
+`CompanionWindow` replaces the compact dashboard with a 320 × 340 transparent,
+frameless, always-on-top window. The avatar is 320 × 320 and keeps its size even
+when missions arrive. There is no permanent title, card, footer or voice dock.
+The resting pose has no pedestal. Two 32 px overlay controls appear on hover:
+open the full assistant, and open the companion menu. Their appearance never
+changes the avatar layout. Leaving hides them; keyboard focus and an open menu
+keep them available. Tab/Space/Enter reveal controls; Tab navigates; Escape hides.
+
+Dragging the avatar moves the window and persists its position. Clicking the
+avatar alone neither opens the main window nor starts microphone capture. The
+menu provides explicit voice start/stop, microphone and interrupt commands,
+current capture/error/confirmation status, missions, cards, appearance, settings,
+hide and quit. It updates while open and respects demo, reconnection and stopping
+states. Status is also available as an avatar tooltip; no transcript is shown.
+
+Session ownership, missions, position restoration, mode transitions, audio
+signals and reduced motion continue to use the existing shared controller.
+The smaller `--orb` view is preserved. Two simultaneous missions remain visible
+and independently cancellable in the full assistant, reached through the menu.
+
+Five new companion tests cover transparent corners and the two-control limit,
+hover without resizing, keyboard access, dragging/persistence, no microphone on
+click, live commands and two-mission/session continuity, menu state, and hidden
+animation timers. Existing compact tests now verify these menu routes instead
+of the retired compact card carousel.
+
+Capture the real demo widgets with:
+
+```sh
+QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_companion_preview.py
+```
+
+[Idle](screenshots/avatars/companion-avatar.png),
+[hover](screenshots/avatars/companion-hover.png) and
+[abstract avatar](screenshots/avatars/companion-abstract.png) are transparent
+captures of the real window. The [comparison](screenshots/avatars/companion-comparison.png)
+places those same captures on a labelled backing canvas solely to make their
+transparency readable. Native macOS desktop interaction and scaling still need
+manual verification.
+
+The companion was also opened and captured from a freshly built wheel installed
+in an isolated target; the installed implementation retained its 320 px avatar
+and hidden-by-default controls.
