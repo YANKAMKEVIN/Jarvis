@@ -22,6 +22,7 @@ from jarvis.capabilities.keyboard import KeyboardCapability
 from jarvis.capabilities.knowledge import KnowledgeCapability, web_announcement_for
 from jarvis.capabilities.mail import MailCapability
 from jarvis.capabilities.media import MediaCapability
+from jarvis.capabilities.claude_sessions import ClaudeSessionsCapability
 from jarvis.capabilities.memory import MemoryCapability
 from jarvis.capabilities.system_metrics import SystemMetricsCapability
 from jarvis.capabilities.usage import UsageCapability
@@ -141,6 +142,7 @@ class ToolRegistry:
         mail_capability=None,
         usage_capability=None,
         system_metrics_capability=None,
+        claude_sessions_capability=None,
         document_capability=None,
         macro_store=None,
         context_store=None,
@@ -272,6 +274,11 @@ class ToolRegistry:
             system_metrics_capability
             if system_metrics_capability is not None
             else SystemMetricsCapability()
+        )
+        self.claude_sessions = (
+            claude_sessions_capability
+            if claude_sessions_capability is not None
+            else ClaudeSessionsCapability()
         )
         self.compute = ComputeCapability()
         self.notes = NotesCapability()
@@ -1227,6 +1234,80 @@ class ToolRegistry:
             result = await asyncio.to_thread(self.system_metrics.history, metric, period)
             self._debug_tool_result("system_usage_history", result)
             return result.to_livekit_dict()
+
+        @function_tool(
+            name="run_claude_task",
+            description=(
+                "Lance une session Claude Code EN TACHE DE FOND pour une consigne "
+                "precise, recupere la reponse et la lit : 'demande a Claude de ...', "
+                "'lance une session Claude pour ...'. prompt : la consigne ; "
+                "directory : dossier de travail (optionnel, defaut : dossier "
+                "personnel). Action consequente : renvoie un token et "
+                "requires_confirmation. Annonce la consigne et le dossier, puis "
+                "attends l'accord avant confirm_action. Rien n'est lance sans "
+                "confirmation."
+            ),
+        )
+        @self._journaled("run_claude_task")
+        async def run_claude_task(prompt: str, directory: str = None) -> dict:
+            """Prepare a one-shot Claude Code task (confirmation required)."""
+            debug_live("tool_call", tool="run_claude_task",
+                       prompt_length=len(prompt) if isinstance(prompt, str) else None)
+            if not isinstance(prompt, str) or not prompt.strip():
+                return ToolResult.failure("run_claude_task",
+                                          "La consigne pour Claude est vide.",
+                                          "invalid_prompt").to_livekit_dict()
+            if not self.claude_sessions.available():
+                return ToolResult.failure("run_claude_task",
+                                          "Le CLI claude est introuvable.",
+                                          "claude_missing").to_livekit_dict()
+
+            def _executor():
+                return self.claude_sessions.run_task(prompt, directory)
+
+            async with self.confirmation_lock:
+                token = self.pending_actions.register("run_claude_task", _executor)
+            return ToolResult.success(
+                "run_claude_task",
+                "Tache Claude a confirmer. Annonce la consigne et le dossier, "
+                "puis attends la confirmation avant confirm_action.",
+                requires_confirmation=True, token=token,
+                prompt=prompt.strip()[:160],
+                directory=self.claude_sessions.resolve_directory(directory),
+            ).to_livekit_dict()
+
+        @function_tool(
+            name="open_claude_session",
+            description=(
+                "Ouvre une session Claude Code INTERACTIVE dans une fenetre Terminal "
+                "pour que l'utilisateur la pilote lui-meme : 'ouvre une session "
+                "Claude', 'lance Claude dans le Terminal'. directory : dossier de "
+                "travail (optionnel). Action consequente : renvoie un token et "
+                "requires_confirmation. Annonce le dossier puis attends l'accord "
+                "avant confirm_action."
+            ),
+        )
+        @self._journaled("open_claude_session")
+        async def open_claude_session(directory: str = None) -> dict:
+            """Prepare opening an interactive Claude session (confirmation required)."""
+            debug_live("tool_call", tool="open_claude_session")
+            if not self.claude_sessions.available():
+                return ToolResult.failure("open_claude_session",
+                                          "Le CLI claude est introuvable.",
+                                          "claude_missing").to_livekit_dict()
+
+            def _executor():
+                return self.claude_sessions.open_session(directory)
+
+            async with self.confirmation_lock:
+                token = self.pending_actions.register("open_claude_session", _executor)
+            return ToolResult.success(
+                "open_claude_session",
+                "Ouverture de session Claude a confirmer. Annonce le dossier puis "
+                "attends la confirmation avant confirm_action.",
+                requires_confirmation=True, token=token,
+                directory=self.claude_sessions.resolve_directory(directory),
+            ).to_livekit_dict()
 
         @function_tool(
             name="draft_email",
@@ -3669,6 +3750,8 @@ class ToolRegistry:
             system_snapshot,
             top_processes,
             system_usage_history,
+            run_claude_task,
+            open_claude_session,
             draft_email,
             get_brightness,
             set_brightness,
@@ -4060,6 +4143,9 @@ def create_live_registry(
     text_workshop_capability=None,
     calendar_capability=None,
     mail_capability=None,
+    usage_capability=None,
+    system_metrics_capability=None,
+    claude_sessions_capability=None,
     document_capability=None,
     macro_store=None,
     context_store=None,
@@ -4177,6 +4263,9 @@ def create_live_registry(
         text_workshop_capability=text_workshop_capability,
         calendar_capability=calendar_capability,
         mail_capability=mail_capability,
+        usage_capability=usage_capability,
+        system_metrics_capability=system_metrics_capability,
+        claude_sessions_capability=claude_sessions_capability,
         document_capability=document_capability,
         macro_store=macro_store,
         context_store=context_store,

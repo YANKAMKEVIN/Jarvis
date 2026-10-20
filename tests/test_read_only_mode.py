@@ -103,6 +103,7 @@ class ReadOnlyModeTests(unittest.TestCase):
             "hotkey", "click", "prepare_send_message", "send_last_web_result",
             "schedule_message", "confirm_action", "clear_personal_data",
             "browse_open_url", "run_macro", "run_procedure",
+            "run_claude_task", "open_claude_session",
         ):
             self.assertNotIn(name, SAFE_MODE_ALLOWED, name)
 
