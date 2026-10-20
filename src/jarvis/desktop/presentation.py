@@ -183,6 +183,25 @@ def project_card(name, result):
         volume = result.get('volume')
         if isinstance(volume, (int, float)) and not isinstance(volume, bool) and 0 <= volume <= 100:
             kind, title, body = 'system', 'Volume du Mac', f'{volume:g} %'
+    elif name in {'token_usage', 'token_usage_by_model', 'token_usage_by_project',
+                  'token_usage_trend', 'compare_token_usage'}:
+        kind, title = 'usage', 'Consommation de tokens'
+        body = plain(result.get('message'), 400)
+        for row in (result.get('models') or result.get('projects') or [])[:6]:
+            if isinstance(row, dict):
+                label = plain(row.get('model') or row.get('project'), 80)
+                total = row.get('total_tokens')
+                suffix = f' · {total / 1e6:.0f} M' if isinstance(total, (int, float)) else ''
+                items.append(label + suffix)
+    elif name in {'system_snapshot', 'system_usage_history'}:
+        kind, title, body = 'system', 'Activité machine', plain(result.get('message'), 400)
+    elif name == 'top_processes' and isinstance(result.get('processes'), list):
+        kind, title = 'system', 'Processus gourmands'
+        unit = '% CPU' if result.get('by') == 'cpu' else '% mémoire'
+        for row in result['processes'][:6]:
+            if isinstance(row, dict):
+                items.append(plain(row.get('name'), 60) + f" · {row.get('value')} {unit}")
+        body = plain(result.get('message'), 200)
     if not kind:
         return None
     return {'kind': kind, 'title': title, 'body': body, 'items': items, 'sources': sources}
