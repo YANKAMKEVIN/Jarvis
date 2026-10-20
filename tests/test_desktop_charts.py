@@ -6,10 +6,11 @@ import pytest
 pytest.importorskip("PySide6.QtCharts")
 
 from PySide6.QtCharts import QChartView
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from jarvis.desktop.charts import (
-    make_metrics_dashboard, make_usage_dashboard, _short_day, _millions,
+    USAGE_PERIODS, make_metrics_dashboard, make_usage_dashboard,
+    plain_label, _short_day, _millions,
 )
 
 
@@ -52,6 +53,36 @@ def test_metrics_dashboard_builds_two_lines(app):
 def test_metrics_dashboard_empty_shows_note_not_charts(app):
     widget = make_metrics_dashboard({}, [], [])
     assert widget.findChildren(QChartView) == []
+
+
+def test_plain_label_truncates():
+    assert plain_label("Jarvis") == "Jarvis"
+    assert plain_label("UnTresLongNomDeProjet") == "UnTresLongNom…"
+
+
+def test_usage_dashboard_with_projects_and_period(app):
+    overview = {"period": "sur 30 jours", "output": 1, "input": 1,
+                "cache_read": 1, "sessions": 5}
+    trend = [{"day": "2026-10-20", "total_tokens": 1_000_000}]
+    models = [{"model": "claude-opus-5-5", "total_tokens": 9_000_000, "est_cost_usd": 12.5}]
+    projects = [{"project": "Alpha", "total_tokens": 5_000_000},
+                {"project": "Beta", "total_tokens": 2_000_000}]
+    clicks = []
+    widget = make_usage_dashboard(overview, trend, models, projects,
+                                  period="30d", on_period_change=clicks.append)
+    # three charts: daily, model, project
+    assert len(widget.findChildren(QChartView)) == 3
+    # one period button per preset, the current one checked
+    buttons = [b for b in widget.findChildren(QPushButton) if b.text() in dict(
+        (lbl, key) for key, lbl in USAGE_PERIODS)]
+    assert len(buttons) == len(USAGE_PERIODS)
+    buttons[0].click()
+    assert clicks  # clicking a period button fires the callback
+
+
+def test_usage_dashboard_no_period_bar_without_callback(app):
+    widget = make_usage_dashboard({"period": "x"}, [], [{"model": "m", "total_tokens": 1}])
+    assert widget.findChildren(QPushButton) == []
 
 
 if __name__ == "__main__":

@@ -14,7 +14,9 @@ from PySide6.QtCharts import (
 )
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter
-from PySide6.QtWidgets import QLabel, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout, QLabel, QMainWindow, QPushButton, QVBoxLayout, QWidget,
+)
 
 from jarvis.capabilities.usage import _human
 
@@ -180,10 +182,40 @@ def make_metrics_dashboard(
     return root
 
 
+# Period presets offered by the dashboard's selector.
+USAGE_PERIODS = (("today", "Aujourd'hui"), ("7d", "7 j"), ("30d", "30 j"), ("all", "Tout"))
+
+
+def _period_bar(current: str, on_change) -> QWidget:
+    bar = QWidget()
+    row = QHBoxLayout(bar)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(8)
+    for key, label in USAGE_PERIODS:
+        active = key == current
+        button = QPushButton(label)
+        button.setCheckable(True)
+        button.setChecked(active)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setStyleSheet(
+            "QPushButton { padding: 5px 14px; border-radius: 13px; border: none; "
+            f"color: {'#081421' if active else _TEXT}; "
+            f"background: {_ACCENTS[0] if active else _PANEL}; font-size: 13px; }}"
+            f"QPushButton:hover {{ background: {_ACCENTS[0] if active else '#1b2a3d'}; }}"
+        )
+        button.clicked.connect(lambda _checked=False, k=key: on_change(k))
+        row.addWidget(button)
+    row.addStretch(1)
+    return bar
+
+
 def make_usage_dashboard(
     overview: dict[str, Any],
     trend_series: Sequence[dict[str, Any]],
     model_rows: Sequence[dict[str, Any]],
+    project_rows: Sequence[dict[str, Any]] = (),
+    period: str = "",
+    on_period_change=None,
     parent: QWidget | None = None,
 ) -> QWidget:
     """Build the token-usage dashboard widget from aggregated payloads."""
@@ -202,6 +234,9 @@ def make_usage_dashboard(
     heading.setStyleSheet("font-size: 19px; font-weight: 600;")
     layout.addWidget(heading)
 
+    if on_period_change is not None:
+        layout.addWidget(_period_bar(period, on_period_change))
+
     if overview:
         sub = QLabel(
             f"{overview.get('period', '').capitalize()} · "
@@ -213,6 +248,14 @@ def make_usage_dashboard(
         sub.setObjectName("sub")
         layout.addWidget(sub)
 
+    cost = sum(r.get("est_cost_usd", 0) or 0 for r in model_rows)
+    if cost:
+        amount = f"{cost:,.2f}".replace(",", " ").replace(".", ",")
+        cost_label = QLabel(f"Coût estimé équivalent API : {amount} $ "
+                            "(indicatif ; l'abonnement n'est pas facturé au token)")
+        cost_label.setObjectName("sub")
+        layout.addWidget(cost_label)
+
     if trend_series:
         cats = [_short_day(d["day"]) for d in trend_series]
         vals = [_millions(d["total_tokens"]) for d in trend_series]
@@ -223,28 +266,43 @@ def make_usage_dashboard(
         vals = [_millions(r["total_tokens"]) for r in model_rows]
         layout.addWidget(_bar_chart("Par modèle", cats, vals, _ACCENTS[1:], "M tokens"), 1)
 
+    if project_rows:
+        cats = [plain_label(r["project"]) for r in project_rows]
+        vals = [_millions(r["total_tokens"]) for r in project_rows]
+        layout.addWidget(_bar_chart("Par projet", cats, vals, _ACCENTS[2:], "M tokens"), 1)
+
     return root
+
+
+def plain_label(text: str, limit: int = 14) -> str:
+    text = str(text or "")
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 class _UsageLoader(QObject):
     """Pulls the aggregates off the UI thread (a cold index pass takes a few
     seconds, which must never freeze the window)."""
 
-    done = Signal(dict, list, list)
+    done = Signal(dict, list, list, list, str)
     failed = Signal(str)
+
+    def __init__(self, period: str = "30d"):
+        super().__init__()
+        self.period = period
 
     def run(self) -> None:
         try:
             from jarvis.capabilities.usage import UsageCapability
 
             cap = UsageCapability()
-            overview = cap.overview("30d").data
+            overview = cap.overview(self.period).data
             trend = cap.trend(14).data.get("series", [])
-            models = cap.by_model("30d").data.get("models", [])
+            models = cap.by_model(self.period).data.get("models", [])
+            projects = cap.by_project(self.period, 6).data.get("projects", [])
         except Exception as error:  # pragma: no cover - defensive
             self.failed.emit(str(error))
             return
-        self.done.emit(overview, trend, models)
+        self.done.emit(overview, trend, models, projects, self.period)
 
 
 class UsageWindow(QMainWindow):
@@ -253,13 +311,16 @@ class UsageWindow(QMainWindow):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("Jarvis · Consommation de tokens")
-        self.resize(800, 720)
+        self.resize(820, 760)
         self.setStyleSheet(f"QMainWindow {{ background: {_BG}; }}")
         self._thread: QThread | None = None
         self._loader: _UsageLoader | None = None
+        self._period = "30d"
         self.reload()
 
-    def reload(self) -> None:
+    def reload(self, period: str | None = None) -> None:
+        if period:
+            self._period = period
         if self._thread is not None and self._thread.isRunning():
             return
         placeholder = QLabel("Chargement du graphe…")
@@ -268,7 +329,7 @@ class UsageWindow(QMainWindow):
         self.setCentralWidget(placeholder)
 
         self._thread = QThread(self)
-        self._loader = _UsageLoader()
+        self._loader = _UsageLoader(self._period)
         self._loader.moveToThread(self._thread)
         self._thread.started.connect(self._loader.run)
         self._loader.done.connect(self._populate)
@@ -277,8 +338,13 @@ class UsageWindow(QMainWindow):
         self._loader.failed.connect(self._thread.quit)
         self._thread.start()
 
-    def _populate(self, overview: dict, trend: list, models: list) -> None:
-        self.setCentralWidget(make_usage_dashboard(overview, trend, models, self))
+    def _on_period(self, key: str) -> None:
+        self.reload(key)
+
+    def _populate(self, overview: dict, trend: list, models: list,
+                  projects: list, period: str) -> None:
+        self.setCentralWidget(make_usage_dashboard(
+            overview, trend, models, projects, period, self._on_period, self))
 
     def _show_error(self, message: str) -> None:
         label = QLabel(f"Lecture de l'usage impossible.\n{message}")
