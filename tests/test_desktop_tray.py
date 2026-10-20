@@ -135,3 +135,41 @@ def test_hidden_windows_keep_session_and_settings_open_without_new_worker(monkey
         c.voice_worker = None
         for window in (shell.full, shell.compact, shell.orb_window):
             window.hide()
+
+
+def test_insight_alerts_toggle_and_notification():
+    import threading
+    from jarvis.desktop.app import InsightRelay
+    from jarvis.insights.detector import Insight
+
+    app = QApplication.instance() or QApplication([])
+    shell = SimpleNamespace(controller=Controller(), full=QWidget(), insights_enabled=True,
+                            set_insights_enabled=Mock(), tray=Mock(), **{
+                                key: Mock() for key in ('show_full', 'show_compact', 'show_orb',
+                                                       'show_details', 'show_settings', 'show_usage',
+                                                       'show_metrics', 'hide_windows', 'quit')})
+    menu = TrayControls(shell, Mock())
+    assert menu.insights.isCheckable() and menu.insights.isChecked()
+    menu.insights.trigger()
+    shell.set_insights_enabled.assert_called_once_with(False)
+
+    insight = Insight('cpu_sustained', 'warning', 'Processeur saturé', 'CPU à 95 %.', 0.0)
+    DesktopShell.show_insight(shell, insight)
+    title, message = shell.tray.showMessage.call_args.args[:2]
+    assert title == 'Jarvis · Processeur saturé' and message == 'CPU à 95 %.'
+    shell.insights_enabled = False
+    DesktopShell.show_insight(shell, insight)
+    assert shell.tray.showMessage.call_count == 1
+
+    # Emitted from a worker thread, delivered on the GUI thread.
+    relay, received = InsightRelay(), []
+    relay.fired.connect(lambda i: received.append(threading.current_thread()))
+    worker = threading.Thread(target=relay.fired.emit, args=(insight,))
+    worker.start()
+    worker.join()
+    app.processEvents()
+    assert received == [threading.main_thread()]
+    relay.deleteLater()
+    menu.menu.close()
+    shell.full.close()
+    shell.full.deleteLater()

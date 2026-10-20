@@ -26,6 +26,8 @@ from jarvis.capabilities.claude_sessions import ClaudeSessionsCapability
 from jarvis.capabilities.memory import MemoryCapability
 from jarvis.capabilities.system_metrics import SystemMetricsCapability
 from jarvis.capabilities.usage import UsageCapability
+from jarvis.capabilities.insights import InsightsCapability
+from jarvis.insights.detector import InsightDetector
 from jarvis.capabilities.messaging import MessagingCapability
 from jarvis.capabilities.mouse import MouseCapability
 from jarvis.capabilities.notes import NotesCapability
@@ -103,7 +105,7 @@ SAFE_MODE_ALLOWED = frozenset({
     "token_usage", "token_usage_by_model", "token_usage_by_project",
     "token_usage_trend", "compare_token_usage", "recent_claude_sessions",
     # Machine-activity introspection (live snapshot and local history).
-    "system_snapshot", "top_processes", "system_usage_history",
+    "system_snapshot", "top_processes", "system_usage_history", "check_anomalies",
     # Activity / privacy introspection and safe stops.
     "recent_activity", "recent_missions", "privacy_overview", "task_status",
     "list_scheduled_messages", "cancel_scheduled_message",
@@ -142,6 +144,7 @@ class ToolRegistry:
         mail_capability=None,
         usage_capability=None,
         system_metrics_capability=None,
+        insights_capability=None,
         claude_sessions_capability=None,
         document_capability=None,
         macro_store=None,
@@ -274,6 +277,13 @@ class ToolRegistry:
             system_metrics_capability
             if system_metrics_capability is not None
             else SystemMetricsCapability()
+        )
+        self.insights = (
+            insights_capability
+            if insights_capability is not None
+            else InsightsCapability(InsightDetector(
+                metrics=self.system_metrics.store, usage=self.usage.store,
+                probe=self.system_metrics.probe))
         )
         self.claude_sessions = (
             claude_sessions_capability
@@ -1249,6 +1259,23 @@ class ToolRegistry:
             debug_live("tool_call", tool="system_usage_history", metric=metric, period=period)
             result = await asyncio.to_thread(self.system_metrics.history, metric, period)
             self._debug_tool_result("system_usage_history", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="check_anomalies",
+            description=(
+                "Verifie s'il se passe quelque chose d'anormal : processeur ou "
+                "memoire satures depuis quelques minutes, disque presque plein, "
+                "consommation de tokens Claude tres au-dessus de la normale du jour. "
+                "'il y a un souci sur mon Mac', 'quelque chose d'anormal', 'pourquoi "
+                "ca rame'. Lecture locale, rien ne quitte la machine."
+            ),
+        )
+        async def check_anomalies() -> dict:
+            """Explainable anomaly check over machine metrics and token usage."""
+            debug_live("tool_call", tool="check_anomalies")
+            result = await asyncio.to_thread(self.insights.check)
+            self._debug_tool_result("check_anomalies", result)
             return result.to_livekit_dict()
 
         @function_tool(
@@ -3767,6 +3794,7 @@ class ToolRegistry:
             system_snapshot,
             top_processes,
             system_usage_history,
+            check_anomalies,
             run_claude_task,
             open_claude_session,
             draft_email,

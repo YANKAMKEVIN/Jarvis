@@ -1183,9 +1183,14 @@ def group_metrics(ctx: Context, step) -> None:
         result = call_ok(ctx, "system_usage_history", "cpu", "1h")
         expect("series" in result, "system_usage_history sans champ series")
 
+    def anomalies():
+        result = call_ok(ctx, "check_anomalies")
+        expect(isinstance(result.get("insights"), list), "check_anomalies sans liste insights")
+
     step("system_snapshot", snapshot)
     step("top_processes memory", top)
     step("system_usage_history cpu 1h", history)
+    step("check_anomalies", anomalies)
 
 
 def group_sessions(ctx: Context, step) -> None:

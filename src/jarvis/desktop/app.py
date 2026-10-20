@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import signal
+import threading
 import json
 from collections import OrderedDict
 from datetime import datetime
@@ -706,6 +707,11 @@ class DesktopWindow(QMainWindow):
             self.shell.quit()
 
 
+class InsightRelay(QObject):
+    """Carries insights from the monitor's worker thread to the GUI thread."""
+    fired = Signal(object)
+
+
 class DesktopShell:
     def __init__(self, app, controller, settings=None):
         self.app, self.controller = app, controller
@@ -752,7 +758,9 @@ class DesktopShell:
         self.onboarding = None
         self.usage_window = None
         self.metrics_window = None
+        self.insights_enabled = self.settings.value('insights/enabled', True) in (True, 'true')
         self._start_metrics_sampler()
+        self._start_insight_monitor()
         self.maybe_show_onboarding()
 
     def _start_metrics_sampler(self):
@@ -774,6 +782,51 @@ class DesktopShell:
         timer.start()
         self.metrics_timer = timer
         self.app.aboutToQuit.connect(timer.stop)
+
+    def _start_insight_monitor(self):
+        """Proactive anomaly alerts, checked off the GUI thread every 5 minutes.
+
+        Rides on the sampler's history, so it only runs where the sampler does.
+        """
+        self.insight_monitor = None
+        self.insight_timer = None
+        if self.metrics_sampler is None:
+            return
+        from jarvis.insights.detector import InsightDetector, InsightMonitor
+        from jarvis.usage.store import UsageStore
+
+        self.insight_relay = InsightRelay()
+        self.insight_relay.fired.connect(self.show_insight)
+        detector = InsightDetector(metrics=self.metrics_sampler.store, usage=UsageStore(),
+                                   probe=self.metrics_sampler.probe)
+        self.insight_monitor = InsightMonitor(detector, notifier=self.insight_relay.fired.emit)
+        timer = QTimer(self.full)
+        timer.setInterval(5 * 60_000)
+        timer.timeout.connect(self.check_insights)
+        timer.start()
+        self.insight_timer = timer
+        self.app.aboutToQuit.connect(timer.stop)
+
+    def check_insights(self):
+        if self.insight_monitor is None or not self.insights_enabled:
+            return
+        threading.Thread(target=self.insight_monitor.tick, name='jarvis-insights',
+                         daemon=True).start()
+
+    def set_insights_enabled(self, enabled):
+        self.insights_enabled = bool(enabled)
+        self.settings.setValue('insights/enabled', self.insights_enabled)
+
+    def show_insight(self, insight):
+        if not self.insights_enabled:
+            return
+        if self.tray is not None:
+            icon = (QSystemTrayIcon.MessageIcon.Warning if insight.severity == 'warning'
+                    else QSystemTrayIcon.MessageIcon.Information)
+            self.tray.showMessage(f'Jarvis · {insight.title}', insight.message, icon, 10_000)
+        else:
+            from jarvis.schedule.runner import macos_notifier
+            macos_notifier(f'{insight.title} : {insight.message}')
 
     def show_usage(self):
         """Open the token-usage dashboard (its data loads asynchronously)."""

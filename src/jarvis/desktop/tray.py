@@ -70,6 +70,12 @@ class TrayControls:
         self.action('Réglages audio', shell.show_settings)
         self.action('Consommation (tokens)…', shell.show_usage)
         self.action('Activité machine…', shell.show_metrics)
+        self.insights = None
+        if hasattr(shell, 'set_insights_enabled'):
+            self.insights = self.action('Alertes d’anomalies')
+            self.insights.setCheckable(True)
+            self.insights.setChecked(bool(getattr(shell, 'insights_enabled', True)))
+            self.insights.toggled.connect(lambda checked: shell.set_insights_enabled(checked))
         self.action('Masquer les fenêtres', shell.hide_windows)
         self.menu.addSeparator()
         self.action('Quitter Jarvis', shell.quit)

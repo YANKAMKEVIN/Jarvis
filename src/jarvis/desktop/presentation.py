@@ -193,7 +193,7 @@ def project_card(name, result):
                 total = row.get('total_tokens')
                 suffix = f' · {total / 1e6:.0f} M' if isinstance(total, (int, float)) else ''
                 items.append(label + suffix)
-    elif name in {'system_snapshot', 'system_usage_history'}:
+    elif name in {'system_snapshot', 'system_usage_history', 'check_anomalies'}:
         kind, title, body = 'system', 'Activité machine', plain(result.get('message'), 400)
     elif name == 'top_processes' and isinstance(result.get('processes'), list):
         kind, title = 'system', 'Processus gourmands'

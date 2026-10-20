@@ -545,3 +545,15 @@ pour l'illustration) :
 ![Tableau de bord consommation de tokens](screenshots/usage-dashboard.png)
 
 ![Tableau de bord activité machine](screenshots/metrics-dashboard.png)
+
+### Alertes d'anomalies
+
+Toutes les 5 minutes, sur un thread de fond, Jarvis compare l'historique machine
+et la consommation de tokens à des seuils explicables. En cas d'anomalie, il
+affiche une notification de la barre de menus (ou une notification macOS sans
+tray). Les seuils : processeur ≥ 85 % ou mémoire ≥ 90 % en moyenne sur
+5 minutes, disque ≥ 90 %, tokens du jour ≥ 2 × la médiane des 14 derniers jours
+actifs (à partir de 5 M). Une même alerte ne revient pas avant une heure, et
+celle des tokens ne sort qu'une fois par jour. La case **Alertes d'anomalies** du
+menu les coupe (réglage `insights/enabled`, conservé). Le moniteur ne tourne que là
+où l'échantillonneur tourne (pas en démo ni en offscreen).

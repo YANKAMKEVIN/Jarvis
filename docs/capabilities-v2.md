@@ -172,6 +172,14 @@ des actions sortantes et conséquentes : elles passent par la **confirmation**
 jamais les propres autorisations de Claude Code (une tâche one-shot tourne avec les
 permissions par défaut).
 
+**Anomalies.** `check_anomalies` répond à « il y a un souci sur mon Mac ? » en
+appliquant des règles explicables (aucun modèle) : processeur ou mémoire saturés
+depuis 5 minutes (le processus le plus gourmand est nommé), disque presque plein,
+consommation de tokens du jour très au-dessus de la journée type de
+l'utilisateur. Les mêmes règles (`src/jarvis/insights/`) alimentent les alertes
+proactives du desktop, avec un délai anti-répétition. Lecture seule, locale,
+autorisé en mode sécurité.
+
 ## Vérification
 
 Les tests utilisent des horloges, agendas, documents, modèles et exécuteurs

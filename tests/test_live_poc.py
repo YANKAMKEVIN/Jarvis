@@ -124,6 +124,7 @@ EXPECTED_LIVE_TOOL_NAMES = sorted([
     "system_snapshot",
     "top_processes",
     "system_usage_history",
+    "check_anomalies",
     "run_claude_task",
     "open_claude_session",
     "remember",
