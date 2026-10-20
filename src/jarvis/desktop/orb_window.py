@@ -74,6 +74,11 @@ class OrbWindow(QWidget):
         self.shortcut.activated.connect(shell.show_compact)
         self.render()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        from jarvis.desktop.macos_spaces import join_all_spaces
+        join_all_spaces(self)
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)

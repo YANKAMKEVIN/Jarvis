@@ -9,7 +9,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project.optional-dependencies]
-desktop = ["PySide6>=6.8,<7"]
+desktop = ["PySide6>=6.8,<7", "pyobjc-framework-Cocoa>=11,<13; sys_platform == 'darwin'"]
 live = ["livekit-agents[google]>=1.8.8,<1.9", "sounddevice>=0.5,<1", "python-dotenv>=1,<2"]
 
 [project.scripts]

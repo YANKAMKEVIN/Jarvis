@@ -34,7 +34,7 @@ atlases provide four poses. These are 2D transformations and crossfades, with no
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/test_desktop*.py -q
 ```
 
-182 desktop tests passed, including 72 avatar checks and the existing two-mission
+187 desktop tests passed, including 72 avatar checks and the existing two-mission
 cancellation/cycling tests. Coverage includes default and invalid preferences,
 on-disk persistence, all assets/poses, immediate changes preserving two missions
 and the voice worker, all three modes, keyboard activation, reduced motion,
@@ -198,3 +198,28 @@ manual verification.
 The companion was also opened and captured from a freshly built wheel installed
 in an isolated target; the installed implementation retained its 320 px avatar
 and hidden-by-default controls.
+
+## Follow macOS desktop Spaces
+
+The compact companion and smaller floating avatar now request
+`NSWindowCollectionBehaviorCanJoinAllSpaces` and `FullScreenAuxiliary` from
+AppKit whenever shown. Always-on-top alone only controlled window stacking.
+The helper resolves Qt's Cocoa NSView to its NSWindow, preserves unrelated
+collection flags, and removes conflicting move-to-active-Space/fullscreen modes.
+The main assistant is not configured with this behavior. This follows virtual
+desktops on the current physical display; it does not teleport between monitors.
+
+`macos_spaces.py` never casts a non-Cocoa/offscreen handle. Cocoa is an explicit,
+macOS-only desktop dependency in both installation manifests. Install updates
+with `python -m pip install -e '.[desktop,live]'` and restart Jarvis.
+
+Five tests cover flag preservation/idempotence, platform guards, native-view
+resolution, missing native windows, and applying only to floating views on each
+show. A native Cocoa demo smoke test also read back flags 257 on both floating
+windows and again after switching back to compact mode. No voice session was
+started. The actual desktop swipe and full-screen-app eligibility still require
+manual verification on the user's Mac.
+
+References: [Apple collection behaviors](https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct),
+[Qt native handle types](https://doc.qt.io/qt-6/mixing-qt-with-other-ui-toolkits.html),
+[PyObjC native pointers](https://pyobjc.readthedocs.io/en/latest/notes/ctypes.html).
