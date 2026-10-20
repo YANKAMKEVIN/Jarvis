@@ -149,3 +149,63 @@ def test_catalog_has_distinct_choreography_signatures():
     assert set(PROFILES) == {a.id for a in CATALOG}
     signatures = {tuple(sample_motion(a.id, t, .4, 'listening') for t in (.2, .7, 2)) for a in CATALOG}
     assert len(signatures) == 16
+
+@pytest.mark.parametrize('appearance', CATALOG[6:], ids=lambda a: a.id)
+def test_abstract_idle_is_alive_and_interactions_differ_without_audio(appearance):
+    from jarvis.desktop.avatar_motion import sample_motion
+    states = ('off', 'listening', 'thinking', 'speaking', 'success', 'error')
+    signatures = {tuple(sample_motion(appearance.id, phase, 0, state)
+                        for phase in (.3, 1.2, 2.1)) for state in states}
+    assert len(signatures) == len(states)
+    idle = [sample_motion(appearance.id, phase, 0, 'off') for phase in (.3, 1.2, 2.1)]
+    assert len(set(idle)) == 3  # No microphone or live voice worker needed.
+
+
+def test_abstract_state_transitions_interpolate_without_resetting_motion_clock():
+    from jarvis.desktop.avatar_motion import interaction_weights, ease_interaction, blended_motion, sample_motion
+    for appearance in CATALOG[6:]:
+        for state in ('listening', 'thinking', 'speaking', 'success', 'error'):
+            weights = interaction_weights('off')
+            weights = ease_interaction(weights, state)
+            assert sum(weights.values()) == pytest.approx(1)
+            actual = blended_motion(appearance.id, .7, 0, weights)
+            start = sample_motion(appearance.id, .7, 0, 'off')
+            end = sample_motion(appearance.id, .7, 0, state)
+            for field in ('x','y','rotation','sx','sy'):
+                assert getattr(actual,field) == pytest.approx(getattr(start,field)*.88 + getattr(end,field)*.12)
+            for _ in range(100):
+                weights = ease_interaction(weights, state)
+            assert weights[state] == pytest.approx(1, abs=1e-5)
+
+
+@pytest.mark.parametrize('appearance', CATALOG[6:], ids=lambda a: a.id)
+def test_abstract_widget_moves_at_idle_and_responds_to_silent_interactions(app, appearance):
+    from jarvis.desktop.visuals import Orb
+    from jarvis.desktop.avatar_motion import interaction_weights
+    orb = Orb(180)
+    orb.set_appearance(appearance.id)
+    orb.show()
+    app.processEvents()
+    orb.timer.stop()
+    try:
+        orb.transition = 1
+        orb.phase = .3
+        idle = orb.grab().toImage()
+        orb.phase = 2.1
+        assert idle != orb.grab().toImage()
+        # Compare identical clock/audio values: the state drives a distinct render.
+        captures = []
+        for state in ('off','listening','thinking','speaking','success','error'):
+            orb.state = state
+            orb.interaction = interaction_weights(state)
+            orb.phase = .7
+            orb.transition = 1
+            captures.append(orb.grab().toImage())
+        assert all(captures[i] != captures[j] for i in range(6) for j in range(i))
+        orb.set_motion(False)
+        still = orb.grab().toImage()
+        orb.phase = 100
+        assert still == orb.grab().toImage()
+    finally:
+        orb.hide()
+        orb.deleteLater()

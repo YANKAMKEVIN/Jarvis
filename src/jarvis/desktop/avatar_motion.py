@@ -31,6 +31,19 @@ PROFILES = {
 }
 
 
+ABSTRACT_IDS = frozenset(tuple(PROFILES)[6:])
+LIFE_STATES = ('off', 'listening', 'thinking', 'speaking', 'success', 'error', 'muted')
+
+
+def interaction_weights(state):
+    return {key: float(key == (state if state in LIFE_STATES else 'off')) for key in LIFE_STATES}
+
+
+def ease_interaction(weights, state, amount=.12):
+    target = interaction_weights(state)
+    return {key: weights.get(key, 0) + (target[key] - weights.get(key, 0))*amount for key in LIFE_STATES}
+
+
 @dataclass(frozen=True)
 class MotionFrame:
     x: float = 0
@@ -47,7 +60,7 @@ def sample_motion(appearance, phase, energy, state, enabled=True):
     t = phase * 2.75 * PROFILES[appearance].speed
     e = max(0, min(1, energy))
     # States alter the choreography without sudden large displacements.
-    gain = {'off': .65, 'muted': .4, 'error': .45, 'success': 1.1}.get(state, 1)
+    gain = (1 if appearance in ABSTRACT_IDS else .65) if state == 'off' else {'muted': .4, 'error': .45, 'success': 1.1}.get(state, 1)
     a, b = math.sin(t), math.sin(t * 2)
     pulse = e * .018
     poses = {
@@ -69,10 +82,50 @@ def sample_motion(appearance, phase, energy, state, enabled=True):
         'arc_reactor': (0, 0, b*.4, a*.008+pulse*1.2, a*.008+pulse*1.2),
     }
     x, y, rotation, sx, sy = poses[appearance]
+    if appearance in ABSTRACT_IDS:
+        # A quiet autonomous heartbeat is present even without audio/session.
+        heartbeat = math.sin(t*.83) * .005 + math.sin(t*1.37)*.002
+        sx += heartbeat
+        sy += heartbeat
+        if state == 'listening':
+            # Inward focus and a slow, receptive sway.
+            x += math.sin(t*.6)*.004
+            sx -= .006
+            sy += math.sin(t*.8)*.004
+        elif state == 'thinking':
+            # Circulating search gesture, independent of any microphone level.
+            x += math.cos(t*1.4)*.006
+            y += math.sin(t*1.4)*.006
+            rotation += math.sin(t*1.2)*.6
+        elif state == 'speaking':
+            # Outward rhythmic expression with the real audio envelope on top.
+            sx += .007 + math.sin(t*3)*.007
+            sy += .007 + math.sin(t*3+.4)*.007
+        elif state == 'success':
+            y -= .005
+            sx += .012
+            sy += .012
+        elif state == 'error':
+            sx -= .018
+            sy -= .018
+        # Preserve padding around all approved artwork, including wide objects.
+        return MotionFrame(max(-.02,min(.02,x*gain)), max(-.02,min(.02,y*gain)),
+            max(-3,min(3,rotation*gain)),
+            1+max(-.049,min(.049,sx*gain)), 1+max(-.049,min(.049,sy*gain)))
     return MotionFrame(x*gain, y*gain, rotation*gain, 1+sx*gain, 1+sy*gain)
 
 
-def paint_details(p, appearance, phase, energy, state, side):
+def blended_motion(appearance, phase, energy, weights, enabled=True):
+    if not enabled:
+        return MotionFrame()
+    frames = [(sample_motion(appearance, phase, energy, state), weight)
+              for state, weight in weights.items() if weight > 0]
+    return MotionFrame(*(sum(getattr(frame, key)*weight for frame,weight in frames)
+                         for key in ('x', 'y', 'rotation', 'sx', 'sy')))
+
+
+
+def paint_details(p, appearance, phase, energy, state, side, weights=None):
     """Small decorative marks outside the artwork; bounded cost at all sizes."""
     from PySide6.QtCore import QPointF, QRectF, Qt
     from PySide6.QtGui import QColor, QPen
@@ -81,8 +134,30 @@ def paint_details(p, appearance, phase, energy, state, side):
     e = max(0, min(1, energy))
     color = QColor('#f0a7ba' if state == 'error' else '#8af0be' if state == 'success' else profile.accent)
     color.setAlpha(round(65 + 65*e))
+    weights = weights or interaction_weights(state)
+    if appearance in ABSTRACT_IDS:
+        # Interpolate geometry, rather than switching effect clocks on state changes.
+        colors = {key: QColor('#f0a7ba' if key == 'error' else '#8af0be' if key == 'success' else profile.accent) for key in weights}
+        color = QColor(*(round(sum(getattr(colors[key], channel)()*weight for key,weight in weights.items())) for channel in ('red','green','blue')))
+        color.setAlpha(round(80 + 35*weights.get('thinking',0) + 50*e))
     p.save()
     p.scale(side, side)
+    if appearance in ABSTRACT_IDS:
+        spread = sum(weight * {
+            'off': 1 + math.sin(t*.8)*.009,
+            'listening': .94 + math.sin(t*.8)*.015,
+            'thinking': .99 + math.sin(t*1.4)*.015,
+            'speaking': 1.015 + math.sin(t*3)*.018 + e*.018,
+            'success': 1.025 + math.sin(t*1.2)*.012,
+            'error': .93 + math.sin(t*.5)*.006,
+            'muted': .97,
+        }[key] for key,weight in weights.items())
+        sweep = (weights.get('thinking',0)*math.sin(t*.7)*14
+                 + weights.get('listening',0)*math.sin(t*.5)*3
+                 + weights.get('speaking',0)*math.sin(t*2)*5
+                 + weights.get('success',0)*math.sin(t)*8)
+        p.scale(spread, spread)
+        p.rotate(sweep)
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.setPen(QPen(color, .002))
     effect = profile.effect

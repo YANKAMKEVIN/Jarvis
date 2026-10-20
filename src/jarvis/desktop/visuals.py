@@ -5,7 +5,8 @@ import math
 from PySide6.QtCore import QPointF, QRectF, QTimer, Qt
 from PySide6.QtGui import QColor, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import QWidget
-from jarvis.desktop.avatar_motion import sample_motion, paint_details
+from jarvis.desktop.avatar_motion import (ABSTRACT_IDS, interaction_weights,
+    ease_interaction, blended_motion, sample_motion, paint_details)
 
 
 def tint(color, alpha):
@@ -47,6 +48,7 @@ class Orb(QWidget):
         self.previous_frame = self.frame_image = self.frame_key = None
         self.transition = 1.0
         self.state = 'off'
+        self.interaction = interaction_weights('off')
         self.motion = True
         self.target = self.energy = 0.0
         # Eased presentation state, distinct from the raw logical state above.
@@ -90,8 +92,9 @@ class Orb(QWidget):
         self.target = min(1.0, math.sqrt(max(0.0, level)) * 2.2)
 
     def tick(self):
+        self.interaction = ease_interaction(self.interaction, self.state)
         self.transition = min(1.0, self.transition + .12)
-        self.phase += 0.026 if self.state == 'thinking' else 0.012
+        self.phase += (.012 + .014*self.interaction['thinking']) if self.appearance in ABSTRACT_IDS else (.026 if self.state == 'thinking' else .012)
         speed = 0.45 if self.target > self.energy else 0.16
         self.energy += (self.target - self.energy) * speed
         # Ease the presentation toward the current state so transitions glide.
@@ -140,7 +143,9 @@ class Orb(QWidget):
         p.setPen(QPen(tint(accent, 65), .8))
         p.drawEllipse(QRectF(-side*.44, side*.43, side*.88, side*.08))
         p.save()
-        frame = sample_motion(self.appearance, phase, energy, self.state, self.motion)
+        frame = (blended_motion(self.appearance, phase, energy, self.interaction, self.motion)
+                 if self.appearance in ABSTRACT_IDS else
+                 sample_motion(self.appearance, phase, energy, self.state, self.motion))
         p.translate(frame.x * side, frame.y * side)
         p.rotate(frame.rotation)
         p.scale(frame.sx, frame.sy)
@@ -156,5 +161,5 @@ class Orb(QWidget):
         p.restore()
         # Reduced motion has no moving decorative layers, including on repaint.
         if self.motion:
-            paint_details(p, self.appearance, phase, energy, self.state, side)
+            paint_details(p, self.appearance, phase, energy, self.state, side, self.interaction)
         p.end()
