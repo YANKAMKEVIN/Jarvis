@@ -43,6 +43,7 @@ class Orb(QWidget):
     def __init__(self, size=320):
         super().__init__()
         self.setFixedSize(size, size)
+        self.pedestal = True
         self.phase = 0.0
         self.appearance = 'nova_bot'
         self.previous_frame = self.frame_image = self.frame_key = None
@@ -141,7 +142,8 @@ class Orb(QWidget):
         p.drawEllipse(QPointF(), side*.49, side*.49)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.setPen(QPen(tint(accent, 65), .8))
-        p.drawEllipse(QRectF(-side*.44, side*.43, side*.88, side*.08))
+        if self.pedestal:
+            p.drawEllipse(QRectF(-side*.44, side*.43, side*.88, side*.08))
         p.save()
         frame = (blended_motion(self.appearance, phase, energy, self.interaction, self.motion)
                  if self.appearance in ABSTRACT_IDS else

@@ -22,6 +22,7 @@ from jarvis.desktop.visuals import Orb
 from jarvis.desktop.panels import DetailPanel
 from jarvis.desktop.mission_panel import MissionDeck
 from jarvis.desktop.orb_window import OrbWindow
+from jarvis.desktop.companion import CompanionWindow
 from jarvis.desktop.presentation import STATUS_TEXT
 from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, OrbTransfer
 
@@ -776,7 +777,7 @@ class DesktopShell:
         self.has_tray = QSystemTrayIcon.isSystemTrayAvailable()
         controller.exit_ready.connect(app.quit)
         self.full = DesktopWindow(controller, self)
-        self.compact = DesktopWindow(controller, self, compact=True)
+        self.compact = CompanionWindow(controller, self)
         self.orb_window = OrbWindow(controller, self)
         controller.details_requested.connect(self.show_details)
         controller.mission_details_requested.connect(self.show_mission_details)

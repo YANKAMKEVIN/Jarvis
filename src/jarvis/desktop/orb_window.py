@@ -7,7 +7,7 @@ from jarvis.desktop.visuals import Orb
 
 class InteractiveOrb(Orb):
     def __init__(self, window):
-        super().__init__(180)
+        super().__init__(getattr(window, 'avatar_size', 180))
         self.window_owner = window
         self.origin = self.press = None
         self.dragged = False
@@ -48,6 +48,7 @@ class InteractiveOrb(Orb):
 
 
 class OrbWindow(QWidget):
+    avatar_class = InteractiveOrb
     def __init__(self, controller, shell):
         super().__init__(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint |
                          Qt.WindowType.WindowStaysOnTopHint)
@@ -59,7 +60,7 @@ class OrbWindow(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 0, 4, 6)
         layout.setSpacing(0)
-        self.orb = InteractiveOrb(self)
+        self.orb = self.avatar_class(self)
         layout.addWidget(self.orb)
         self.status = QLabel()
         self.status.setWordWrap(True)

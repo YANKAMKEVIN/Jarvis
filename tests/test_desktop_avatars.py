@@ -87,7 +87,8 @@ def test_selector_keyboard_and_live_modes_preserve_session(app, tmp_path, monkey
         shell.show_compact()
         app.processEvents()
         panel = shell.compact.assistant
-        assert not panel.orb.geometry().intersects(panel.appearance_button.geometry())
+        assert panel.orb.width() == 320
+        assert not panel.open_button.isVisible() and not panel.menu_button.isVisible()
         shell.show_orb()
         assert not shell.full.assistant.orb.timer.isActive()
         assert shell.orb_window.orb.timer.isActive()
