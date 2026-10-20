@@ -23,6 +23,7 @@ from jarvis.capabilities.knowledge import KnowledgeCapability, web_announcement_
 from jarvis.capabilities.mail import MailCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.memory import MemoryCapability
+from jarvis.capabilities.usage import UsageCapability
 from jarvis.capabilities.messaging import MessagingCapability
 from jarvis.capabilities.mouse import MouseCapability
 from jarvis.capabilities.notes import NotesCapability
@@ -96,6 +97,9 @@ SAFE_MODE_ALLOWED = frozenset({
     "remember_context", "recall_context",
     "set_reminder", "cancel_reminder", "list_reminders",
     "save_macro", "list_macros", "delete_macro", "save_task_procedure",
+    # Token-usage introspection (reads the user's own local transcripts).
+    "token_usage", "token_usage_by_model", "token_usage_by_project",
+    "token_usage_trend", "compare_token_usage",
     # Activity / privacy introspection and safe stops.
     "recent_activity", "recent_missions", "privacy_overview", "task_status",
     "list_scheduled_messages", "cancel_scheduled_message",
@@ -132,6 +136,7 @@ class ToolRegistry:
         text_workshop_capability=None,
         calendar_capability=None,
         mail_capability=None,
+        usage_capability=None,
         document_capability=None,
         macro_store=None,
         context_store=None,
@@ -253,6 +258,11 @@ class ToolRegistry:
             mail_capability
             if mail_capability is not None
             else MailCapability(model=planner_model)
+        )
+        self.usage = (
+            usage_capability
+            if usage_capability is not None
+            else UsageCapability()
         )
         self.compute = ComputeCapability()
         self.notes = NotesCapability()
@@ -1081,6 +1091,85 @@ class ToolRegistry:
             debug_live("tool_call", tool="summarize_unread_emails", limit=limit)
             result = await asyncio.to_thread(self.mail.summarize_unread, limit)
             self._debug_tool_result("summarize_unread_emails", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="token_usage",
+            description=(
+                "Rapporte la consommation de tokens de Claude Code sur une periode, "
+                "lue en local : 'combien de tokens j'ai consomme', 'ma conso cette "
+                "semaine'. period : 'today', 'yesterday', '7d', '30d', '90d' ou 'all'. "
+                "Donne les tokens generes, en entree et lus en cache. Aucune donnee "
+                "ne quitte la machine."
+            ),
+        )
+        async def token_usage(period: str = "7d") -> dict:
+            """Report local Claude Code token consumption for a period."""
+            debug_live("tool_call", tool="token_usage", period=period)
+            result = await asyncio.to_thread(self.usage.overview, period)
+            self._debug_tool_result("token_usage", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="token_usage_by_model",
+            description=(
+                "Repartit la consommation de tokens par modele (Opus, Sonnet...) sur "
+                "une periode : 'ma conso par modele', 'quel modele consomme le plus'. "
+                "period : 'today', '7d', '30d', '90d', 'all'. Inclut un cout estime "
+                "equivalent API (indicatif ; l'abonnement n'est pas facture au token)."
+            ),
+        )
+        async def token_usage_by_model(period: str = "30d") -> dict:
+            """Break token usage down by model."""
+            debug_live("tool_call", tool="token_usage_by_model", period=period)
+            result = await asyncio.to_thread(self.usage.by_model, period)
+            self._debug_tool_result("token_usage_by_model", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="token_usage_by_project",
+            description=(
+                "Repartit la consommation de tokens par projet (dossier de travail) "
+                "sur une periode : 'ma conso par projet', 'sur quel projet je consomme "
+                "le plus'. period : 'today', '7d', '30d', 'all' ; limit : nombre de "
+                "projets a remonter."
+            ),
+        )
+        async def token_usage_by_project(period: str = "30d", limit: int = 5) -> dict:
+            """Break token usage down by project folder."""
+            debug_live("tool_call", tool="token_usage_by_project", period=period, limit=limit)
+            result = await asyncio.to_thread(self.usage.by_project, period, limit)
+            self._debug_tool_result("token_usage_by_project", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="token_usage_trend",
+            description=(
+                "Donne la serie quotidienne de consommation de tokens pour tracer une "
+                "courbe dans le temps : 'montre l'evolution de ma conso', 'un graphe "
+                "sur deux semaines'. days : nombre de jours (2 a 120)."
+            ),
+        )
+        async def token_usage_trend(days: int = 14) -> dict:
+            """Daily token-usage series for charting."""
+            debug_live("tool_call", tool="token_usage_trend", days=days)
+            result = await asyncio.to_thread(self.usage.trend, days)
+            self._debug_tool_result("token_usage_trend", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="compare_token_usage",
+            description=(
+                "Compare la consommation de tokens d'une periode avec la periode "
+                "equivalente juste avant : 'est-ce que je consomme plus que la semaine "
+                "derniere', 'compare ma conso'. period : '7d', '30d', '90d'."
+            ),
+        )
+        async def compare_token_usage(period: str = "7d") -> dict:
+            """Compare a period's token usage with the preceding equal window."""
+            debug_live("tool_call", tool="compare_token_usage", period=period)
+            result = await asyncio.to_thread(self.usage.compare, period)
+            self._debug_tool_result("compare_token_usage", result)
             return result.to_livekit_dict()
 
         @function_tool(
@@ -3516,6 +3605,11 @@ class ToolRegistry:
             create_calendar_event,
             list_unread_emails,
             summarize_unread_emails,
+            token_usage,
+            token_usage_by_model,
+            token_usage_by_project,
+            token_usage_trend,
+            compare_token_usage,
             draft_email,
             get_brightness,
             set_brightness,
