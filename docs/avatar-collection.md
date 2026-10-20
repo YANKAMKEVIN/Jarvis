@@ -34,7 +34,7 @@ atlases provide four poses. These are 2D transformations and crossfades, with no
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/test_desktop*.py -q
 ```
 
-123 desktop tests passed, including 18 avatar checks and the existing two-mission
+156 desktop tests passed, including 51 avatar checks and the existing two-mission
 cancellation/cycling tests. Coverage includes default and invalid preferences,
 on-disk persistence, all assets/poses, immediate changes preserving two missions
 and the voice worker, all three modes, keyboard activation, reduced motion,
@@ -80,3 +80,44 @@ performance, and microphone/speaker reactions during a real LiveKit/Gemini
 session with the configured credentials and permissions. Those live checks were
 not performed by the automated demo. Compact mode preserves the existing
 one-card mission carousel; full mode shows two independently controlled cards.
+
+## Individual choreography
+
+Each appearance now has its own deterministic motion profile in
+`avatar_motion.py`. Motion stays bounded (at most 2% translation, 3.1 degrees
+rotation and 5% scale), is audio-reactive through the existing RMS signal, and
+uses the same renderer in all three window modes. Reduced motion yields an
+exactly neutral transform and omits decorative animation layers.
+
+| Appearance | Motion and decoration |
+| --- | --- |
+| NovaBot | Levitation, gentle sway, thruster rings |
+| Neo Guide | Attentive tilt and side beacons |
+| Kitsune | Feline drift and ascending fireflies |
+| Digital Avatar | Holographic breathing and vertical scan markers |
+| Synth Companion | Mechanical breathing and synchronized segments |
+| Holo Face | Slow drift and transmission marks |
+| Orbital Atlas | Precession and elliptical satellite paths |
+| Aura Light | Soft deformation and aurora arcs |
+| Liquid Chrome | Opposing scale waves and moving reflections |
+| Vector Grid | Grid breathing and square data packets |
+| Prism Core | Crystal oscillation and refracted rays |
+| Event Horizon | Slow precession and flattened accretion arcs |
+| Solar Forge | Solar pulse and outward embers |
+| Command Deck | Stable core and moving navigation reticle |
+| Neural Entity | Organic contraction and intermittent connections |
+| Arc Reactor | Audio pulse and segmented charge crown |
+
+The comparison [PNG](screenshots/avatars/distinct-motion.png) and
+[GIF](screenshots/avatars/distinct-motion.gif) capture the actual Qt avatar
+widgets in a gallery. Listening, thinking, speaking and audio levels are
+simulated; no microphone or model is started. Capture the PNG frames with:
+
+```sh
+QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_avatar_motion.py --frames /tmp/avatar-motion
+```
+
+Additional regression checks cover every profile's bounds and audio response,
+distinct trajectories, actual moving renders, still reduced-motion renders and
+hidden timers for all 16 appearances. Native macOS performance and live audio
+remain manual checks.
