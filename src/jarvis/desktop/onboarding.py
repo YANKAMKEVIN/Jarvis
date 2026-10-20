@@ -51,30 +51,30 @@ PERMISSIONS: tuple[PermissionSpec, ...] = (
     ),
     PermissionSpec(
         "calendar", "Calendrier",
-        "Pour lire votre agenda et proposer des creneaux, uniquement a votre "
+        "Pour lire votre agenda et proposer des créneaux, uniquement à votre "
         "demande.",
         "Calendars", True,
     ),
     PermissionSpec(
         "reminders", "Rappels",
-        "Pour lire et creer des rappels, uniquement a votre demande.",
+        "Pour lire et créer des rappels, uniquement à votre demande.",
         "Reminders", True,
     ),
     PermissionSpec(
         "automation", "Automatisation",
         "Pour piloter d'autres apps (Mail, WhatsApp, Calendrier...) afin "
-        "d'executer ce que vous demandez.",
+        "d'exécuter ce que vous demandez.",
         "Automation", False,
     ),
     PermissionSpec(
-        "accessibility", "Accessibilite",
-        "Pour controler les fenetres, le clavier et la souris quand une action "
-        "le necessite.",
+        "accessibility", "Accessibilité",
+        "Pour contrôler les fenêtres, le clavier et la souris quand une action "
+        "le nécessite.",
         "Accessibility", False,
     ),
     PermissionSpec(
-        "screen_recording", "Enregistrement de l'ecran",
-        "Pour lire ou decrire votre ecran quand vous le demandez.",
+        "screen_recording", "Enregistrement de l'écran",
+        "Pour lire ou décrire votre écran quand vous le demandez.",
         "ScreenCapture", True,
     ),
 )
@@ -118,8 +118,8 @@ def permission_items(snapshot: dict | None = None) -> list[dict]:
             "settings_url": spec.settings_url,
             "status": status,
             "status_text": (
-                "accorde" if status is True
-                else "a autoriser" if status is False
+                "accordé" if status is True
+                else "à autoriser" if status is False
                 else "au premier usage"
             ),
         })
@@ -228,6 +228,39 @@ def request_permission(key: str) -> bool:
 # --- Qt dialog (imported lazily so the logic above needs no PySide6) --------
 
 
+# Dark theme matching the app, so the dialog is never pale text on a white
+# window (QDialog's default background).
+_DIALOG_STYLE = """
+#onboarding { background: #0c1826; }
+#onboarding QLabel { color: #c4d6e8; background: transparent; }
+#onboarding QLabel#ob_heading { color: #eef7ff; font-size: 16px; font-weight: 600; }
+#onboarding QLabel#ob_intro { color: #91a9c1; font-size: 12px; }
+#onboarding QLabel#ob_why { color: #9fb6cc; font-size: 12px; }
+#onboarding QFrame#ob_row { background: rgba(26, 43, 61, 130); border: 1px solid #243a4e; border-radius: 12px; }
+#onboarding QScrollArea { background: transparent; border: 0; }
+#onboarding QPushButton { background: #1a2a3d; border: 1px solid #2b435c; border-radius: 9px; padding: 8px 13px; color: #dce8f6; }
+#onboarding QPushButton:hover { background: #243d57; border-color: #517ca2; }
+#onboarding QPushButton#primary { background: #82caff; color: #081421; border: 0; font-weight: 600; padding: 9px 20px; }
+#onboarding QPushButton#primary:hover { background: #b8e4ff; }
+#onboarding QScrollBar:vertical { background: #101927; width: 8px; margin: 0; }
+#onboarding QScrollBar::handle:vertical { background: #344c63; border-radius: 4px; min-height: 24px; }
+#onboarding QScrollBar::add-line:vertical, #onboarding QScrollBar::sub-line:vertical { height: 0; }
+"""
+
+_STATUS_CHIP = {True: "#7fd1a6", False: "#e8b971", None: "#8fa6bd"}
+
+
+def _chip(status) -> str:
+    return _STATUS_CHIP.get(status, "#8fa6bd")
+
+
+def _header_html(title: str, status_text: str, chip: str) -> str:
+    return (
+        f"<span style='font-size:14px;font-weight:600;color:#eef7ff'>{title}</span>"
+        f"&nbsp;&nbsp;<span style='font-size:12px;color:{chip}'>{status_text}</span>"
+    )
+
+
 def make_onboarding_dialog(
     settings,
     snapshot: dict | None = None,
@@ -243,7 +276,7 @@ def make_onboarding_dialog(
     """
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import (
-        QDialog, QHBoxLayout, QLabel, QPushButton, QScrollArea,
+        QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
         QVBoxLayout, QWidget,
     )
 
@@ -253,49 +286,61 @@ def make_onboarding_dialog(
     dialog.setObjectName("onboarding")
     dialog.setWindowTitle("Jarvis — autorisations")
     dialog.setModal(True)
+    dialog.setStyleSheet(_DIALOG_STYLE)
+    dialog.setMinimumSize(500, 560)
     dialog.rows = {}
 
     outer = QVBoxLayout(dialog)
+    outer.setContentsMargins(22, 20, 22, 18)
+    outer.setSpacing(12)
+
     heading = QLabel("Bienvenue. Voici ce que Jarvis peut demander — et pourquoi.")
+    heading.setObjectName("ob_heading")
     heading.setWordWrap(True)
-    heading.setObjectName("onboarding_heading")
     outer.addWidget(heading)
     intro = QLabel(
         "Vous pouvez tout autoriser maintenant ou plus tard : rien n'est "
         "obligatoire, et chaque action reste sur demande. Les autorisations se "
-        "reglent aussi a tout moment dans Reglages Systeme."
+        "règlent aussi à tout moment dans Réglages Système."
     )
+    intro.setObjectName("ob_intro")
     intro.setWordWrap(True)
     outer.addWidget(intro)
 
     body = QWidget()
     body_layout = QVBoxLayout(body)
-    body_layout.setContentsMargins(0, 0, 0, 0)
+    body_layout.setContentsMargins(0, 2, 6, 2)
+    body_layout.setSpacing(10)
 
     for item in items:
-        row = QWidget()
+        row = QFrame()
+        row.setObjectName("ob_row")
         row_layout = QVBoxLayout(row)
-        row_layout.setContentsMargins(0, 6, 0, 6)
+        row_layout.setContentsMargins(14, 12, 14, 12)
+        row_layout.setSpacing(6)
 
-        header = QLabel(f"{item['title']} — {item['status_text']}")
-        header.setObjectName("onboarding_row_title")
+        header = QLabel(_header_html(item["title"], item["status_text"], _chip(item["status"])))
+        header.setTextFormat(Qt.TextFormat.RichText)
         row_layout.addWidget(header)
 
         why = QLabel(item["why"])
+        why.setObjectName("ob_why")
         why.setWordWrap(True)
         row_layout.addWidget(why)
 
         buttons = QHBoxLayout()
+        buttons.setSpacing(8)
         request_button = None
         if item["status"] is not True:
-            label = "Demander l'autorisation" if item["requestable"] else "Ouvrir les Reglages"
+            label = "Demander l'autorisation" if item["requestable"] else "Ouvrir les Réglages"
             request_button = QPushButton(label)
 
-            def _make_request(key=item["key"], header=header, requestable=item["requestable"]):
+            def _make_request(key=item["key"], title=item["title"], header=header,
+                              requestable=item["requestable"]):
                 def handler():
                     if requestable:
                         request(key)
-                        header.setText(f"{key} — demande envoyee, verifiez Reglages")
+                        header.setText(_header_html(title, "demande envoyée · vérifiez Réglages", "#e8b971"))
                     else:
                         spec = {s.key: s for s in PERMISSIONS}[key]
                         open_settings_fn(spec.settings_url)
@@ -304,7 +349,7 @@ def make_onboarding_dialog(
             request_button.clicked.connect(_make_request())
             buttons.addWidget(request_button)
 
-        settings_button = QPushButton("Reglages Systeme")
+        settings_button = QPushButton("Réglages Système")
 
         def _make_open(url=item["settings_url"]):
             return lambda: open_settings_fn(url)
@@ -324,12 +369,13 @@ def make_onboarding_dialog(
     body_layout.addStretch()
     scroll = QScrollArea()
     scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
     scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     scroll.setWidget(body)
     outer.addWidget(scroll, 1)
 
     finish = QPushButton("Terminer")
-    finish.setObjectName("onboarding_finish")
+    finish.setObjectName("primary")
 
     def _finish():
         mark_done(settings)

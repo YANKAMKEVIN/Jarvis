@@ -42,8 +42,8 @@ def test_permission_items_tristate_status():
     })
     assert len(rows) == len(PERMISSIONS)
     by_key = {row["key"]: row for row in rows}
-    assert by_key["calendar"]["status_text"] == "accorde"
-    assert by_key["screen_recording"]["status_text"] == "a autoriser"
+    assert by_key["calendar"]["status_text"] == "accordé"
+    assert by_key["screen_recording"]["status_text"] == "à autoriser"
     # Unknown (absent or None) reads as asked at first use.
     assert by_key["microphone"]["status_text"] == "au premier usage"
     assert by_key["automation"]["status_text"] == "au premier usage"
