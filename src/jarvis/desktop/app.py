@@ -750,7 +750,20 @@ class DesktopShell:
         self.quit_guard = QuitGuard(self, app)
         app.installEventFilter(self.quit_guard)
         self.onboarding = None
+        self.usage_window = None
         self.maybe_show_onboarding()
+
+    def show_usage(self):
+        """Open the token-usage dashboard (its data loads asynchronously)."""
+        from jarvis.desktop.charts import UsageWindow
+
+        if self.usage_window is None:
+            self.usage_window = UsageWindow()
+        else:
+            self.usage_window.reload()
+        self.usage_window.show()
+        self.usage_window.raise_()
+        self.usage_window.activateWindow()
 
     def maybe_show_onboarding(self):
         """Show the first-run permission screen once, on a real desktop only."""
