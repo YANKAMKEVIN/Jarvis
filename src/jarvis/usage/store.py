@@ -376,6 +376,56 @@ class UsageStore:
             out["est_cost_usd"] = round(estimate_cost(tokens, str(label)), 4)
         return out
 
+    def recent_sessions(self, limit: int = 10, since: float | None = None) -> list[dict[str, Any]]:
+        """Most recent Claude Code sessions with per-session tokens and cost."""
+        conn = self._connect()
+        try:
+            where, params = self._window(since, None)
+            clause = (where + " AND session IS NOT NULL") if where else " WHERE session IS NOT NULL"
+            rows = conn.execute(
+                "SELECT session, model, project, "
+                "SUM(input) input, SUM(output) output, "
+                "SUM(cache_create) cache_create, SUM(cache_read) cache_read, "
+                "COUNT(*) n, MIN(ts) first_ts, MAX(ts) last_ts "
+                f"FROM usage_events{clause} GROUP BY session, model, project",
+                params,
+            ).fetchall()
+        finally:
+            conn.close()
+
+        sessions: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            data = sessions.setdefault(row["session"], {
+                "session": row["session"], "events": 0, "total_tokens": 0,
+                "est_cost_usd": 0.0, "first_ts": row["first_ts"], "last_ts": row["last_ts"],
+                "models": set(), "projects": {},
+            })
+            tokens = {f: int(row[f] or 0) for f in _TOKEN_FIELDS}
+            data["events"] += int(row["n"] or 0)
+            data["total_tokens"] += sum(tokens.values())
+            data["est_cost_usd"] += estimate_cost(tokens, row["model"])
+            data["models"].add(row["model"])
+            data["first_ts"] = min(data["first_ts"], row["first_ts"])
+            data["last_ts"] = max(data["last_ts"], row["last_ts"])
+            data["projects"][row["project"]] = data["projects"].get(row["project"], 0) + int(row["n"] or 0)
+
+        out = []
+        for data in sessions.values():
+            project = max(data["projects"], key=data["projects"].get) if data["projects"] else ""
+            out.append({
+                "session": data["session"],
+                "project": project,
+                "models": sorted(data["models"]),
+                "events": data["events"],
+                "total_tokens": data["total_tokens"],
+                "est_cost_usd": round(data["est_cost_usd"], 4),
+                "first_ts": data["first_ts"],
+                "last_ts": data["last_ts"],
+                "duration_min": round((data["last_ts"] - data["first_ts"]) / 60, 1),
+            })
+        out.sort(key=lambda s: s["last_ts"], reverse=True)
+        return out[: max(1, min(int(limit) if isinstance(limit, (int, float)) else 10, 50))]
+
     def clear(self) -> None:
         """Drop the whole index (both events and the ingestion cursor)."""
         conn = self._connect()

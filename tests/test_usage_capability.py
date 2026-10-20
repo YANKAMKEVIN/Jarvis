@@ -82,6 +82,14 @@ def test_compare_against_previous_window(cap):
     assert "tokens" in r.message
 
 
+def test_recent_sessions(cap):
+    r = cap.recent_sessions(limit=5)
+    assert r.ok
+    assert isinstance(r.data["sessions"], list) and r.data["sessions"]
+    assert "sessions Claude" in r.message
+    assert all("est_cost_usd" in s and "project" in s for s in r.data["sessions"])
+
+
 def test_empty_period_is_graceful(cap):
     r = cap.overview("yesterday")   # nothing logged yesterday in the fixture
     assert r.ok and r.data["events"] == 0

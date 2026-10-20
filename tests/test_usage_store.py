@@ -155,6 +155,31 @@ def test_by_day_window(store):
     assert [d["day"] for d in days] == ["2026-10-01", "2026-10-02"]
 
 
+def test_recent_sessions_aggregate_and_order(store):
+    s, projects = store
+    _write(projects, "-tmp-Alpha", [
+        _line("a", ts="2026-10-01T10:00:00.000Z", session="s_old"),
+        _line("b", ts="2026-10-05T10:00:00.000Z", session="s_new"),
+        _line("c", ts="2026-10-05T10:05:00.000Z", session="s_new"),
+    ])
+    s.ingest()
+    rows = s.recent_sessions(limit=10)
+    assert [r["session"] for r in rows] == ["s_new", "s_old"]  # most recent first
+    new = rows[0]
+    assert new["events"] == 2 and new["project"] == "Alpha"
+    assert new["est_cost_usd"] > 0 and new["total_tokens"] > 0
+
+
+def test_recent_sessions_limit(store):
+    s, projects = store
+    _write(projects, "-tmp-Alpha", [
+        _line(f"u{i}", ts=f"2026-10-0{i}T10:00:00.000Z", session=f"s{i}")
+        for i in range(1, 5)
+    ])
+    s.ingest()
+    assert len(s.recent_sessions(limit=2)) == 2
+
+
 def test_clear_empties_index(store):
     s, projects = store
     f = _write(projects, "-tmp-proj", [_line("a")])

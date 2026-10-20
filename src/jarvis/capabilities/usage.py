@@ -135,6 +135,20 @@ class UsageCapability:
         )
         return ToolResult.success("token_usage_trend", message, days=days, series=series)
 
+    def recent_sessions(self, limit: int = 5) -> ToolResult:
+        self._fresh()
+        rows = self.store.recent_sessions(limit=limit)
+        if not rows:
+            return ToolResult.success("recent_claude_sessions",
+                                      "Aucune session Claude enregistrée.", sessions=[])
+        parts = []
+        for s in rows[:3]:
+            when = time.strftime("%d/%m", time.localtime(s["last_ts"]))
+            project = s["project"] or "projet inconnu"
+            parts.append(f"{project} le {when}, {_human(s['total_tokens'])} tokens")
+        message = "Dernières sessions Claude : " + " ; ".join(parts) + "."
+        return ToolResult.success("recent_claude_sessions", message, sessions=rows)
+
     def compare(self, period: str = "7d") -> ToolResult:
         """Compare a period with the equal-length window just before it."""
         self._fresh()

@@ -120,6 +120,7 @@ EXPECTED_LIVE_TOOL_NAMES = sorted([
     "token_usage_by_project",
     "token_usage_trend",
     "compare_token_usage",
+    "recent_claude_sessions",
     "system_snapshot",
     "top_processes",
     "system_usage_history",

@@ -101,7 +101,7 @@ SAFE_MODE_ALLOWED = frozenset({
     "save_macro", "list_macros", "delete_macro", "save_task_procedure",
     # Token-usage introspection (reads the user's own local transcripts).
     "token_usage", "token_usage_by_model", "token_usage_by_project",
-    "token_usage_trend", "compare_token_usage",
+    "token_usage_trend", "compare_token_usage", "recent_claude_sessions",
     # Machine-activity introspection (live snapshot and local history).
     "system_snapshot", "top_processes", "system_usage_history",
     # Activity / privacy introspection and safe stops.
@@ -1186,6 +1186,22 @@ class ToolRegistry:
             debug_live("tool_call", tool="compare_token_usage", period=period)
             result = await asyncio.to_thread(self.usage.compare, period)
             self._debug_tool_result("compare_token_usage", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="recent_claude_sessions",
+            description=(
+                "Liste tes dernieres sessions Claude Code avec, pour chacune, le "
+                "projet, les tokens et un cout estime : 'mes dernieres sessions "
+                "Claude', 'combien m'a coute ma derniere session'. Lecture locale. "
+                "limit : nombre de sessions a remonter."
+            ),
+        )
+        async def recent_claude_sessions(limit: int = 5) -> dict:
+            """Recent Claude Code sessions with per-session tokens and cost."""
+            debug_live("tool_call", tool="recent_claude_sessions", limit=limit)
+            result = await asyncio.to_thread(self.usage.recent_sessions, limit)
+            self._debug_tool_result("recent_claude_sessions", result)
             return result.to_livekit_dict()
 
         @function_tool(
@@ -3747,6 +3763,7 @@ class ToolRegistry:
             token_usage_by_project,
             token_usage_trend,
             compare_token_usage,
+            recent_claude_sessions,
             system_snapshot,
             top_processes,
             system_usage_history,
