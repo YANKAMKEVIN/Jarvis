@@ -1146,8 +1146,68 @@ def group_document_v2(ctx: Context, step) -> None:
     step("extract_document_actions (modele local)", extract)
 
 
+def group_usage(ctx: Context, step) -> None:
+    # Reads the user's own local Claude Code transcripts; nothing is written.
+    def overview():
+        result = call_ok(ctx, "token_usage", "7d")
+        expect("output" in result and "total_tokens" in result,
+               "token_usage sans champs de tokens")
+
+    def by_model():
+        result = call_ok(ctx, "token_usage_by_model", "30d")
+        expect(isinstance(result.get("models"), list), "token_usage_by_model sans liste models")
+
+    def trend():
+        result = call_ok(ctx, "token_usage_trend", 14)
+        expect(isinstance(result.get("series"), list), "token_usage_trend sans serie")
+
+    step("token_usage 7d", overview)
+    step("token_usage_by_model 30d", by_model)
+    step("token_usage_trend 14j", trend)
+
+
+def group_metrics(ctx: Context, step) -> None:
+    def snapshot():
+        result = call_ok(ctx, "system_snapshot")
+        expect(isinstance(result.get("cpu"), (int, float)), "system_snapshot sans cpu")
+        expect(isinstance(result.get("mem"), (int, float)), "system_snapshot sans mem")
+
+    def top():
+        result = call_ok(ctx, "top_processes", "memory", 5)
+        expect(isinstance(result.get("processes"), list) and result["processes"],
+               "top_processes sans processus")
+
+    def history():
+        # The series may be empty if the sampler has not run yet; the tool must
+        # still succeed and return a (possibly empty) series.
+        result = call_ok(ctx, "system_usage_history", "cpu", "1h")
+        expect("series" in result, "system_usage_history sans champ series")
+
+    step("system_snapshot", snapshot)
+    step("top_processes memory", top)
+    step("system_usage_history cpu 1h", history)
+
+
+def group_sessions(ctx: Context, step) -> None:
+    # Validate the confirmation gate WITHOUT spawning a real Claude session:
+    # prepare, check it requires confirmation, then cancel so nothing runs.
+    def prepare_and_cancel():
+        prep = call_ok(ctx, "run_claude_task", "dis juste OK")
+        expect(prep.get("requires_confirmation") is True,
+               "run_claude_task sans requires_confirmation")
+        token = prep.get("token")
+        expect(bool(token), "run_claude_task sans token")
+        cancelled = call_ok(ctx, "cancel_action", token)
+        expect(cancelled.get("cancelled") is True, "cancel_action n'a rien annule")
+
+    step("run_claude_task -> confirmation puis annulation (rien lance)", prepare_and_cancel)
+
+
 GROUPS = {
     "system": group_system,
+    "usage": group_usage,
+    "metrics": group_metrics,
+    "sessions": group_sessions,
     "volume": group_volume,
     "safe_mode": group_safe_mode,
     "clipboard": group_clipboard,
