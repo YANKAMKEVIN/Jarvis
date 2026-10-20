@@ -1,10 +1,12 @@
-"""Locally painted holographic orb. Audio arrives as scalar RMS, never PCM."""
+"""Animated approved 2D artwork. Audio arrives as scalar RMS, never PCM."""
 from __future__ import annotations
 
 import math
 from PySide6.QtCore import QPointF, QRectF, QTimer, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QRadialGradient, QLinearGradient
+from PySide6.QtGui import QColor, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import QWidget
+from jarvis.desktop.avatar_motion import (ABSTRACT_IDS, interaction_weights,
+    ease_interaction, blended_motion, sample_motion, paint_details)
 
 
 def tint(color, alpha):
@@ -19,11 +21,11 @@ def tint(color, alpha):
 STATE_COLORS = {
     'thinking': '#bea5ff', 'error': '#f0a7ba', 'muted': '#6a8399',
     'starting': '#9ad0ea', 'listening': '#87e3ff', 'speaking': '#8af0e0',
-    'off': '#87e3ff',
+    'off': '#87e3ff', 'success': '#8af0be',
 }
 STATE_GLOW = {
     'off': 0.0, 'muted': 0.12, 'starting': 0.45, 'listening': 0.55,
-    'speaking': 0.5, 'thinking': 0.72, 'error': 0.45,
+    'speaking': 0.5, 'thinking': 0.72, 'error': 0.45, 'success': 0.7,
 }
 _DEFAULT_COLOR = '#87e3ff'
 _DEFAULT_GLOW = 0.35
@@ -41,8 +43,13 @@ class Orb(QWidget):
     def __init__(self, size=320):
         super().__init__()
         self.setFixedSize(size, size)
+        self.pedestal = True
         self.phase = 0.0
+        self.appearance = 'nova_bot'
+        self.previous_frame = self.frame_image = self.frame_key = None
+        self.transition = 1.0
         self.state = 'off'
+        self.interaction = interaction_weights('off')
         self.motion = True
         self.target = self.energy = 0.0
         # Eased presentation state, distinct from the raw logical state above.
@@ -54,7 +61,8 @@ class Orb(QWidget):
         self.timer.timeout.connect(self.tick)
 
     def _target_color(self):
-        return QColor(STATE_COLORS.get(self.state, _DEFAULT_COLOR))
+        from jarvis.desktop.appearances import BY_ID
+        return QColor(STATE_COLORS.get(self.state, BY_ID[self.appearance].accent))
 
     def _target_glow(self):
         return STATE_GLOW.get(self.state, _DEFAULT_GLOW)
@@ -85,7 +93,9 @@ class Orb(QWidget):
         self.target = min(1.0, math.sqrt(max(0.0, level)) * 2.2)
 
     def tick(self):
-        self.phase += 0.026 if self.state == 'thinking' else 0.012
+        self.interaction = ease_interaction(self.interaction, self.state)
+        self.transition = min(1.0, self.transition + .12)
+        self.phase += (.012 + .014*self.interaction['thinking']) if self.appearance in ABSTRACT_IDS else (.026 if self.state == 'thinking' else .012)
         speed = 0.45 if self.target > self.energy else 0.16
         self.energy += (self.target - self.energy) * speed
         # Ease the presentation toward the current state so transitions glide.
@@ -93,94 +103,65 @@ class Orb(QWidget):
         self.accent = _ease_color(self.accent, self._target_color(), 0.09)
         self.update()
 
+    def set_appearance(self, appearance):
+        from jarvis.desktop.appearances import valid_appearance
+        appearance = valid_appearance(appearance)
+        if appearance != self.appearance:
+            self.previous_frame = self.current_image()
+            self.appearance = appearance
+            self.transition = 0.0
+            self.update()
+
+    def current_image(self):
+        from jarvis.desktop.avatar_assets import pose_image
+        return pose_image(self.appearance, self.state)
+
     def paintEvent(self, event):
+        image = self.current_image()
+        key = (self.appearance, self.state)
+        if key != self.frame_key:
+            if self.frame_image is not None:
+                self.previous_frame = self.frame_image
+                self.transition = 0.0
+            self.frame_key, self.frame_image = key, image
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        side = self.width()
-        p.translate(side / 2, side / 2)
-        # Reduced motion: hold a correct still frame (target colour/glow, no
-        # audio energy, no breathing) instead of a frozen mid-transition.
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        side = min(self.width(), self.height())
+        p.translate(self.width()/2, self.height()/2)
         energy = self.energy if self.motion else 0.0
-        phase = self.phase
+        phase = self.phase if self.motion else 0.0
         accent = self.accent if self.motion else self._target_color()
+        halo = QRadialGradient(QPointF(), side*.5)
+        breath = (1 + math.sin(phase*2)) * .5 if self.motion else 0
         activation = self.glow if self.motion else self._target_glow()
-        breath = (0.5 + 0.5 * math.sin(phase * 2)) if self.motion else 0.0
-        # Idle breathing of the sphere, scaled by how awake the state is, plus
-        # the real audio envelope on top.
-        radius = side * (0.302 + 0.018 * energy + 0.024 * breath * activation)
-        halo = QRadialGradient(QPointF(), side * 0.49)
-        halo.setColorAt(0, tint(accent, int(58 + energy * 45)))
-        halo.setColorAt(0.55, tint(accent, int(23 + breath * 8)))
+        halo.setColorAt(0, tint(accent, 32 + 20*activation + 10*breath + 35*energy))
         halo.setColorAt(1, tint(accent, 0))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(halo)
-        p.drawEllipse(QPointF(), side * 0.49, side * 0.49)
-
-        # Fine lens rings and quiet orbital landmarks, not a progress meter.
+        p.drawEllipse(QPointF(), side*.49, side*.49)
         p.setBrush(Qt.BrushStyle.NoBrush)
-        for scale, alpha in ((1.18, 33), (1.24, 17), (1.39, 12)):
-            p.setPen(QPen(tint(accent, alpha), 0.7))
-            p.drawEllipse(QPointF(), radius * scale, radius * scale)
-        for angle in (28, 145, 258):
-            p.save()
-            # Organic drift: a slow sine wobble over the steady rotation.
-            p.rotate(angle + phase * 8 + 6 * math.sin(phase * 0.6 + angle))
-            ring = QRectF(-radius * 1.18, -radius * 1.18, radius * 2.36, radius * 2.36)
-            p.setPen(QPen(tint(accent, 125), 1.2))
-            p.drawArc(ring, 0, 17 * 16)
-            p.restore()
-
-        glass = QRadialGradient(QPointF(-radius * 0.32, -radius * 0.45), radius * 1.65)
-        glass.setColorAt(0, QColor('#2e5267'))
-        glass.setColorAt(0.36, QColor('#102e40'))
-        glass.setColorAt(0.77, QColor('#081423'))
-        glass.setColorAt(1, QColor('#1c3c50'))
-        p.setBrush(glass)
-        p.setPen(QPen(tint(accent, 100), 0.8))
-        p.drawEllipse(QPointF(), radius, radius)
-        clip = QPainterPath()
-        clip.addEllipse(QPointF(), radius - 1, radius - 1)
+        p.setPen(QPen(tint(accent, 65), .8))
+        if self.pedestal:
+            p.drawEllipse(QRectF(-side*.44, side*.43, side*.88, side*.08))
         p.save()
-        p.setClipPath(clip)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        # Latitude filaments form a breathing volume, with a real audio envelope.
-        for band in range(19):
-            latitude = (band - 9) / 10
-            width = radius * math.sqrt(1 - latitude * latitude)
-            path = QPainterPath()
-            for step in range(65):
-                u = step / 64
-                x = (u * 2 - 1) * width
-                depth = math.sin(u * math.pi)
-                wave = math.sin(u * math.pi * 3 + phase * 2 + band * 0.32)
-                y = latitude * radius * 0.9 + depth * wave * radius * (0.12 + 0.05 * breath * activation + energy * 0.18)
-                point = QPointF(x, y)
-                path.moveTo(point) if step == 0 else path.lineTo(point)
-            gradient = QLinearGradient(-width, 0, width, 0)
-            gradient.setColorAt(0, tint(accent, 10))
-            gradient.setColorAt(0.45, tint(accent, 95 + int(energy * 95)))
-            gradient.setColorAt(0.7, tint('#e7fbff', 155))
-            gradient.setColorAt(1, tint(accent, 15))
-            p.setPen(QPen(gradient, 0.8 + energy * 0.6))
-            p.drawPath(path)
-
-        core = QRadialGradient(QPointF(radius * 0.12, radius * 0.02), radius * 0.69)
-        core.setColorAt(0, tint('#e5faff', 115 + 90 * energy + 40 * breath * activation))
-        core.setColorAt(0.12, tint(accent, 85 + 90 * energy + 30 * breath * activation))
-        core.setColorAt(0.48, tint(accent, 22))
-        core.setColorAt(1, tint(accent, 0))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(core)
-        p.drawEllipse(QPointF(radius * 0.12, radius * 0.02), radius * 0.69, radius * 0.69)
-        # Sparse points are fixed in count, with deterministic motion.
-        for index in range(24):
-            angle = index * 2.39996 + phase * 0.16 + 0.4 * math.sin(phase * 0.3 + index)
-            distance = radius * math.sqrt((index + 1) / 27)
-            x, y = math.cos(angle) * distance, math.sin(angle) * distance
-            p.setBrush(tint('#d7f5ff', 70 + index % 4 * 28))
-            p.drawEllipse(QPointF(x, y), 0.7, 0.7)
+        frame = (blended_motion(self.appearance, phase, energy, self.interaction, self.motion)
+                 if self.appearance in ABSTRACT_IDS else
+                 sample_motion(self.appearance, phase, energy, self.state, self.motion))
+        p.translate(frame.x * side, frame.y * side)
+        p.rotate(frame.rotation)
+        p.scale(frame.sx, frame.sy)
+        def draw(frame, opacity):
+            size = frame.size().scaled(int(side*.86), int(side*.86), Qt.AspectRatioMode.KeepAspectRatio)
+            rect = QRectF(-size.width()/2, -size.height()/2, size.width(), size.height())
+            p.setOpacity(opacity)
+            p.drawImage(rect, frame)
+        blend = self.transition if self.motion else 1.0
+        if self.previous_frame is not None and blend < 1:
+            draw(self.previous_frame, 1-blend)
+        draw(image, blend)
         p.restore()
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(tint('#e1f7ff', 110), 0.8))
-        p.drawArc(QRectF(-radius, -radius, radius * 2, radius * 2), 30 * 16, 100 * 16)
+        # Reduced motion has no moving decorative layers, including on repaint.
+        if self.motion:
+            paint_details(p, self.appearance, phase, energy, self.state, side, self.interaction)
         p.end()

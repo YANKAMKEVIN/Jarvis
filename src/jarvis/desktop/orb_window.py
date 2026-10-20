@@ -7,7 +7,7 @@ from jarvis.desktop.visuals import Orb
 
 class InteractiveOrb(Orb):
     def __init__(self, window):
-        super().__init__(180)
+        super().__init__(getattr(window, 'avatar_size', 180))
         self.window_owner = window
         self.origin = self.press = None
         self.dragged = False
@@ -48,6 +48,7 @@ class InteractiveOrb(Orb):
 
 
 class OrbWindow(QWidget):
+    avatar_class = InteractiveOrb
     def __init__(self, controller, shell):
         super().__init__(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint |
                          Qt.WindowType.WindowStaysOnTopHint)
@@ -59,7 +60,7 @@ class OrbWindow(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 0, 4, 6)
         layout.setSpacing(0)
-        self.orb = InteractiveOrb(self)
+        self.orb = self.avatar_class(self)
         layout.addWidget(self.orb)
         self.status = QLabel()
         self.status.setWordWrap(True)
@@ -73,6 +74,11 @@ class OrbWindow(QWidget):
         self.shortcut.activated.connect(shell.show_compact)
         self.render()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        from jarvis.desktop.macos_spaces import join_all_spaces
+        join_all_spaces(self)
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
@@ -81,7 +87,8 @@ class OrbWindow(QWidget):
 
     def render(self):
         c = self.controller
-        self.orb.state = c.voice_state
+        self.orb.set_appearance(c.appearance)
+        self.orb.state = c.avatar_state()
         self.orb.set_motion(not c.reduced_motion)
         self.orb.update()
         states = {'off': 'Micro fermé', 'starting': 'Connexion…', 'listening': 'En écoute',
@@ -106,6 +113,7 @@ class OrbWindow(QWidget):
                                 ('Ouvrir les détails', self.shell.show_details),
                                 ('Fenêtre complète', self.shell.show_full)):
             menu.addAction(title, callback)
+        menu.addAction('Choisir une apparence…', self.shell.show_appearances)
         menu.addSeparator()
         active = self.controller.voice_worker is not None
         action = menu.addAction('Arrêter le vocal' if active else 'Reconnecter' if self.controller.can_reconnect else 'Démarrer Jarvis',

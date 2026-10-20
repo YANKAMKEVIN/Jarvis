@@ -288,18 +288,19 @@ PYTHONPATH=src .venv/bin/python scripts/diagnose_accessibility.py --app Safari
 
 Trois vues partagent la même session : orbe seul, compagnon compact et fenêtre
 complète, entièrement vocales : orbe, état d’écoute et commandes audio.
-Orbe réactif au son, capsule déplaçable avec position mémorisée, commandes
-discrètes et sons optionnels. Cartes d’agenda, rappels et réponses web, avec un
+Avatar réactif au son, compagnon transparent déplaçable avec position mémorisée,
+deux commandes au survol (ouvrir Jarvis et menu), et sons optionnels. Cartes d’agenda, rappels et réponses web, avec un
 suivi des actions et une annulation coopérative des tâches. Raccourci global
 macOS, choix/tests des périphériques et reconnexion explicite après coupure.
 Menu permanent avec état de capture et commandes vocales, même fenêtres masquées. Aucun champ de saisie
 ni fil de messages. Les missions présentent leur objectif, l’outil en cours et
 leurs bilans ; l’analyse d’écran à la demande dispose d’un indicateur et d’une carte de résultat.
-La mission en cours apparaît à côté de la sphère dans Assistant, avec un résumé
-cliquable sous l’orbe en mode compact et un petit bilan à la fin.
+Les missions apparaissent à côté de l’avatar dans Assistant, avec un petit bilan
+à la fin. Le mode compact affiche uniquement le grand avatar ; son menu permet
+de retrouver les missions, les commandes vocales et le choix d’apparence.
 Deux cartes de mission peuvent être suivies en parallèle : recherches avec
 outils de lecture limités, missions sur le bureau mises en file, annulation
-par identifiant et sélection en mode compact. Jusqu’à deux exécutions et six
+par identifiant et accès depuis le menu du compagnon. Jusqu’à deux exécutions et six
 demandes vivantes, dans la même session vocale.
 
 Installation :
@@ -307,6 +308,7 @@ Installation :
 ```bash
 python -m pip install -e '.[desktop,live]'
 jarvis-desktop --demo       # découvrir sans action réelle
+jarvis-desktop --demo --compact # compagnon avatar et commandes au survol
 jarvis-desktop --demo --orb # découvrir l’orbe seul
 jarvis-desktop              # assistant vocal Gemini Live sur macOS
 ```

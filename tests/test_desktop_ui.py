@@ -36,7 +36,7 @@ def make_shell(app, monkeypatch, demo=False):
     return controller, DesktopShell(app, controller, settings=Settings())
 
 
-def test_multiple_mission_cards_cancel_by_id_and_compact_cycles_all_missions(app, monkeypatch):
+def test_multiple_mission_cards_cancel_by_id_and_companion_opens_all_missions(app, monkeypatch):
     import sys
     from unittest.mock import Mock
     from jarvis.desktop.presentation import project_task
@@ -60,13 +60,11 @@ def test_multiple_mission_cards_cancel_by_id_and_compact_cycles_all_missions(app
         deck.panels[1].cancel.click()
         c.voice_worker.cancel_task.assert_called_once_with('1')
         shell.show_compact()
-        compact = shell.compact.assistant.mission
-        seen = set()
-        for _ in range(3):
-            seen.add(c.selected_mission_id)
-            compact.count.click()
-        assert seen == {'0', '1', '2'}
-        compact.summary.click()
+        assert len(c.missions) == 3
+        assert shell.compact.orb.width() == 320
+        menu = shell.compact.make_menu()
+        assert '(3)' in menu.actions_by_id['missions'].text()
+        menu.actions_by_id['missions'].trigger()
         assert shell.full.pages.currentIndex() == 2
         c.voice_event({'type': 'state', 'state': 'error'})
         assert all(m['status'] == 'unknown' for m in c.missions.values())
@@ -144,7 +142,7 @@ def test_assistant_mission_is_beside_orb_then_becomes_dismissible_bilan(app, mon
         assert not panel.mission.cancel.isVisible()
         panel.mission.dismiss.click()
         assert panel.mission.isHidden() and c.task is not None
-        assert shell.compact.assistant.mission.isHidden()
+        assert not hasattr(shell.compact, 'mission')
         assert panel.orb.width() == 360
         c.voice_event(project_task({'id': 'next', 'status': 'needs_confirmation', 'steps': []}))
         assert not panel.mission.isHidden() and panel.mission.expanded
@@ -163,11 +161,9 @@ def test_compact_mission_opens_activity_even_when_cards_exist(app, monkeypatch):
         c.voice_event(project_task({'id': 'mission', 'objective': 'Mon objectif', 'status': 'running', 'current_tool': 'open_app', 'steps': []}))
         shell.show_compact()
         app.processEvents()
-        panel = shell.compact.assistant.mission
-        assert panel.isVisible() and panel.summary.isVisible()
-        assert panel.summary.text() == 'Mon objectif\nEn cours · Application'
-        assert panel.cancel.isHidden()
-        panel.summary.click()
+        assert shell.compact.orb.isVisible()
+        menu = shell.compact.make_menu()
+        menu.actions_by_id['missions'].trigger()
         assert shell.full.isVisible() and shell.full.pages.currentIndex() == 2
     finally:
         for window in (shell.full, shell.compact, shell.orb_window): window.hide()
@@ -295,7 +291,8 @@ def test_demo_has_no_text_input_and_cannot_activate_voice(app, monkeypatch):
         for window in (shell.full, shell.compact):
             assert not window.findChildren(QLineEdit)
             assert not window.findChildren(QTextEdit)
-            assert not window.assistant.voice_button.isEnabled()
+        assert not shell.full.assistant.voice_button.isEnabled()
+        assert not shell.compact.make_menu().actions_by_id['session'].isEnabled()
         controller.start_voice()
         assert controller.voice_worker is None and not controller.voice_mic_open
         controller.voice_event({"type": "transcript", "role": "user", "text": "PRIVATE_PHRASE"})
@@ -353,21 +350,22 @@ def test_voice_controls_share_one_worker_and_cleanup_before_quit(app, monkeypatc
         controller.start_voice()
         assert controller.voice_worker is worker
         shell.show_compact()
-        assert shell.compact.assistant.mic_button.isVisible()
+        menu = shell.compact.make_menu()
+        assert menu.actions_by_id['microphone'].isVisible()
         controller.voice_event({"type": "state", "state": "speaking", "mic_open": True,
                                 "input_suppressed": True})
-        assert "pause" in shell.compact.assistant.voice_notice.text()
+        assert "pause" in shell.compact.orb.toolTip() or "suspendue" in shell.compact.orb.toolTip()
         assert "pause" in shell.full.assistant.voice_notice.text()
         controller.voice_event({"type": "state", "state": "listening", "mic_open": True,
                                 "input_suppressed": True})
-        assert "Reprise" in shell.compact.assistant.status.text()
-        shell.compact.assistant.mic_button.click()
+        assert "suspendue" in shell.compact.orb.toolTip()
+        menu.actions_by_id['microphone'].trigger()
         wait_until(app, lambda: not controller.voice_mic_open)
         assert worker.muted
-        shell.compact.assistant.mic_button.click()
+        menu.actions_by_id['microphone'].trigger()
         wait_until(app, lambda: controller.voice_mic_open)
         assert not worker.muted
-        shell.compact.assistant.interrupt_button.click()
+        menu.actions_by_id['interrupt'].trigger()
         assert worker.interrupts == 1
         shell.quit()
         assert controller.quit_after_voice
@@ -398,8 +396,8 @@ def test_audio_changes_orb_without_rebuilding_controls_and_motion_can_stop(app, 
         controller.voice_event({'type': 'audio_level', 'input': 0.0, 'output': 0.0})
         assert shell.full.assistant.orb.target == 0
         controller.voice_event({'type': 'tool_receipt', 'label': 'Rappel', 'status': 'confirmation'})
-        assert 'Accord vocal attendu' in shell.compact.assistant.hint.text()
-        assert shell.compact.assistant.hint.text() == shell.full.assistant.hint.text()
+        assert 'Accord vocal attendu' in shell.compact.orb.toolTip()
+        assert shell.full.assistant.hint.text() in shell.compact.orb.toolTip()
         controller.clear_tool_notice()
         assert 'Accord vocal' not in shell.full.assistant.hint.text()
     finally:
@@ -502,8 +500,9 @@ def test_cards_and_actions_are_shared_bounded_and_confirmation_stays_vocal(app, 
         controller.voice_event(project_activity('list_calendar_events', {'ok': True,
             'events': [{'title': '<b>Réunion</b>', 'start': '10:00', 'token': 'PRIVATE_TOKEN'}]}, 'calendar'))
         assert len(controller.cards) == 1
-        assert shell.compact.assistant.hint_area.currentIndex() == 1
-        shell.compact.assistant.details_button.click()
+        assert not hasattr(shell.compact, 'hint_area')
+        menu = shell.compact.make_menu()
+        menu.actions_by_id['details'].trigger()
         assert shell.full.isVisible() and shell.full.pages.currentIndex() == 1
         labels = shell.full.cards_page.findChildren(QLabel)
         meeting = next(w for w in labels if '<b>Réunion</b>' in w.text())

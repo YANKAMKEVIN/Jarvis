@@ -22,6 +22,7 @@ from jarvis.desktop.visuals import Orb
 from jarvis.desktop.panels import DetailPanel
 from jarvis.desktop.mission_panel import MissionDeck
 from jarvis.desktop.orb_window import OrbWindow
+from jarvis.desktop.companion import CompanionWindow
 from jarvis.desktop.presentation import STATUS_TEXT
 from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, OrbTransfer
 
@@ -98,6 +99,8 @@ def card(title, text):
 
 
 class Controller(QObject):
+    appearance_requested = Signal()
+    appearance_changed = Signal(str)
     changed = Signal()
     audio_levels = Signal(float, float)
     exit_ready = Signal()
@@ -109,6 +112,12 @@ class Controller(QObject):
     def __init__(self, demo=False):
         super().__init__()
         self.demo = demo
+        self.avatar_feedback = None
+        self.feedback_timer = QTimer(self)
+        self.feedback_timer.setSingleShot(True)
+        self.feedback_timer.setInterval(2200)
+        self.feedback_timer.timeout.connect(self.clear_avatar_feedback)
+        self.appearance = "nova_bot"
         self.reduced_motion = False
         self.voice_worker = None
         self.voice_state = "off"
@@ -302,6 +311,11 @@ class Controller(QObject):
             self.changed.emit()
 
     def voice_event(self, event):
+        if event.get('type') in {'activity', 'tool_receipt', 'task_progress'}:
+            status = event.get('status')
+            if status in {'success', 'completed', 'done', 'verified', 'error', 'failed'}:
+                self.avatar_feedback = 'error' if status in {'error', 'failed'} else 'success'
+                self.feedback_timer.start()
         if event.get('type') == 'activity':
             if event.get('screen'):
                 if event['status'] == 'running':
@@ -324,6 +338,10 @@ class Controller(QObject):
             self.changed.emit()
             return
         if event.get('type') == 'missions':
+            for mission in event['missions']:
+                if mission and mission.get('status') in {'completed', 'failed'} and self.missions.get(mission['id'], {}).get('status') != mission['status']:
+                    self.avatar_feedback = 'success' if mission['status'] == 'completed' else 'error'
+                    self.feedback_timer.start()
             self.missions = OrderedDict((m['id'], m) for m in event['missions'] if m is not None)
             active = [m for m in self.missions.values() if m["status"] in {"queued", "waiting_dependency", "paused", "running", "cancelling", "needs_confirmation", "needs_clarification"}]
             chosen = next((m for m in active if m['id'] == self.selected_mission_id), None)
@@ -384,6 +402,15 @@ class Controller(QObject):
                         mission['status'] = 'unknown'
             self.changed.emit()
 
+    def avatar_state(self):
+        if self.voice_state == 'error' or self.avatar_feedback == 'error':
+            return 'error'
+        return self.avatar_feedback if self.voice_state not in {'error', 'speaking', 'thinking'} and self.avatar_feedback else self.voice_state
+
+    def clear_avatar_feedback(self):
+        self.avatar_feedback = None
+        self.changed.emit()
+
     def voice_finished(self, worker):
         if self.voice_worker is worker:
             self.voice_worker = None
@@ -428,9 +455,12 @@ class VoicePanel(QWidget):
         self.stage = QBoxLayout(QBoxLayout.Direction.TopToBottom)
         self.stage.setSpacing(20 if not compact else 8)
         self.orb_slot = QWidget()
-        orb_layout = QVBoxLayout(self.orb_slot)
+        orb_layout = QHBoxLayout(self.orb_slot) if compact else QVBoxLayout(self.orb_slot)
         orb_layout.setContentsMargins(0, 0, 0, 0)
         orb_layout.addWidget(self.orb, 0, Qt.AlignmentFlag.AlignCenter)
+        self.appearance_button = button('Apparence…', self.choose_appearance)
+        self.appearance_button.setAccessibleName('Choisir une apparence de Jarvis')
+        orb_layout.addWidget(self.appearance_button, 0, Qt.AlignmentFlag.AlignCenter)
         self.stage.addWidget(self.orb_slot, 1)
         self.mission = MissionDeck(controller, compact)
         self.stage.addWidget(self.mission, 1)
@@ -485,6 +515,9 @@ class VoicePanel(QWidget):
         if hasattr(self, 'footnote'):
             self.render()
 
+    def choose_appearance(self):
+        self.controller.appearance_requested.emit()
+
     def render(self):
         c = self.controller
         active = c.voice_worker is not None
@@ -506,7 +539,9 @@ class VoicePanel(QWidget):
         compact_orb = 140 if len(c.focus_missions()) > 1 else 180
         orb_size = (compact_orb if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else 280 if c.cards or mission_shown else 360)
         self.orb.setFixedSize(orb_size, orb_size)
-        self.orb.state = state
+        self.orb_slot.setMinimumHeight(orb_size + (0 if self.compact else self.appearance_button.sizeHint().height() + 12))
+        self.orb.set_appearance(c.appearance)
+        self.orb.state = c.avatar_state()
         self.orb.update()
         self.controls.active = active
         self.controls.refresh()
@@ -737,6 +772,11 @@ class DesktopShell:
         controller.devices_changed.connect(self.save_devices)
         controller.sounds_enabled = self.settings.value("audio/sounds", False) in (True, "true")
         controller.reduced_motion = self.settings.value("appearance/reduced_motion", controller.reduced_motion) in (True, "true")
+        from jarvis.desktop.appearances import AppearancePreference
+        self.appearance_preference = AppearancePreference(self.settings)
+        controller.appearance = self.appearance_preference.load()
+        controller.appearance_requested.connect(self.show_appearances)
+        self.appearance_dialog = None
         self.position_restored = False
         self.orb_position_restored = False
         self.transfer = None
@@ -744,7 +784,7 @@ class DesktopShell:
         self.has_tray = QSystemTrayIcon.isSystemTrayAvailable()
         controller.exit_ready.connect(app.quit)
         self.full = DesktopWindow(controller, self)
-        self.compact = DesktopWindow(controller, self, compact=True)
+        self.compact = CompanionWindow(controller, self)
         self.orb_window = OrbWindow(controller, self)
         controller.details_requested.connect(self.show_details)
         controller.mission_details_requested.connect(self.show_mission_details)
@@ -897,6 +937,20 @@ class DesktopShell:
         for window in (self.full, self.compact, self.orb_window):
             window.shortcut.setEnabled(not self.hotkey.active)
         self.controller.changed.emit()
+
+    def set_appearance(self, appearance):
+        self.controller.appearance = self.appearance_preference.save(appearance)
+        self.controller.appearance_changed.emit(self.controller.appearance)
+        self.controller.changed.emit()
+
+    def show_appearances(self):
+        from jarvis.desktop.avatar_selector import AvatarSelector
+        if self.appearance_dialog is not None:
+            self.appearance_dialog.close()
+            self.appearance_dialog.deleteLater()
+        self.appearance_dialog = AvatarSelector(self.controller.appearance, self.visible_window())
+        self.appearance_dialog.chosen.connect(self.set_appearance)
+        self.appearance_dialog.show()
 
     def show_settings(self):
         self.show_full()

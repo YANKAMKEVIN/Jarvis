@@ -1,2 +1,3 @@
 # Optional desktop shell; text, voice and Live modes remain independent.
 PySide6>=6.8,<7
+pyobjc-framework-Cocoa>=11,<13; sys_platform == 'darwin'
