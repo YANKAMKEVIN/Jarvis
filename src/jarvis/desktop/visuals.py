@@ -19,11 +19,11 @@ def tint(color, alpha):
 STATE_COLORS = {
     'thinking': '#bea5ff', 'error': '#f0a7ba', 'muted': '#6a8399',
     'starting': '#9ad0ea', 'listening': '#87e3ff', 'speaking': '#8af0e0',
-    'off': '#87e3ff',
+    'off': '#87e3ff', 'success': '#8af0be',
 }
 STATE_GLOW = {
     'off': 0.0, 'muted': 0.12, 'starting': 0.45, 'listening': 0.55,
-    'speaking': 0.5, 'thinking': 0.72, 'error': 0.45,
+    'speaking': 0.5, 'thinking': 0.72, 'error': 0.45, 'success': 0.7,
 }
 _DEFAULT_COLOR = '#87e3ff'
 _DEFAULT_GLOW = 0.35
@@ -57,7 +57,8 @@ class Orb(QWidget):
         self.timer.timeout.connect(self.tick)
 
     def _target_color(self):
-        return QColor(STATE_COLORS.get(self.state, _DEFAULT_COLOR))
+        from jarvis.desktop.appearances import BY_ID
+        return QColor(STATE_COLORS.get(self.state, BY_ID[self.appearance].accent))
 
     def _target_glow(self):
         return STATE_GLOW.get(self.state, _DEFAULT_GLOW)
@@ -127,9 +128,11 @@ class Orb(QWidget):
         design = BY_ID[self.appearance]
         energy = self.energy if self.motion else 0.0
         phase = self.phase if self.motion else 0.0
-        accent = QColor('#f0a7ba') if self.state == 'error' else QColor('#8af0be') if self.state == 'success' else QColor(design.accent)
+        accent = self.accent if self.motion else self._target_color()
         halo = QRadialGradient(QPointF(), side*.5)
-        halo.setColorAt(0, tint(accent, 42 + 35*energy))
+        breath = (1 + math.sin(phase*2)) * .5 if self.motion else 0
+        activation = self.glow if self.motion else self._target_glow()
+        halo.setColorAt(0, tint(accent, 32 + 20*activation + 10*breath + 35*energy))
         halo.setColorAt(1, tint(accent, 0))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(halo)

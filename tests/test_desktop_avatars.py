@@ -49,6 +49,10 @@ def test_selector_keyboard_and_live_modes_preserve_session(app, tmp_path, monkey
     shell = DesktopShell(app, c, settings)
     worker = object()
     c.voice_worker = worker
+    from jarvis.desktop.presentation import project_task
+    c.voice_event({'type': 'missions', 'missions': [project_task({
+        'id': str(i), 'objective': f'Mission {i}', 'status': 'running', 'steps': []
+    }) for i in range(2)]})
     missions = c.missions
     try:
         shell.show_full()
@@ -59,7 +63,14 @@ def test_selector_keyboard_and_live_modes_preserve_session(app, tmp_path, monkey
         QTest.keyClick(dialog.grid, Qt.Key.Key_Right)
         QTest.keyClick(dialog.grid, Qt.Key.Key_Space)
         assert c.appearance == 'neo_guide'
+        dialog.grid.setCurrentRow(2)
+        QTest.keyClick(dialog.grid, Qt.Key.Key_Return)
+        assert c.appearance == 'kitsune'
+        dialog.grid.setCurrentRow(1)
+        QTest.keyClick(dialog.grid, Qt.Key.Key_Space)
         assert c.voice_worker is worker and c.missions is missions
+        assert len(c.missions) == 2
+        assert len([p for p in shell.full.assistant.mission.panels if p.isVisible()]) == 2
         for panel in (shell.full.assistant, shell.compact.assistant, shell.orb_window):
             assert panel.orb.appearance == 'neo_guide'
         assert shell.appearance_preference.load() == 'neo_guide'
@@ -73,6 +84,10 @@ def test_selector_keyboard_and_live_modes_preserve_session(app, tmp_path, monkey
         c.reduced_motion = False
         c.changed.emit()
         assert shell.full.assistant.orb.timer.isActive()
+        shell.show_compact()
+        app.processEvents()
+        panel = shell.compact.assistant
+        assert not panel.orb.geometry().intersects(panel.appearance_button.geometry())
         shell.show_orb()
         assert not shell.full.assistant.orb.timer.isActive()
         assert shell.orb_window.orb.timer.isActive()

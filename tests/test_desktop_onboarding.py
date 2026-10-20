@@ -62,7 +62,17 @@ def test_every_permission_has_a_settings_url():
 def app():
     pytest.importorskip("PySide6")
     from PySide6.QtWidgets import QApplication
-    return QApplication.instance() or QApplication([])
+    instance = QApplication.instance() or QApplication([])
+    yield instance
+    # Dispose the injected dialogs while QApplication and Python callbacks are
+    # still alive; leaving their signal cycles to interpreter shutdown crashes
+    # PySide6 on macOS even after every assertion has passed.
+    from PySide6.QtCore import QCoreApplication, QEvent
+    for widget in instance.topLevelWidgets():
+        if widget.objectName() == 'onboarding':
+            widget.close()
+            widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 def test_dialog_lists_every_permission(app):

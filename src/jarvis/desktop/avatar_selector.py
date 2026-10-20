@@ -7,7 +7,7 @@ from jarvis.desktop.avatar_assets import pose_image
 
 class AppearanceGrid(QListWidget):
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Space and self.currentItem() is not None:
+        if event.key() in {Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter} and self.currentItem() is not None:
             self.itemActivated.emit(self.currentItem())
             event.accept()
         else:
@@ -18,7 +18,7 @@ class AvatarSelector(QDialog):
     def __init__(self, current, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Apparence de Jarvis')
-        self.resize(700, 600)
+        self.resize(700, 680)
         self.setStyleSheet('QDialog, QListWidget { background: #0d1c2b; color: #e4f4ff; } QListWidget::item:selected { background: #29485f; border: 1px solid #83cfff; }')
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel('Choisissez une apparence · le même assistant, la même session'))

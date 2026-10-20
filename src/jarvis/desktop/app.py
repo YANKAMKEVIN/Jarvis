@@ -402,6 +402,8 @@ class Controller(QObject):
             self.changed.emit()
 
     def avatar_state(self):
+        if self.voice_state == 'error' or self.avatar_feedback == 'error':
+            return 'error'
         return self.avatar_feedback if self.voice_state not in {'error', 'speaking', 'thinking'} and self.avatar_feedback else self.voice_state
 
     def clear_avatar_feedback(self):
@@ -445,7 +447,7 @@ class VoicePanel(QWidget):
         self.stage = QBoxLayout(QBoxLayout.Direction.TopToBottom)
         self.stage.setSpacing(20 if not compact else 8)
         self.orb_slot = QWidget()
-        orb_layout = QVBoxLayout(self.orb_slot)
+        orb_layout = QHBoxLayout(self.orb_slot) if compact else QVBoxLayout(self.orb_slot)
         orb_layout.setContentsMargins(0, 0, 0, 0)
         orb_layout.addWidget(self.orb, 0, Qt.AlignmentFlag.AlignCenter)
         self.appearance_button = button('Apparence…', self.choose_appearance)
@@ -529,6 +531,7 @@ class VoicePanel(QWidget):
         compact_orb = 140 if len(c.focus_missions()) > 1 else 180
         orb_size = (compact_orb if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else 280 if c.cards or mission_shown else 360)
         self.orb.setFixedSize(orb_size, orb_size)
+        self.orb_slot.setMinimumHeight(orb_size + (0 if self.compact else self.appearance_button.sizeHint().height() + 12))
         self.orb.set_appearance(c.appearance)
         self.orb.state = c.avatar_state()
         self.orb.update()
