@@ -18,6 +18,8 @@ from jarvis.desktop.visuals import Orb
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--frames', type=Path, required=True)
+    parser.add_argument('--abstract', action='store_true', help='Show the ten abstract appearances')
+    parser.add_argument('--interactions', action='store_true', help='Capture idle and all five interaction states')
     args = parser.parse_args()
     args.frames.mkdir(parents=True, exist_ok=True)
     app = QApplication([])
@@ -31,7 +33,9 @@ def main():
     grid = QGridLayout()
     layout.addLayout(grid)
     orbs = []
-    for i, appearance in enumerate(CATALOG):
+    catalog = CATALOG[6:] if args.abstract else CATALOG
+    columns = 5 if args.abstract else 4
+    for i, appearance in enumerate(catalog):
         cell = QWidget()
         box = QVBoxLayout(cell)
         orb = Orb(180)
@@ -40,13 +44,15 @@ def main():
         label = QLabel(appearance.name)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         box.addWidget(label)
-        grid.addWidget(cell, i//4, i%4)
+        grid.addWidget(cell, i//columns, i%columns)
         orbs.append(orb)
     window.show()
     try:
-        for frame in range(60):
-            state = ('listening', 'thinking', 'speaking')[frame//20]
-            title.setText(f'DÉMO DU RENDU QT · {state} · audio simulé · micro fermé')
+        states = ('off','listening','thinking','speaking','success','error') if args.interactions else ('listening','thinking','speaking')
+        names = {'off': 'Repos · mouvement autonome', 'listening': 'Écoute', 'thinking': 'Réflexion', 'speaking': 'Parole', 'success': 'Réussite', 'error': 'Erreur'}
+        for frame in range(len(states)*20):
+            state = states[frame//20]
+            title.setText(f'DÉMO DU RENDU QT · {names[state]} · audio simulé · micro fermé')
             for orb in orbs:
                 orb.state = state
                 orb.set_levels(.025 if state == 'listening' else 0,

@@ -34,7 +34,7 @@ atlases provide four poses. These are 2D transformations and crossfades, with no
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/test_desktop*.py -q
 ```
 
-156 desktop tests passed, including 51 avatar checks and the existing two-mission
+177 desktop tests passed, including 72 avatar checks and the existing two-mission
 cancellation/cycling tests. Coverage includes default and invalid preferences,
 on-disk persistence, all assets/poses, immediate changes preserving two missions
 and the voice worker, all three modes, keyboard activation, reduced motion,
@@ -121,3 +121,34 @@ Additional regression checks cover every profile's bounds and audio response,
 distinct trajectories, actual moving renders, still reduced-motion renders and
 hidden timers for all 16 appearances. Native macOS performance and live audio
 remain manual checks.
+
+## Continuous life for abstract appearances
+
+The ten abstract appearances keep breathing and moving while idle, with no voice
+worker and no microphone signal. Their existing individual paths and decorations
+remain active. A small autonomous heartbeat complements the real audio envelope.
+
+Listening narrows the decorative field and introduces a receptive sway; thinking
+adds a circulating gesture and progressively faster motion; speaking expands the
+shape rhythmically, with actual RMS levels increasing its expression. Success
+opens and slightly lifts the form; error contracts it and brings the decorative
+field inward. Every gesture is defined independently of audio, so silent states
+remain visibly distinct. The renderer interpolates normalized state weights and
+keeps the phase clock running, rather than resetting motion at state boundaries.
+
+Reduced motion still renders a neutral, current-state image. Hidden views still
+stop their timer. State and audio continue to come from the same controller in
+all three modes. Character choreography and voice/session logic are unchanged.
+
+The new [idle PNG](screenshots/avatars/abstract-idle.png) and
+[interaction GIF](screenshots/avatars/abstract-life.gif) capture real Qt widgets;
+the GIF covers idle, listening, thinking, speaking, success and error, with
+simulated events/audio and no microphone. Reproduce raw frames with:
+
+```sh
+QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_avatar_motion.py --abstract --interactions --frames /tmp/abstract-life
+```
+
+Tests additionally verify motion at zero-audio idle for all ten abstract forms,
+distinct silent interaction trajectories and rendered frames, and progressive
+state interpolation. Native macOS fluidity/live audio remain manual checks.
