@@ -69,6 +69,7 @@ class TrayControls:
         self.action('Cartes et activité', shell.show_details)
         self.action('Réglages audio', shell.show_settings)
         self.action('Consommation (tokens)…', shell.show_usage)
+        self.action('Activité machine…', shell.show_metrics)
         self.action('Masquer les fenêtres', shell.hide_windows)
         self.menu.addSeparator()
         self.action('Quitter Jarvis', shell.quit)

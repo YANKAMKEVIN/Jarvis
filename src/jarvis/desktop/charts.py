@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import Any, Sequence
 
 from PySide6.QtCharts import (
-    QBarCategoryAxis, QBarSeries, QBarSet, QChart, QChartView, QValueAxis,
+    QBarCategoryAxis, QBarSeries, QBarSet, QChart, QChartView, QLineSeries,
+    QValueAxis,
 )
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter
@@ -95,6 +96,88 @@ def _bar_chart(title: str, categories: Sequence[str], values: Sequence[float],
     view.setRenderHint(QPainter.RenderHint.Antialiasing)
     view.setStyleSheet(f"background: {_PANEL}; border-radius: 14px;")
     return view
+
+
+def _line_chart(title: str, series: Sequence[dict[str, Any]], color: str,
+                y_title: str, y_max: float = 100.0) -> QChartView:
+    line = QLineSeries()
+    for i, point in enumerate(series):
+        line.append(float(i), float(point["value"]))
+    pen = line.pen()
+    pen.setColor(QColor(color))
+    pen.setWidth(2)
+    line.setPen(pen)
+
+    chart = QChart()
+    chart.addSeries(line)
+    _style_chart(chart, title)
+
+    axis_x = QValueAxis()
+    axis_x.setRange(0, max(1, len(series) - 1))
+    axis_x.setLabelsVisible(False)
+    axis_y = QValueAxis()
+    axis_y.setRange(0, y_max)
+    axis_y.setTitleText(y_title)
+    axis_y.setTitleBrush(QColor(_MUTED))
+    chart.addAxis(axis_x, Qt.AlignmentFlag.AlignBottom)
+    chart.addAxis(axis_y, Qt.AlignmentFlag.AlignLeft)
+    line.attachAxis(axis_x)
+    line.attachAxis(axis_y)
+    _style_axes(axis_x, axis_y)
+
+    view = QChartView(chart)
+    view.setRenderHint(QPainter.RenderHint.Antialiasing)
+    view.setStyleSheet(f"background: {_PANEL}; border-radius: 14px;")
+    return view
+
+
+def make_metrics_dashboard(
+    snapshot: dict[str, Any],
+    cpu_series: Sequence[dict[str, Any]],
+    mem_series: Sequence[dict[str, Any]],
+    parent: QWidget | None = None,
+) -> QWidget:
+    """Machine-activity dashboard: live line + CPU/memory history."""
+    root = QWidget(parent)
+    root.setObjectName("metricsDashboard")
+    root.setStyleSheet(
+        f"#metricsDashboard {{ background: {_BG}; }}"
+        f"QLabel {{ color: {_TEXT}; }}"
+        f"QLabel#sub {{ color: {_MUTED}; font-size: 13px; }}"
+    )
+    layout = QVBoxLayout(root)
+    layout.setContentsMargins(18, 18, 18, 18)
+    layout.setSpacing(12)
+
+    heading = QLabel("Activité machine")
+    heading.setStyleSheet("font-size: 19px; font-weight: 600;")
+    layout.addWidget(heading)
+
+    if snapshot:
+        battery = ""
+        if snapshot.get("battery") is not None:
+            battery = f" · batterie {snapshot['battery']:.0f} %"
+        sub = QLabel(
+            f"Maintenant · CPU {snapshot.get('cpu', 0):.0f} % · "
+            f"mémoire {snapshot.get('mem', 0):.0f} % · "
+            f"disque {snapshot.get('disk', 0):.0f} %{battery}"
+        )
+        sub.setObjectName("sub")
+        layout.addWidget(sub)
+
+    if cpu_series:
+        layout.addWidget(_line_chart("Processeur (24 h)", cpu_series, _ACCENTS[0], "% CPU"), 1)
+    if mem_series:
+        layout.addWidget(_line_chart("Mémoire (24 h)", mem_series, _ACCENTS[1], "% mémoire"), 1)
+    if not cpu_series and not mem_series:
+        note = QLabel("L'historique se remplit pendant que Jarvis tourne. "
+                      "Reviens dans quelques minutes pour voir les courbes.")
+        note.setObjectName("sub")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        layout.addStretch(1)
+
+    return root
 
 
 def make_usage_dashboard(
@@ -199,6 +282,64 @@ class UsageWindow(QMainWindow):
 
     def _show_error(self, message: str) -> None:
         label = QLabel(f"Lecture de l'usage impossible.\n{message}")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet(f"color: {_MUTED}; font-size: 14px;")
+        self.setCentralWidget(label)
+
+
+class _MetricsLoader(QObject):
+    done = Signal(dict, list, list)
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            from jarvis.capabilities.system_metrics import SystemMetricsCapability
+
+            cap = SystemMetricsCapability()
+            snapshot = cap.snapshot().data
+            cpu = cap.history("cpu", "24h").data.get("series", [])
+            mem = cap.history("mem", "24h").data.get("series", [])
+        except Exception as error:  # pragma: no cover - defensive
+            self.failed.emit(str(error))
+            return
+        self.done.emit(snapshot, cpu, mem)
+
+
+class MetricsWindow(QMainWindow):
+    """Standalone machine-activity dashboard window, loaded asynchronously."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Jarvis · Activité machine")
+        self.resize(800, 720)
+        self.setStyleSheet(f"QMainWindow {{ background: {_BG}; }}")
+        self._thread: QThread | None = None
+        self._loader: _MetricsLoader | None = None
+        self.reload()
+
+    def reload(self) -> None:
+        if self._thread is not None and self._thread.isRunning():
+            return
+        placeholder = QLabel("Lecture de l'activité machine…")
+        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        placeholder.setStyleSheet(f"color: {_MUTED}; font-size: 15px;")
+        self.setCentralWidget(placeholder)
+
+        self._thread = QThread(self)
+        self._loader = _MetricsLoader()
+        self._loader.moveToThread(self._thread)
+        self._thread.started.connect(self._loader.run)
+        self._loader.done.connect(self._populate)
+        self._loader.failed.connect(self._show_error)
+        self._loader.done.connect(self._thread.quit)
+        self._loader.failed.connect(self._thread.quit)
+        self._thread.start()
+
+    def _populate(self, snapshot: dict, cpu: list, mem: list) -> None:
+        self.setCentralWidget(make_metrics_dashboard(snapshot, cpu, mem, self))
+
+    def _show_error(self, message: str) -> None:
+        label = QLabel(f"Activité machine indisponible.\n{message}")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setStyleSheet(f"color: {_MUTED}; font-size: 14px;")
         self.setCentralWidget(label)

@@ -23,6 +23,7 @@ from jarvis.capabilities.knowledge import KnowledgeCapability, web_announcement_
 from jarvis.capabilities.mail import MailCapability
 from jarvis.capabilities.media import MediaCapability
 from jarvis.capabilities.memory import MemoryCapability
+from jarvis.capabilities.system_metrics import SystemMetricsCapability
 from jarvis.capabilities.usage import UsageCapability
 from jarvis.capabilities.messaging import MessagingCapability
 from jarvis.capabilities.mouse import MouseCapability
@@ -100,6 +101,8 @@ SAFE_MODE_ALLOWED = frozenset({
     # Token-usage introspection (reads the user's own local transcripts).
     "token_usage", "token_usage_by_model", "token_usage_by_project",
     "token_usage_trend", "compare_token_usage",
+    # Machine-activity introspection (live snapshot and local history).
+    "system_snapshot", "top_processes", "system_usage_history",
     # Activity / privacy introspection and safe stops.
     "recent_activity", "recent_missions", "privacy_overview", "task_status",
     "list_scheduled_messages", "cancel_scheduled_message",
@@ -137,6 +140,7 @@ class ToolRegistry:
         calendar_capability=None,
         mail_capability=None,
         usage_capability=None,
+        system_metrics_capability=None,
         document_capability=None,
         macro_store=None,
         context_store=None,
@@ -263,6 +267,11 @@ class ToolRegistry:
             usage_capability
             if usage_capability is not None
             else UsageCapability()
+        )
+        self.system_metrics = (
+            system_metrics_capability
+            if system_metrics_capability is not None
+            else SystemMetricsCapability()
         )
         self.compute = ComputeCapability()
         self.notes = NotesCapability()
@@ -1170,6 +1179,53 @@ class ToolRegistry:
             debug_live("tool_call", tool="compare_token_usage", period=period)
             result = await asyncio.to_thread(self.usage.compare, period)
             self._debug_tool_result("compare_token_usage", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="system_snapshot",
+            description=(
+                "Donne l'etat machine en direct : charge processeur, memoire, disque "
+                "et batterie. 'comment va mon Mac', 'ma conso CPU la', 'il me reste "
+                "combien de memoire'. Lecture locale instantanee."
+            ),
+        )
+        async def system_snapshot() -> dict:
+            """Live CPU/memory/disk/battery snapshot."""
+            debug_live("tool_call", tool="system_snapshot")
+            result = await asyncio.to_thread(self.system_metrics.snapshot)
+            self._debug_tool_result("system_snapshot", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="top_processes",
+            description=(
+                "Liste les processus les plus gourmands du Mac : 'qu'est-ce qui "
+                "bouffe mon CPU', 'quelle appli prend toute la memoire'. by : 'cpu' "
+                "ou 'memory' ; limit : nombre de processus."
+            ),
+        )
+        async def top_processes(by: str = "cpu", limit: int = 5) -> dict:
+            """Heaviest processes by CPU or memory."""
+            debug_live("tool_call", tool="top_processes", by=by, limit=limit)
+            result = await asyncio.to_thread(self.system_metrics.top_processes, by, limit)
+            self._debug_tool_result("top_processes", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
+            name="system_usage_history",
+            description=(
+                "Historique d'utilisation machine pour tracer une courbe dans le "
+                "temps : 'l'evolution de mon CPU', 'un graphe de ma memoire sur la "
+                "journee'. metric : 'cpu', 'memoire', 'disque', 'charge', 'batterie' ; "
+                "period : '1h', '6h', '24h', '7d'. L'historique se remplit tant que "
+                "Jarvis tourne."
+            ),
+        )
+        async def system_usage_history(metric: str = "cpu", period: str = "24h") -> dict:
+            """Bucketed machine-metric history for charting."""
+            debug_live("tool_call", tool="system_usage_history", metric=metric, period=period)
+            result = await asyncio.to_thread(self.system_metrics.history, metric, period)
+            self._debug_tool_result("system_usage_history", result)
             return result.to_livekit_dict()
 
         @function_tool(
@@ -3610,6 +3666,9 @@ class ToolRegistry:
             token_usage_by_project,
             token_usage_trend,
             compare_token_usage,
+            system_snapshot,
+            top_processes,
+            system_usage_history,
             draft_email,
             get_brightness,
             set_brightness,

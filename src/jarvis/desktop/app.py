@@ -751,7 +751,29 @@ class DesktopShell:
         app.installEventFilter(self.quit_guard)
         self.onboarding = None
         self.usage_window = None
+        self.metrics_window = None
+        self._start_metrics_sampler()
         self.maybe_show_onboarding()
+
+    def _start_metrics_sampler(self):
+        """Accrue machine-metrics history while Jarvis runs (real desktop only)."""
+        self.metrics_sampler = None
+        self.metrics_timer = None
+        if self.controller.demo or self.app.platformName() == "offscreen":
+            return
+        from jarvis.metrics.sampler import MetricsSampler
+
+        sampler = MetricsSampler()
+        if not sampler.available():
+            return
+        self.metrics_sampler = sampler
+        sampler.tick()  # one baseline reading immediately
+        timer = QTimer(self.full)
+        timer.setInterval(20_000)
+        timer.timeout.connect(sampler.tick)
+        timer.start()
+        self.metrics_timer = timer
+        self.app.aboutToQuit.connect(timer.stop)
 
     def show_usage(self):
         """Open the token-usage dashboard (its data loads asynchronously)."""
@@ -764,6 +786,18 @@ class DesktopShell:
         self.usage_window.show()
         self.usage_window.raise_()
         self.usage_window.activateWindow()
+
+    def show_metrics(self):
+        """Open the machine-activity dashboard (data loads asynchronously)."""
+        from jarvis.desktop.charts import MetricsWindow
+
+        if self.metrics_window is None:
+            self.metrics_window = MetricsWindow()
+        else:
+            self.metrics_window.reload()
+        self.metrics_window.show()
+        self.metrics_window.raise_()
+        self.metrics_window.activateWindow()
 
     def maybe_show_onboarding(self):
         """Show the first-run permission screen once, on a real desktop only."""

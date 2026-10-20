@@ -18,7 +18,7 @@ def controls():
     shell = SimpleNamespace(controller=c, full=QWidget(), **{
         key: Mock() for key in ('show_full', 'show_compact', 'show_orb',
                                'show_details', 'show_settings', 'show_usage',
-                               'hide_windows', 'quit')})
+                               'show_metrics', 'hide_windows', 'quit')})
     tray = Mock()
     menu = TrayControls(shell, tray)
     yield app, c, shell, tray, menu

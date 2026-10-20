@@ -8,7 +8,9 @@ pytest.importorskip("PySide6.QtCharts")
 from PySide6.QtCharts import QChartView
 from PySide6.QtWidgets import QApplication
 
-from jarvis.desktop.charts import make_usage_dashboard, _short_day, _millions
+from jarvis.desktop.charts import (
+    make_metrics_dashboard, make_usage_dashboard, _short_day, _millions,
+)
 
 
 @pytest.fixture(scope="module")
@@ -36,6 +38,19 @@ def test_dashboard_builds_two_charts(app):
 
 def test_dashboard_tolerates_empty_series(app):
     widget = make_usage_dashboard({}, [], [])
+    assert widget.findChildren(QChartView) == []
+
+
+def test_metrics_dashboard_builds_two_lines(app):
+    snapshot = {"cpu": 23.0, "mem": 61.0, "disk": 78.0, "battery": 88.0}
+    cpu = [{"ts": 1.0, "value": 20.0}, {"ts": 2.0, "value": 40.0}]
+    mem = [{"ts": 1.0, "value": 55.0}, {"ts": 2.0, "value": 60.0}]
+    widget = make_metrics_dashboard(snapshot, cpu, mem)
+    assert len(widget.findChildren(QChartView)) == 2
+
+
+def test_metrics_dashboard_empty_shows_note_not_charts(app):
+    widget = make_metrics_dashboard({}, [], [])
     assert widget.findChildren(QChartView) == []
 
 
