@@ -6,7 +6,7 @@ import pytest
 pytest.importorskip("PySide6.QtCharts")
 
 from PySide6.QtCharts import QChartView
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from jarvis.desktop.charts import (
     USAGE_PERIODS, make_metrics_dashboard, make_usage_dashboard,
@@ -53,6 +53,24 @@ def test_metrics_dashboard_builds_two_lines(app):
 def test_metrics_dashboard_empty_shows_note_not_charts(app):
     widget = make_metrics_dashboard({}, [], [])
     assert widget.findChildren(QChartView) == []
+
+
+def test_metrics_dashboard_with_processes_and_period(app):
+    from jarvis.desktop.charts import METRIC_PERIODS
+
+    snapshot = {"cpu": 23.0, "mem": 61.0, "disk": 78.0, "battery": 88.0}
+    cpu = [{"ts": 1.0, "value": 20.0}, {"ts": 2.0, "value": 40.0}]
+    procs = [{"name": "Chrome", "value": 25.0}, {"name": "Xcode", "value": 12.0}]
+    clicks = []
+    widget = make_metrics_dashboard(snapshot, cpu, [], procs,
+                                    period="24h", on_period_change=clicks.append)
+    labels = [l.text() for l in widget.findChildren(QLabel)]
+    assert any("Chrome" in t for t in labels)           # process row rendered
+    assert any("gourmands" in t for t in labels)         # process panel title
+    buttons = [b for b in widget.findChildren(QPushButton)]
+    assert len(buttons) == len(METRIC_PERIODS)
+    buttons[0].click()
+    assert clicks
 
 
 def test_plain_label_truncates():

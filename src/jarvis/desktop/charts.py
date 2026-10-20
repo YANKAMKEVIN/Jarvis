@@ -133,13 +133,32 @@ def _line_chart(title: str, series: Sequence[dict[str, Any]], color: str,
     return view
 
 
+def _process_panel(processes: Sequence[dict[str, Any]]) -> QWidget:
+    panel = QWidget()
+    panel.setStyleSheet(f"background: {_PANEL}; border-radius: 14px;")
+    box = QVBoxLayout(panel)
+    box.setContentsMargins(16, 14, 16, 14)
+    box.setSpacing(6)
+    title = QLabel("Processus les plus gourmands (mémoire)")
+    title.setStyleSheet(f"color: {_TEXT}; font-size: 14px; font-weight: 600;")
+    box.addWidget(title)
+    for row in processes[:6]:
+        line = QLabel(f"{plain_label(row.get('name'), 32)}  ·  {row.get('value')} %")
+        line.setStyleSheet(f"color: {_MUTED}; font-size: 13px;")
+        box.addWidget(line)
+    return panel
+
+
 def make_metrics_dashboard(
     snapshot: dict[str, Any],
     cpu_series: Sequence[dict[str, Any]],
     mem_series: Sequence[dict[str, Any]],
+    processes: Sequence[dict[str, Any]] = (),
+    period: str = "",
+    on_period_change=None,
     parent: QWidget | None = None,
 ) -> QWidget:
-    """Machine-activity dashboard: live line + CPU/memory history."""
+    """Machine-activity dashboard: live snapshot, CPU/memory history, top procs."""
     root = QWidget(parent)
     root.setObjectName("metricsDashboard")
     root.setStyleSheet(
@@ -155,6 +174,9 @@ def make_metrics_dashboard(
     heading.setStyleSheet("font-size: 19px; font-weight: 600;")
     layout.addWidget(heading)
 
+    if on_period_change is not None:
+        layout.addWidget(_period_bar(period, on_period_change, METRIC_PERIODS))
+
     if snapshot:
         battery = ""
         if snapshot.get("battery") is not None:
@@ -167,31 +189,38 @@ def make_metrics_dashboard(
         sub.setObjectName("sub")
         layout.addWidget(sub)
 
+    label = {"1h": "1 h", "6h": "6 h", "24h": "24 h", "7d": "7 j"}.get(period, "24 h")
     if cpu_series:
-        layout.addWidget(_line_chart("Processeur (24 h)", cpu_series, _ACCENTS[0], "% CPU"), 1)
+        layout.addWidget(_line_chart(f"Processeur ({label})", cpu_series, _ACCENTS[0], "% CPU"), 1)
     if mem_series:
-        layout.addWidget(_line_chart("Mémoire (24 h)", mem_series, _ACCENTS[1], "% mémoire"), 1)
+        layout.addWidget(_line_chart(f"Mémoire ({label})", mem_series, _ACCENTS[1], "% mémoire"), 1)
     if not cpu_series and not mem_series:
         note = QLabel("L'historique se remplit pendant que Jarvis tourne. "
                       "Reviens dans quelques minutes pour voir les courbes.")
         note.setObjectName("sub")
         note.setWordWrap(True)
         layout.addWidget(note)
+
+    if processes:
+        layout.addWidget(_process_panel(processes))
+
+    if not cpu_series and not mem_series and not processes:
         layout.addStretch(1)
 
     return root
 
 
-# Period presets offered by the dashboard's selector.
+# Period presets offered by each dashboard's selector.
 USAGE_PERIODS = (("today", "Aujourd'hui"), ("7d", "7 j"), ("30d", "30 j"), ("all", "Tout"))
+METRIC_PERIODS = (("1h", "1 h"), ("6h", "6 h"), ("24h", "24 h"), ("7d", "7 j"))
 
 
-def _period_bar(current: str, on_change) -> QWidget:
+def _period_bar(current: str, on_change, periods: Sequence = USAGE_PERIODS) -> QWidget:
     bar = QWidget()
     row = QHBoxLayout(bar)
     row.setContentsMargins(0, 0, 0, 0)
     row.setSpacing(8)
-    for key, label in USAGE_PERIODS:
+    for key, label in periods:
         active = key == current
         button = QPushButton(label)
         button.setCheckable(True)
@@ -354,8 +383,12 @@ class UsageWindow(QMainWindow):
 
 
 class _MetricsLoader(QObject):
-    done = Signal(dict, list, list)
+    done = Signal(dict, list, list, list, str)
     failed = Signal(str)
+
+    def __init__(self, period: str = "24h"):
+        super().__init__()
+        self.period = period
 
     def run(self) -> None:
         try:
@@ -363,12 +396,13 @@ class _MetricsLoader(QObject):
 
             cap = SystemMetricsCapability()
             snapshot = cap.snapshot().data
-            cpu = cap.history("cpu", "24h").data.get("series", [])
-            mem = cap.history("mem", "24h").data.get("series", [])
+            cpu = cap.history("cpu", self.period).data.get("series", [])
+            mem = cap.history("mem", self.period).data.get("series", [])
+            procs = cap.top_processes("memory", 6).data.get("processes", [])
         except Exception as error:  # pragma: no cover - defensive
             self.failed.emit(str(error))
             return
-        self.done.emit(snapshot, cpu, mem)
+        self.done.emit(snapshot, cpu, mem, procs, self.period)
 
 
 class MetricsWindow(QMainWindow):
@@ -377,13 +411,16 @@ class MetricsWindow(QMainWindow):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("Jarvis · Activité machine")
-        self.resize(800, 720)
+        self.resize(820, 780)
         self.setStyleSheet(f"QMainWindow {{ background: {_BG}; }}")
         self._thread: QThread | None = None
         self._loader: _MetricsLoader | None = None
+        self._period = "24h"
         self.reload()
 
-    def reload(self) -> None:
+    def reload(self, period: str | None = None) -> None:
+        if period:
+            self._period = period
         if self._thread is not None and self._thread.isRunning():
             return
         placeholder = QLabel("Lecture de l'activité machine…")
@@ -392,7 +429,7 @@ class MetricsWindow(QMainWindow):
         self.setCentralWidget(placeholder)
 
         self._thread = QThread(self)
-        self._loader = _MetricsLoader()
+        self._loader = _MetricsLoader(self._period)
         self._loader.moveToThread(self._thread)
         self._thread.started.connect(self._loader.run)
         self._loader.done.connect(self._populate)
@@ -401,8 +438,13 @@ class MetricsWindow(QMainWindow):
         self._loader.failed.connect(self._thread.quit)
         self._thread.start()
 
-    def _populate(self, snapshot: dict, cpu: list, mem: list) -> None:
-        self.setCentralWidget(make_metrics_dashboard(snapshot, cpu, mem, self))
+    def _on_period(self, key: str) -> None:
+        self.reload(key)
+
+    def _populate(self, snapshot: dict, cpu: list, mem: list,
+                  procs: list, period: str) -> None:
+        self.setCentralWidget(make_metrics_dashboard(
+            snapshot, cpu, mem, procs, period, self._on_period, self))
 
     def _show_error(self, message: str) -> None:
         label = QLabel(f"Activité machine indisponible.\n{message}")
