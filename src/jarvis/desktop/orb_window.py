@@ -81,7 +81,8 @@ class OrbWindow(QWidget):
 
     def render(self):
         c = self.controller
-        self.orb.state = c.voice_state
+        self.orb.set_appearance(c.appearance)
+        self.orb.state = c.avatar_state()
         self.orb.set_motion(not c.reduced_motion)
         self.orb.update()
         states = {'off': 'Micro fermé', 'starting': 'Connexion…', 'listening': 'En écoute',
@@ -106,6 +107,7 @@ class OrbWindow(QWidget):
                                 ('Ouvrir les détails', self.shell.show_details),
                                 ('Fenêtre complète', self.shell.show_full)):
             menu.addAction(title, callback)
+        menu.addAction('Choisir une apparence…', self.shell.show_appearances)
         menu.addSeparator()
         active = self.controller.voice_worker is not None
         action = menu.addAction('Arrêter le vocal' if active else 'Reconnecter' if self.controller.can_reconnect else 'Démarrer Jarvis',

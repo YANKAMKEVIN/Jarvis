@@ -17,3 +17,6 @@ jarvis-desktop = "jarvis.desktop.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"jarvis.desktop" = ["assets/avatars/*.webp", "assets/avatars/README.md"]
