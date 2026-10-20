@@ -557,3 +557,9 @@ actifs (à partir de 5 M). Une même alerte ne revient pas avant une heure, et
 celle des tokens ne sort qu'une fois par jour. La case **Alertes d'anomalies** du
 menu les coupe (réglage `insights/enabled`, conservé). Le moniteur ne tourne que là
 où l'échantillonneur tourne (pas en démo ni en offscreen).
+
+Si une session vocale est ouverte, Jarvis **annonce aussi l'alerte à voix haute**,
+en une phrase. L'annonce attend que Jarvis soit au repos : elle ne coupe jamais
+une réponse en cours. Une alerte restée plus de 2 minutes en attente est
+abandonnée, puisque la notification l'a déjà portée. La case **Annoncer les
+alertes à voix haute** du menu désactive la voix seule (réglage `insights/voice`).

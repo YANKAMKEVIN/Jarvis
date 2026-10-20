@@ -144,7 +144,8 @@ def test_insight_alerts_toggle_and_notification():
 
     app = QApplication.instance() or QApplication([])
     shell = SimpleNamespace(controller=Controller(), full=QWidget(), insights_enabled=True,
-                            set_insights_enabled=Mock(), tray=Mock(), **{
+                            set_insights_enabled=Mock(), insights_spoken=False,
+                            set_insights_spoken=Mock(), tray=Mock(), **{
                                 key: Mock() for key in ('show_full', 'show_compact', 'show_orb',
                                                        'show_details', 'show_settings', 'show_usage',
                                                        'show_metrics', 'hide_windows', 'quit')})
@@ -152,6 +153,9 @@ def test_insight_alerts_toggle_and_notification():
     assert menu.insights.isCheckable() and menu.insights.isChecked()
     menu.insights.trigger()
     shell.set_insights_enabled.assert_called_once_with(False)
+    assert not menu.insights_spoken.isChecked()
+    menu.insights_spoken.trigger()
+    shell.set_insights_spoken.assert_called_once_with(True)
 
     insight = Insight('cpu_sustained', 'warning', 'Processeur saturé', 'CPU à 95 %.', 0.0)
     DesktopShell.show_insight(shell, insight)
@@ -173,3 +177,15 @@ def test_insight_alerts_toggle_and_notification():
     menu.menu.close()
     shell.full.close()
     shell.full.deleteLater()
+
+
+def test_controller_speaks_alerts_only_in_an_open_session():
+    QApplication.instance() or QApplication([])
+    c = Controller()
+    assert c.announce('alerte') is False  # no session
+    c.voice_worker = SimpleNamespace(announce=Mock())
+    for state, spoken in (('starting', False), ('listening', True), ('speaking', True), ('error', False)):
+        c.voice_state = state
+        assert c.announce('alerte') is spoken
+    assert c.voice_worker.announce.call_count == 2
+    c.voice_worker = None

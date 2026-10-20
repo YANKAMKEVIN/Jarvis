@@ -406,6 +406,13 @@ class Controller(QObject):
         if self.voice_worker and self.voice_state not in {"starting", "stopping", "error"}:
             self.voice_worker.interrupt()
 
+    def announce(self, message):
+        """Speak a proactive alert in the open voice session; False when none is open."""
+        if self.demo or not self.voice_worker or self.voice_state in {"off", "starting", "stopping", "error"}:
+            return False
+        self.voice_worker.announce(message)
+        return True
+
 
 class VoicePanel(QWidget):
     def __init__(self, controller, compact=False):
@@ -759,6 +766,7 @@ class DesktopShell:
         self.usage_window = None
         self.metrics_window = None
         self.insights_enabled = self.settings.value('insights/enabled', True) in (True, 'true')
+        self.insights_spoken = self.settings.value('insights/voice', True) in (True, 'true')
         self._start_metrics_sampler()
         self._start_insight_monitor()
         self.maybe_show_onboarding()
@@ -817,9 +825,15 @@ class DesktopShell:
         self.insights_enabled = bool(enabled)
         self.settings.setValue('insights/enabled', self.insights_enabled)
 
+    def set_insights_spoken(self, enabled):
+        self.insights_spoken = bool(enabled)
+        self.settings.setValue('insights/voice', self.insights_spoken)
+
     def show_insight(self, insight):
         if not self.insights_enabled:
             return
+        if self.insights_spoken:
+            self.controller.announce(insight.message)
         if self.tray is not None:
             icon = (QSystemTrayIcon.MessageIcon.Warning if insight.severity == 'warning'
                     else QSystemTrayIcon.MessageIcon.Information)

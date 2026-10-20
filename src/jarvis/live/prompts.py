@@ -119,3 +119,9 @@ LIVE_SESSION_GREETING = """
 Présente-toi brièvement comme Jarvis et demande comment aider l'utilisateur.
 """.strip()
 
+INSIGHT_ANNOUNCEMENT = """
+Alerte proactive détectée par Jarvis (ce n'est pas une demande de l'utilisateur).
+Annonce-la en une phrase courte et naturelle, sans appeler d'outil, puis propose
+d'en dire plus s'il le souhaite. Alerte : {message}
+""".strip()
+

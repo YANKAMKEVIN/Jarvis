@@ -374,3 +374,32 @@ def test_selected_devices_are_configured_before_connection():
         await task
     asyncio.run(scenario())
 
+
+
+def test_proactive_alerts_wait_for_idle_and_drop_stale_ones(monkeypatch):
+    import jarvis.desktop.live_runtime as live_runtime
+    monkeypatch.setattr(live_runtime, "ANNOUNCEMENT_GAP", 0.0)
+
+    async def scenario():
+        c = components()
+        replies = []
+        greeting = c.session.generate_reply
+        c.session.generate_reply = lambda **kw: (replies.append(kw["instructions"]), greeting(**kw))
+        runtime = LiveRuntime(lambda e: None, factory=lambda: c, prepare=lambda: None)
+        task = asyncio.create_task(runtime.run())
+        await until(lambda: runtime.ready)
+        assert len(replies) == 1  # greeting only
+        c.session.handlers["agent_state_changed"](NS(new_state="speaking"))
+        runtime.announce("Le processeur tourne à 95 %.")
+        await asyncio.sleep(0.15)
+        assert len(replies) == 1  # never over a reply in progress
+        c.session.handlers["agent_state_changed"](NS(new_state="listening"))
+        await until(lambda: len(replies) == 2)
+        assert "Le processeur tourne à 95 %." in replies[1] and "pas une demande" in replies[1]
+        runtime.announcements.put((live_runtime.monotonic() - 3600, "vieille alerte"))
+        await until(runtime.announcements.empty)  # consumed, then dropped as stale
+        assert len(replies) == 2
+        runtime.stop()
+        await asyncio.wait_for(task, 1)
+        assert not any("vieille alerte" in r for r in replies)
+    asyncio.run(scenario())

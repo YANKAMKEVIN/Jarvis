@@ -27,6 +27,9 @@ class LiveWorker(QThread):
     def interrupt(self):
         self.runtime.interrupt()
 
+    def announce(self, message):
+        self.runtime.announce(message)
+
     def set_sounds(self, enabled):
         self.runtime.set_sounds(enabled)
 

@@ -7,6 +7,7 @@ import traceback
 from collections import deque
 from pathlib import Path
 from threading import Event
+from time import monotonic
 from queue import Empty, SimpleQueue
 from types import SimpleNamespace
 import uuid
@@ -112,6 +113,10 @@ def create_components():
         assistant=assistant, audio=audio)
 
 
+ANNOUNCEMENT_MAX_AGE = 120.0
+ANNOUNCEMENT_GAP = 5.0  # lets the agent state leave "listening" before the next one
+
+
 class LiveRuntime:
     def __init__(self, emit, factory=create_components, prepare=prepare_environment):
         self.emit = emit
@@ -133,6 +138,7 @@ class LiveRuntime:
         self.last_task_snapshot = None
         self.input_choice = self.output_choice = None
         self.closing = False
+        self.announcements = SimpleQueue()
 
     def set_devices(self, input_choice, output_choice):
         self.input_choice, self.output_choice = input_choice, output_choice
@@ -152,6 +158,10 @@ class LiveRuntime:
 
     def interrupt(self):
         self.interrupt_requested.set()
+
+    def announce(self, message):
+        """Queue a proactive alert; spoken only once Jarvis is idle, never over a reply."""
+        self.announcements.put((monotonic(), message))
 
     def state(self, state):
         audio = self.components.audio if self.components else None
@@ -264,11 +274,12 @@ class LiveRuntime:
                 c.audio.play_cue("ready")
             self.state("muted" if self.mute_requested.is_set() else "listening")
             phase = "session"
-            from jarvis.live.prompts import LIVE_SESSION_GREETING
+            from jarvis.live.prompts import INSIGHT_ANNOUNCEMENT, LIVE_SESSION_GREETING
             c.session.generate_reply(instructions=LIVE_SESSION_GREETING)
             suppressed = False
             next_meter = 0.0
             next_task_poll = 0.0
+            next_announcement = 0.0
             while not self.stop_requested.is_set():
                 if hasattr(c.audio, 'check_health'):
                     c.audio.check_health()
@@ -304,6 +315,18 @@ class LiveRuntime:
                     if sounds:
                         c.audio.play_cue("ready" if wanted else "muted")
                     self.state(self.agent_state if wanted else "muted")
+                if self.agent_state == "listening" and now >= next_announcement:
+                    try:
+                        queued_at, message = self.announcements.get_nowait()
+                    except Empty:
+                        pass
+                    else:
+                        # A stale alert (Jarvis busy talking for minutes) is dropped:
+                        # the tray notification already carried it.
+                        if monotonic() - queued_at <= ANNOUNCEMENT_MAX_AGE:
+                            c.session.generate_reply(
+                                instructions=INSIGHT_ANNOUNCEMENT.format(message=message))
+                            next_announcement = now + ANNOUNCEMENT_GAP
                 if self.interrupt_requested.is_set():
                     self.interrupt_requested.clear()
                     if self.interruption_task is None or self.interruption_task.done():
