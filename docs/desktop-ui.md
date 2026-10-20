@@ -523,3 +523,25 @@ avec les mêmes **210 échecs préexistants** que le snapshot de référence Lin
 (207 liés aux frameworks macOS absents et 3 à `pypdf` absent). Aucun nouvel
 identifiant de test en échec. Les derniers ajustements de stockage ont été
 revérifiés par la suite ciblée ; la validation native reste à faire sur Mac.
+
+### Tableaux de bord d'introspection (QtCharts)
+
+Deux fenêtres accessibles depuis le menu de la barre (tray) :
+
+- **Consommation (tokens)…** — graphes natifs QtCharts : tokens par jour et
+  répartition par modèle, avec un résumé (générés / entrée / cache / sessions).
+- **Activité machine…** — snapshot live (CPU, mémoire, disque, batterie) et
+  courbes CPU & mémoire sur 24 h.
+
+Les données se chargent sur un **thread de fond**, de sorte qu'une passe
+d'indexation à froid ne fige jamais l'interface. Les réponses vocales
+correspondantes (consommation, activité machine) utilisent aussi la vue Cartes.
+Jarvis peut en outre lancer des sessions Claude depuis la voix — après
+confirmation ; voir le [guide des capacités](capabilities-v2.md).
+
+Rendus Qt réels alimentés par des données réelles (historique machine simulé
+pour l'illustration) :
+
+![Tableau de bord consommation de tokens](screenshots/usage-dashboard.png)
+
+![Tableau de bord activité machine](screenshots/metrics-dashboard.png)

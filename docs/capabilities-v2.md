@@ -141,6 +141,37 @@ actions sortantes d'une mission déjà en cours. Le mode est propre à la sessio
 et ne persiste pas après un redémarrage. L'interrupteur lui-même n'est jamais
 bloqué : il y a toujours un moyen d'en sortir.
 
+## Introspection : tokens, machine et sessions Claude
+
+Trois capacités d'introspection, toutes **locales** et sans réseau.
+
+**Consommation de tokens.** `token_usage`, `token_usage_by_model`,
+`token_usage_by_project`, `token_usage_trend` et `compare_token_usage` lisent les
+transcripts Claude Code sous `~/.claude/projects` et en indexent les compteurs de
+tokens dans un SQLite 0600 (`usage.db`). Seules les **métadonnées** sont indexées
+(modèle, tokens d'entrée/sortie/cache/réflexion, date, dossier de projet) — jamais
+le contenu des messages. L'indexation est **incrémentale** : une passe à froid sur
+quelques Go prend quelques secondes, les suivantes ne lisent que les lignes
+ajoutées. Un coût « équivalent API » est estimé et annoncé comme tel (l'abonnement
+n'étant pas facturé au token). Ces outils sont en lecture seule et autorisés en
+mode sécurité.
+
+**Activité machine.** `system_snapshot` donne l'état en direct (CPU, mémoire,
+disque, batterie) via psutil ; `top_processes` liste les processus les plus
+gourmands ; `system_usage_history` renvoie une série historique lissée par
+intervalles. Un échantillonneur léger tourne dans le desktop (toutes les 20 s) et
+stocke dans un SQLite 0600 (`metrics.db`, rétention 14 jours), si bien que
+l'historique se remplit tant que Jarvis tourne. Lecture seule, autorisés en mode
+sécurité.
+
+**Sessions Claude.** `run_claude_task` lance une session Claude Code **en tâche de
+fond** (`claude -p`) pour une consigne précise et en lit la réponse ;
+`open_claude_session` ouvre une session **interactive** dans le Terminal. Ce sont
+des actions sortantes et conséquentes : elles passent par la **confirmation**
+(token + `confirm_action`), sont **refusées en mode sécurité**, et ne contournent
+jamais les propres autorisations de Claude Code (une tâche one-shot tourne avec les
+permissions par défaut).
+
 ## Vérification
 
 Les tests utilisent des horloges, agendas, documents, modèles et exécuteurs
