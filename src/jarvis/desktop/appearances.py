@@ -1,5 +1,6 @@
 """Appearance metadata is independent of voice sessions and future agent identities."""
 from dataclasses import dataclass
+from jarvis.desktop.avatar_motion import PROFILES
 
 @dataclass(frozen=True)
 class Appearance:
@@ -19,9 +20,7 @@ _NAMES = (
     ('command_deck', 'Command Deck'), ('neural_entity', 'Neural Entity'),
     ('arc_reactor', 'Arc Reactor'),
 )
-CATALOG = tuple(Appearance(key, name, i < 6,
-    ('#85e7ff', '#bda6ff', '#ffce88', '#85e7ff')[i % 4],
-    'float' if i < 6 else ('orbit', 'breathe', 'flow')[i % 3])
+CATALOG = tuple(Appearance(key, name, i < 6, PROFILES[key].accent, key)
     for i, (key, name) in enumerate(_NAMES))
 BY_ID = {item.id: item for item in CATALOG}
 DEFAULT = 'nova_bot'

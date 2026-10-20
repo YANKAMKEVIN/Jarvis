@@ -5,6 +5,7 @@ import math
 from PySide6.QtCore import QPointF, QRectF, QTimer, Qt
 from PySide6.QtGui import QColor, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import QWidget
+from jarvis.desktop.avatar_motion import sample_motion, paint_details
 
 
 def tint(color, alpha):
@@ -112,7 +113,6 @@ class Orb(QWidget):
         return pose_image(self.appearance, self.state)
 
     def paintEvent(self, event):
-        from jarvis.desktop.appearances import BY_ID
         image = self.current_image()
         key = (self.appearance, self.state)
         if key != self.frame_key:
@@ -125,7 +125,6 @@ class Orb(QWidget):
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         side = min(self.width(), self.height())
         p.translate(self.width()/2, self.height()/2)
-        design = BY_ID[self.appearance]
         energy = self.energy if self.motion else 0.0
         phase = self.phase if self.motion else 0.0
         accent = self.accent if self.motion else self._target_color()
@@ -141,14 +140,10 @@ class Orb(QWidget):
         p.setPen(QPen(tint(accent, 65), .8))
         p.drawEllipse(QRectF(-side*.44, side*.43, side*.88, side*.08))
         p.save()
-        if design.motion == 'float':
-            p.translate(0, math.sin(phase*2)*side*.012)
-        elif design.motion == 'orbit':
-            p.rotate(math.sin(phase)*1.5)
-        elif design.motion == 'flow':
-            p.scale(1 + math.sin(phase)*.009, 1 - math.sin(phase)*.009)
-        scale = 1 + energy*.025 + (math.sin(phase*2)*.008 if design.motion == 'breathe' else 0)
-        p.scale(scale, scale)
+        frame = sample_motion(self.appearance, phase, energy, self.state, self.motion)
+        p.translate(frame.x * side, frame.y * side)
+        p.rotate(frame.rotation)
+        p.scale(frame.sx, frame.sy)
         def draw(frame, opacity):
             size = frame.size().scaled(int(side*.86), int(side*.86), Qt.AspectRatioMode.KeepAspectRatio)
             rect = QRectF(-size.width()/2, -size.height()/2, size.width(), size.height())
@@ -159,4 +154,7 @@ class Orb(QWidget):
             draw(self.previous_frame, 1-blend)
         draw(image, blend)
         p.restore()
+        # Reduced motion has no moving decorative layers, including on repaint.
+        if self.motion:
+            paint_details(p, self.appearance, phase, energy, self.state, side)
         p.end()

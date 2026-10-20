@@ -4,6 +4,7 @@ from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QListWidget, QListWidgetItem, QAbstractItemView, QDialogButtonBox
 from jarvis.desktop.appearances import CATALOG
 from jarvis.desktop.avatar_assets import pose_image
+from jarvis.desktop.avatar_motion import PROFILES
 
 class AppearanceGrid(QListWidget):
     def keyPressEvent(self, event):
@@ -33,6 +34,7 @@ class AvatarSelector(QDialog):
         for appearance in CATALOG:
             item = QListWidgetItem(QIcon(QPixmap.fromImage(pose_image(appearance.id))), appearance.name)
             item.setData(Qt.ItemDataRole.UserRole, appearance.id)
+            item.setToolTip(PROFILES[appearance.id].description)
             self.grid.addItem(item)
             if appearance.id == current:
                 self.grid.setCurrentItem(item)

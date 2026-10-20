@@ -100,3 +100,52 @@ def test_selector_keyboard_and_live_modes_preserve_session(app, tmp_path, monkey
         c.voice_worker = None
         if shell.appearance_dialog: shell.appearance_dialog.hide()
         for window in (shell.full, shell.compact, shell.orb_window): window.hide()
+
+@pytest.mark.parametrize('appearance', CATALOG, ids=lambda a: a.id)
+def test_choreography_bounds_and_reduced_motion(appearance):
+    from jarvis.desktop.avatar_motion import MotionFrame, sample_motion
+    for state in ('off', 'listening', 'thinking', 'speaking', 'success', 'error'):
+        for phase in (0, .4, 1.7, 7, 50):
+            frame = sample_motion(appearance.id, phase, 1, state)
+            assert abs(frame.x) <= .02 and abs(frame.y) <= .02
+            assert abs(frame.rotation) <= 3.1
+            assert .95 <= frame.sx <= 1.05 and .95 <= frame.sy <= 1.05
+            assert sample_motion(appearance.id, phase, 1, state, False) == MotionFrame()
+    assert sample_motion(appearance.id, .7, 0, 'listening') != sample_motion(appearance.id, .7, 1, 'listening')
+
+
+@pytest.mark.parametrize('appearance', CATALOG, ids=lambda a: a.id)
+def test_each_choreography_renders_and_reduced_motion_is_still(app, appearance):
+    from jarvis.desktop.visuals import Orb
+    orb = Orb(180)
+    orb.set_appearance(appearance.id)
+    orb.state = 'listening'
+    orb.show()
+    app.processEvents()
+    orb.timer.stop()  # Deterministic phase samples, no wall-clock dependency.
+    try:
+        orb.transition = 1
+        orb.phase = .3
+        first = orb.grab().toImage()
+        orb.phase = 2.1
+        second = orb.grab().toImage()
+        assert first != second
+        orb.set_motion(False)
+        first = orb.grab().toImage()
+        orb.phase = 40
+        orb.energy = 1
+        assert first == orb.grab().toImage()
+        orb.set_motion(True)
+        assert orb.timer.isActive()
+        orb.hide()
+        assert not orb.timer.isActive()
+    finally:
+        orb.hide()
+        orb.deleteLater()
+
+
+def test_catalog_has_distinct_choreography_signatures():
+    from jarvis.desktop.avatar_motion import PROFILES, sample_motion
+    assert set(PROFILES) == {a.id for a in CATALOG}
+    signatures = {tuple(sample_motion(a.id, t, .4, 'listening') for t in (.2, .7, 2)) for a in CATALOG}
+    assert len(signatures) == 16
