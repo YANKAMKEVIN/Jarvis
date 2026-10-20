@@ -9,8 +9,32 @@ from PySide6.QtWidgets import QWidget
 
 def tint(color, alpha):
     value = QColor(color)
-    value.setAlpha(alpha)
+    value.setAlpha(max(0, min(255, int(alpha))))
     return value
+
+
+# Per-state accent colour and idle "awakeness". Both are eased toward (never
+# snapped to) so a change of state reads as a living transition, not a jump; the
+# glow drives a gentle breathing even in silence so the orb is never inert.
+STATE_COLORS = {
+    'thinking': '#bea5ff', 'error': '#f0a7ba', 'muted': '#6a8399',
+    'starting': '#9ad0ea', 'listening': '#87e3ff', 'speaking': '#8af0e0',
+    'off': '#87e3ff',
+}
+STATE_GLOW = {
+    'off': 0.0, 'muted': 0.12, 'starting': 0.45, 'listening': 0.55,
+    'speaking': 0.5, 'thinking': 0.72, 'error': 0.45,
+}
+_DEFAULT_COLOR = '#87e3ff'
+_DEFAULT_GLOW = 0.35
+
+
+def _ease_color(current, target, t):
+    return QColor(
+        round(current.red() + (target.red() - current.red()) * t),
+        round(current.green() + (target.green() - current.green()) * t),
+        round(current.blue() + (target.blue() - current.blue()) * t),
+    )
 
 
 class Orb(QWidget):
@@ -21,10 +45,19 @@ class Orb(QWidget):
         self.state = 'off'
         self.motion = True
         self.target = self.energy = 0.0
+        # Eased presentation state, distinct from the raw logical state above.
+        self.accent = QColor(_DEFAULT_COLOR)
+        self.glow = 0.0
         self.setAccessibleName('État vocal de Jarvis')
         self.timer = QTimer(self)
         self.timer.setInterval(33)
         self.timer.timeout.connect(self.tick)
+
+    def _target_color(self):
+        return QColor(STATE_COLORS.get(self.state, _DEFAULT_COLOR))
+
+    def _target_glow(self):
+        return STATE_GLOW.get(self.state, _DEFAULT_GLOW)
 
     def showEvent(self, event):
         if self.motion:
@@ -55,6 +88,9 @@ class Orb(QWidget):
         self.phase += 0.026 if self.state == 'thinking' else 0.012
         speed = 0.45 if self.target > self.energy else 0.16
         self.energy += (self.target - self.energy) * speed
+        # Ease the presentation toward the current state so transitions glide.
+        self.glow += (self._target_glow() - self.glow) * 0.08
+        self.accent = _ease_color(self.accent, self._target_color(), 0.09)
         self.update()
 
     def paintEvent(self, event):
@@ -62,13 +98,16 @@ class Orb(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         side = self.width()
         p.translate(side / 2, side / 2)
+        # Reduced motion: hold a correct still frame (target colour/glow, no
+        # audio energy, no breathing) instead of a frozen mid-transition.
         energy = self.energy if self.motion else 0.0
         phase = self.phase
-        accent = QColor('#bea5ff' if self.state == 'thinking' else
-                        '#f0a7ba' if self.state == 'error' else
-                        '#6a8399' if self.state == 'muted' else '#87e3ff')
-        radius = side * (0.302 + 0.018 * energy)
-        breath = 0.5 + 0.5 * math.sin(phase * 2)
+        accent = self.accent if self.motion else self._target_color()
+        activation = self.glow if self.motion else self._target_glow()
+        breath = (0.5 + 0.5 * math.sin(phase * 2)) if self.motion else 0.0
+        # Idle breathing of the sphere, scaled by how awake the state is, plus
+        # the real audio envelope on top.
+        radius = side * (0.302 + 0.018 * energy + 0.024 * breath * activation)
         halo = QRadialGradient(QPointF(), side * 0.49)
         halo.setColorAt(0, tint(accent, int(58 + energy * 45)))
         halo.setColorAt(0.55, tint(accent, int(23 + breath * 8)))
@@ -84,7 +123,8 @@ class Orb(QWidget):
             p.drawEllipse(QPointF(), radius * scale, radius * scale)
         for angle in (28, 145, 258):
             p.save()
-            p.rotate(angle + phase * 8)
+            # Organic drift: a slow sine wobble over the steady rotation.
+            p.rotate(angle + phase * 8 + 6 * math.sin(phase * 0.6 + angle))
             ring = QRectF(-radius * 1.18, -radius * 1.18, radius * 2.36, radius * 2.36)
             p.setPen(QPen(tint(accent, 125), 1.2))
             p.drawArc(ring, 0, 17 * 16)
@@ -113,7 +153,7 @@ class Orb(QWidget):
                 x = (u * 2 - 1) * width
                 depth = math.sin(u * math.pi)
                 wave = math.sin(u * math.pi * 3 + phase * 2 + band * 0.32)
-                y = latitude * radius * 0.9 + depth * wave * radius * (0.15 + energy * 0.18)
+                y = latitude * radius * 0.9 + depth * wave * radius * (0.12 + 0.05 * breath * activation + energy * 0.18)
                 point = QPointF(x, y)
                 path.moveTo(point) if step == 0 else path.lineTo(point)
             gradient = QLinearGradient(-width, 0, width, 0)
@@ -125,8 +165,8 @@ class Orb(QWidget):
             p.drawPath(path)
 
         core = QRadialGradient(QPointF(radius * 0.12, radius * 0.02), radius * 0.69)
-        core.setColorAt(0, tint('#e5faff', int(115 + 90 * energy)))
-        core.setColorAt(0.12, tint(accent, int(85 + 90 * energy)))
+        core.setColorAt(0, tint('#e5faff', 115 + 90 * energy + 40 * breath * activation))
+        core.setColorAt(0.12, tint(accent, 85 + 90 * energy + 30 * breath * activation))
         core.setColorAt(0.48, tint(accent, 22))
         core.setColorAt(1, tint(accent, 0))
         p.setPen(Qt.PenStyle.NoPen)
@@ -134,7 +174,7 @@ class Orb(QWidget):
         p.drawEllipse(QPointF(radius * 0.12, radius * 0.02), radius * 0.69, radius * 0.69)
         # Sparse points are fixed in count, with deterministic motion.
         for index in range(24):
-            angle = index * 2.39996 + phase * 0.16
+            angle = index * 2.39996 + phase * 0.16 + 0.4 * math.sin(phase * 0.3 + index)
             distance = radius * math.sqrt((index + 1) / 27)
             x, y = math.cos(angle) * distance, math.sin(angle) * distance
             p.setBrush(tint('#d7f5ff', 70 + index % 4 * 28))
