@@ -424,6 +424,12 @@ def test_routine_request_uses_stored_goal_and_same_task_manager():
         c=components()
         c.assistant.registry.macro_store=NS(get=Mock(return_value={'goal':'Read my agenda'}))
         c.assistant.registry.tasks=NS(start=Mock(return_value={'ok':True,'task_id':'routine-task'}))
+        class MacroTool:
+            info=NS(name='run_macro')
+            async def __call__(self,name):
+                row=c.assistant.registry.macro_store.get(name)
+                return c.assistant.registry.tasks.start(row['goal'])
+        c.assistant.jarvis_tools=[MacroTool()]
         events=[];runtime=LiveRuntime(events.append,factory=lambda:c,prepare=lambda:None)
         runtime.run_routine('Ma journée')
         task=asyncio.create_task(runtime.run())
@@ -431,5 +437,41 @@ def test_routine_request_uses_stored_goal_and_same_task_manager():
         c.assistant.registry.macro_store.get.assert_called_once_with('Ma journée')
         c.assistant.registry.tasks.start.assert_called_once_with('Read my agenda')
         assert any(e.get('type')=='activity' and e.get('status')=='received' for e in events)
+        runtime.stop();await asyncio.wait_for(task,1)
+    asyncio.run(scenario())
+
+def test_muted_microphone_does_not_hide_real_thinking_or_speaking_states():
+    runtime=LiveRuntime(lambda e:None);runtime.set_muted(True)
+    for state in ('thinking','speaking'):
+        runtime.agent_state=state;assert runtime.presentation_state()==state
+    runtime.agent_state='listening';assert runtime.presentation_state()=='muted'
+
+def test_routine_ui_invokes_existing_guarded_tool_and_cannot_bypass_safe_mode(tmp_path):
+    from unittest.mock import Mock
+    from jarvis.live.registry import create_live_registry
+    from jarvis.macros import MacroStore
+    async def scenario():
+        store=MacroStore(tmp_path/'routines.db');store.save('Focus','Read agenda')
+        registry=create_live_registry(macro_store=store,memory_capability=NS(log_action=lambda *a,**k:None))
+        tools=registry.livekit_tools();registry.tasks.start=Mock(return_value={'ok':True,'task_id':'same-manager'})
+        c=components();c.assistant.registry=registry;c.assistant.jarvis_tools=tools
+        events=[];runtime=LiveRuntime(events.append);runtime.components=c
+        await runtime._launch_routine('Focus');registry.tasks.start.assert_called_once_with('Read agenda')
+        registry.read_only_mode=True
+        await runtime._launch_routine('Focus')
+        assert registry.tasks.start.call_count==1 and events[-1]['status']=='error'
+        await registry.aclose()
+    asyncio.run(scenario())
+
+
+def test_task_announcement_waits_until_push_to_talk_is_released():
+    async def scenario():
+        c=components();calls=[];c.session.generate_reply=lambda **kw:calls.append(kw)
+        runtime=LiveRuntime(lambda e:None,factory=lambda:c,prepare=lambda:None);runtime.set_push_to_talk(True)
+        task=asyncio.create_task(runtime.run());await until(lambda:runtime.ready)
+        await runtime._announce_task('Mission completed')
+        await asyncio.sleep(.08);assert not calls
+        runtime.finish_push_to_talk();await until(lambda:bool(calls))
+        assert calls[0]['instructions']=='Mission completed'
         runtime.stop();await asyncio.wait_for(task,1)
     asyncio.run(scenario())

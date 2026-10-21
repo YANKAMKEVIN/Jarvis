@@ -642,7 +642,7 @@ class VoicePanel(QWidget):
                                   'Reconnecter' if c.can_reconnect else 'Réessayer' if state == 'error' else 'Démarrer Jarvis')
         self.voice_button.setEnabled(not c.demo and c.audio_worker is None and state not in {"starting", "stopping"} and not (state == "error" and active))
         for control in (self.mic_button, self.interrupt_button):
-            control.setVisible(active)
+            control.setVisible(active and not (control is self.mic_button and c.ptt_enabled))
             control.setEnabled(active and state not in {"starting", "stopping", "error"})
         self.mic_button.setText("Couper le micro" if c.voice_mic_open else "Réactiver le micro")
         if c.screen_operations and state not in {'off', 'error', 'stopping'}:
@@ -669,6 +669,11 @@ class VoicePanel(QWidget):
             notice = "Micro fermé"
         else:
             notice = "Le micro s’ouvre uniquement après votre activation."
+        if c.ptt_enabled and active and not c.voice_error and state not in {'error','stopping'}:
+            notice='Micro ouvert pendant le maintien' if c.ptt_held else 'Micro fermé · maintien pour parler activé'
+            if state=='muted':
+                self.status.setText('Maintenir pour parler')
+                self.hint.setText('Maintenez ⌘⌥Espace, ou Espace lorsque le compagnon a le focus.')
         self.voice_notice.setText(c.recovery_message or notice)
         self.voice_notice.setStyleSheet("color: #e5a0aa;" if c.voice_error else "color: #91a9c1;")
         self.footnote.setText("JARVIS · ASSISTANT VOCAL" if not active else "GEMINI LIVE · CONFIRMATIONS VOCALES")
@@ -838,6 +843,7 @@ class DesktopShell:
                     setattr(controller, attribute, choice)
                 except (TypeError, ValueError):
                     controller.device_config_invalid = True
+        controller.ptt_enabled=self.settings.value('input/push_to_talk',False) in (True,'true')
         controller.devices_changed.connect(self.save_devices)
         controller.sounds_enabled = self.settings.value("audio/sounds", False) in (True, "true")
         controller.reduced_motion = self.settings.value("appearance/reduced_motion", controller.reduced_motion) in (True, "true")
@@ -871,7 +877,6 @@ class DesktopShell:
         self.hotkey.set_enabled(controller.hotkey_enabled)
         app.aboutToQuit.connect(self.hotkey.close)
         from jarvis.desktop.hotkey import HoldHotkey
-        controller.ptt_enabled=self.settings.value('input/push_to_talk',False) in (True,'true')
         self.hold_hotkey=HoldHotkey(controller.begin_push_to_talk,controller.end_push_to_talk,parent=controller,
                                    demo=controller.demo or app.platformName()=='offscreen')
         self.hold_hotkey.set_enabled(controller.ptt_enabled)

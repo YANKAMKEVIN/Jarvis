@@ -68,7 +68,9 @@ class RoutineDialog(QDialog):
     def launch(self):
         item=self.list.currentItem()
         if not item:self.notice.setText('Enregistrez et sélectionnez une routine avant de la lancer.');return
-        row=self.store.get(item.text())
+        try:row=self.store.get(item.text())
+        except (OSError,sqlite3.Error):
+            self.notice.setText('Routine locale indisponible.');return
         if not row or self.name.text().strip()!=row['name'] or self.goal.toPlainText().strip()!=row['goal']:
             self.notice.setText('Enregistrez vos modifications avant de lancer la routine.');return
         self.controller.run_routine(item.text());self.run.setEnabled(False)

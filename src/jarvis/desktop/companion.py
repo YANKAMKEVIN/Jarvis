@@ -87,10 +87,15 @@ class CompanionWindow(OrbWindow):
 
     def apply_preferences(self):
         size=min(180,self.preferences.size) if self.discreet else self.preferences.size
+        previous_size=self.size()
         self.orb.setFixedSize(size,size)
         self.setFixedSize(size,size+20)
         self.open_button.move(size-78,4);self.menu_button.move(size-40,4)
         self.setWindowOpacity(self.preferences.opacity)
+        if self.preferences.anchor=='free' and self.size()!=previous_size:
+            area=self.screen().availableGeometry()
+            self.move(max(area.left(),min(self.x(),area.right()-self.width()+1)),
+                      max(area.top(),min(self.y(),area.bottom()-self.height()+1)))
         self.apply_anchor()
         self.reset_idle()
 
@@ -181,6 +186,7 @@ class CompanionWindow(OrbWindow):
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.KeyPress:
             if event.key() == Qt.Key.Key_Escape:
+                self.controller.end_push_to_talk()
                 self.conceal_controls()
                 return True
             if event.key() in {Qt.Key.Key_Tab, Qt.Key.Key_Backtab} and not self.keyboard_controls:
@@ -211,6 +217,7 @@ class CompanionWindow(OrbWindow):
             self.apply_anchor();self.reset_idle();self.bubble.present_next()
 
     def hideEvent(self, event):
+        self.controller.end_push_to_talk()
         if hasattr(self,"idle_timer"):
             self.idle_timer.stop();self.bubble.suspend()
         if self.menu is not None:

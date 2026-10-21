@@ -23,9 +23,10 @@ def create_assistant_class(agent_base_class, registry_factory=create_live_regist
     class JarvisLiveAssistant(agent_base_class):
         def __init__(self) -> None:
             self.registry = registry_factory()
+            self.jarvis_tools=self.registry.livekit_tools()
             super().__init__(
                 instructions=LIVE_SYSTEM_PROMPT,
-                tools=self.registry.livekit_tools(),
+                tools=self.jarvis_tools,
             )
             # Background tasks finish later: let them speak their result.
             self.registry.set_task_notifier(self.announce)

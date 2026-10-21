@@ -133,3 +133,27 @@ def test_routine_templates_are_configuration_not_execution(ui,tmp_path):
         dialog.launch();c.voice_worker.run_routine.assert_called_once_with('Ma journée')
         dialog.delete();assert not store.list()
     finally:dialog.close();dialog.deleteLater()
+
+def test_restore_hold_preference_before_render_and_do_not_unmute_on_disable(ui):
+    app,c,shell=ui;c.demo=False;c.voice_worker=Mock();c.voice_state='muted'
+    shell.set_push_to_talk(True)
+    assert 'Maintenir' in shell.compact.voice_button.accessibleName()
+    assert not shell.full.assistant.mic_button.isVisible()
+    c.microphone_muted=True;shell.set_push_to_talk(False)
+    assert c.microphone_muted
+    c.voice_worker.set_muted.assert_called_with(True)
+
+def test_stale_recovery_timer_cannot_restart_a_healthy_or_nonretryable_session(ui):
+    app,c,shell=ui;r=shell.recovery;r.enabled=True;c.voice_desired=True;c.can_reconnect=False;c.voice_state='error'
+    c.start_voice=Mock();r.retry();c.start_voice.assert_not_called()
+    c.can_reconnect=True;r.observe();assert r.timer.isActive()
+    c.can_reconnect=False;c.voice_state='starting';r.observe();assert not r.timer.isActive()
+
+def test_recovery_never_resubmits_existing_missions(ui):
+    from jarvis.desktop.presentation import project_task
+    app,c,shell=ui
+    c.missions['old']=project_task({'id':'old','objective':'Original','status':'unknown','steps':[]})
+    old=c.missions.copy();c.voice_desired=True;c.voice_state='error';c.can_reconnect=True
+    c.start_voice=Mock();shell.recovery.enabled=True;shell.recovery.retry()
+    assert c.missions==old
+    c.start_voice.assert_called_once_with(reconnect=True,_automatic=True)

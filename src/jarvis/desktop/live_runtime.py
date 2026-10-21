@@ -137,6 +137,8 @@ class LiveRuntime:
         self.cancel_task_requested = Event()
         self.task_cancellations = SimpleQueue()
         self.observed_tools = set()
+        self.activity_serial=0
+        self.task_announcements=deque(maxlen=8)
         self.last_task_snapshot = None
         self.input_choice = self.output_choice = None
         self.closing = False
@@ -173,15 +175,19 @@ class LiveRuntime:
         if isinstance(name,str) and 0<len(name)<=80:self.routine_requests.put(name)
 
     async def _launch_routine(self,name):
-        registry=self.components.assistant.registry
+        # Invoke the exact tool already registered with the agent, including its
+        # journal and safe-mode guard. Rebuilding tools would replace TaskManager.
+        before=self.activity_serial
         try:
-            macro=await asyncio.to_thread(registry.macro_store.get,name)
-            if macro is None:
-                result={'ok':False,'message':'Routine introuvable.'}
-            else:result=registry.tasks.start(macro['goal'])
+            tool=next(t for t in self.components.assistant.jarvis_tools if t.info.name=='run_macro')
+            result=await tool(name)
         except Exception:result={'ok':False,'message':'Routine locale indisponible.'}
-        self.emit(project_activity('run_macro',result,uuid.uuid4().hex))
+        if self.activity_serial==before:
+            self.emit(project_activity('run_macro',result,uuid.uuid4().hex))
         self._task_progress()
+
+    async def _announce_task(self,instructions):
+        self.task_announcements.append((monotonic(),instructions))
 
     def announce(self, message):
         """Queue a proactive alert; spoken only once Jarvis is idle, never over a reply."""
@@ -192,10 +198,14 @@ class LiveRuntime:
         self.emit({"type": "state", "state": state, "mic_open": bool(audio and audio.mic_open),
                    "input_suppressed": bool(audio and getattr(audio, "input_suppressed", False))})
 
+    def presentation_state(self):
+        if self.agent_state in {'speaking','thinking'}:return self.agent_state
+        return 'muted' if self.mute_requested.is_set() else self.agent_state
+
     def _agent_changed(self, event):
         self.agent_state = event.new_state
         if self.ready and not self.stop_requested.is_set():
-            self.state("muted" if self.mute_requested.is_set() else self.agent_state)
+            self.state(self.presentation_state())
 
     def _conversation(self, event):
         item = event.item
@@ -217,6 +227,7 @@ class LiveRuntime:
             self.stop_requested.set()
 
     def _registry_activity(self, event):
+        self.activity_serial+=1
         self.observed_tools.add(event['tool'])
         self.emit(project_activity(event['tool'], event.get('result'), event['id'], event['phase']))
 
@@ -280,6 +291,8 @@ class LiveRuntime:
                 c.audio.configure_devices(self.input_choice, self.output_choice)
             if hasattr(c.assistant.registry, "set_activity_observer"):
                 c.assistant.registry.set_activity_observer(self._registry_activity)
+            if hasattr(c.assistant.registry,"set_task_notifier"):
+                c.assistant.registry.set_task_notifier(self._announce_task)
             c.session.input.audio = c.audio.input
             c.session.output.audio = c.audio.output
             c.session.on("agent_state_changed", self._agent_changed)
@@ -337,7 +350,7 @@ class LiveRuntime:
                 current_suppression = bool(getattr(c.audio, "input_suppressed", False))
                 if current_suppression != suppressed:
                     suppressed = current_suppression
-                    self.state("muted" if self.mute_requested.is_set() else self.agent_state)
+                    self.state(self.presentation_state())
                 if self.ptt_release_requested.is_set():
                     self.ptt_release_requested.clear()
                     if self.mute_requested.is_set() and c.audio.mic_open:
@@ -349,19 +362,18 @@ class LiveRuntime:
                     c.audio.set_microphone(wanted)
                     if sounds:
                         c.audio.play_cue("ready" if wanted else "muted")
-                    self.state(self.agent_state if wanted else "muted")
+                    self.state(self.presentation_state())
                 if self.agent_state == "listening" and now >= next_announcement and (not self.ptt_mode_requested.is_set() or self.mute_requested.is_set()):
+                    task_notice=bool(self.task_announcements)
                     try:
-                        queued_at, message = self.announcements.get_nowait()
+                        queued_at,message=self.task_announcements.popleft() if task_notice else self.announcements.get_nowait()
                     except Empty:
                         pass
                     else:
-                        # A stale alert (Jarvis busy talking for minutes) is dropped:
-                        # the tray notification already carried it.
-                        if monotonic() - queued_at <= ANNOUNCEMENT_MAX_AGE:
-                            c.session.generate_reply(
-                                instructions=INSIGHT_ANNOUNCEMENT.format(message=message))
-                            next_announcement = now + ANNOUNCEMENT_GAP
+                        if monotonic()-queued_at<=ANNOUNCEMENT_MAX_AGE:
+                            instructions=message if task_notice else INSIGHT_ANNOUNCEMENT.format(message=message)
+                            c.session.generate_reply(instructions=instructions)
+                            next_announcement=now+ANNOUNCEMENT_GAP
                 if self.interrupt_requested.is_set():
                     self.interrupt_requested.clear()
                     if self.interruption_task is None or self.interruption_task.done():

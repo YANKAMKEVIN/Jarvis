@@ -94,3 +94,17 @@ def test_hold_hotkey_queues_press_and_release_and_disable_closes_gate():
     instance.processEvents();assert events==['press','release']
     backend.press();hold.set_enabled(False);instance.processEvents()
     assert events[-1]=='release' and events.count('press')==1
+
+def test_stale_hold_press_cannot_open_microphone_after_rapid_reregistration():
+    from jarvis.desktop.hotkey import HoldHotkey
+    instance=app()
+    class Backend:
+        def start(self,press,release):self.press=press;return True
+        def close(self):return True
+    backend=Backend();events=[]
+    hold=HoldHotkey(lambda:events.append('press'),lambda:events.append('release'),backend_factory=lambda:backend,platform='darwin')
+    hold.set_enabled(True);old_press=backend.press
+    hold.set_enabled(False);hold.set_enabled(True);events.clear()
+    old_press();instance.processEvents();assert not events
+    backend.press();instance.processEvents();assert events==['press']
+    hold.close()

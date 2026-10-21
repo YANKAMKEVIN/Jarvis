@@ -141,21 +141,18 @@ class GlobalHotkey(QObject):
 
 
 class HoldHotkey(QObject):
-    pressed=Signal()
-    released=Signal()
+    transition=Signal(int,bool)
     changed=Signal()
     def __init__(self,begin,end,parent=None,backend_factory=None,platform=None,demo=False):
         super().__init__(parent)
         self.factory=backend_factory or (lambda:CarbonBackend(modifiers=(1<<8)|(1<<11),identifier=2))
         self.platform=platform or sys.platform;self.demo=demo
-        self.backend=None;self.active=False;self.begin=begin;self.end=end
+        self.backend=None;self.active=False;self.begin=begin;self.end=end;self.generation=0
         self.message='Maintien pour parler désactivé.'
-        self.pressed.connect(self.dispatch_press,Qt.ConnectionType.QueuedConnection)
-        self.released.connect(self.dispatch_release,Qt.ConnectionType.QueuedConnection)
-    def dispatch_press(self):
-        if self.active:self.begin()
-    def dispatch_release(self):
-        self.end()
+        self.transition.connect(self.dispatch,Qt.ConnectionType.QueuedConnection)
+    def dispatch(self,generation,pressed):
+        if generation==self.generation and self.active:
+            self.begin() if pressed else self.end()
     def set_enabled(self,enabled):
         if not self.close():
             self.message='Raccourci de maintien non libéré. Relancez Jarvis.'
@@ -164,13 +161,14 @@ class HoldHotkey(QObject):
         else:
             try:
                 self.backend=self.factory()
-                self.active=bool(self.backend.start(self.pressed.emit,self.released.emit))
+                generation=self.generation
+                self.active=bool(self.backend.start(lambda:self.transition.emit(generation,True),lambda:self.transition.emit(generation,False)))
             except Exception:self.active=False
             self.message='Maintenir ⌘⌥Espace pour parler.' if self.active else '⌘⌥Espace indisponible · Espace sur le compagnon reste disponible.'
             if not self.active:self.close()
         self.changed.emit()
     def close(self):
-        self.active=False;self.end()
+        self.generation+=1;self.active=False;self.end()
         if self.backend is not None:
             try:return self.backend.close() is not False
             except Exception:return False

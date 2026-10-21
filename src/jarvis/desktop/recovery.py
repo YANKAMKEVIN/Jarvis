@@ -41,7 +41,8 @@ class VoiceRecovery(QObject):
                 c.end_push_to_talk();self.restored_notified=False
             if c.voice_worker is not None or c.audio_worker is not None:return
             eligible=self.pending_wake or (c.voice_state=='error' and c.can_reconnect)
-            if not eligible:return
+            if not eligible:
+                self.timer.stop();return
             if self.attempts>=3:
                 self.set_message('Reconnexion interrompue après 3 essais · réessayez depuis le menu.');return
             if not self.timer.isActive():
@@ -54,11 +55,14 @@ class VoiceRecovery(QObject):
         if self.closed or self.sleeping or not self.enabled or not c.voice_desired or c.user_stop_requested or c.quit_after_voice:return
         if c.voice_worker is not None or c.audio_worker is not None:
             self.observe();return
+        if not (self.pending_wake or (c.voice_state=='error' and c.can_reconnect)):return
         self.attempts+=1;self.pending_wake=False
+        c.recovery_message=f'Reconnexion en cours · essai {self.attempts}/3'
         c.microphone_muted=c.microphone_muted or c.ptt_enabled
         c.start_voice(reconnect=True,_automatic=True)
     def manual_start(self):
         self.timer.stop();self.stable.stop();self.attempts=0;self.restored_notified=False;self.pending_wake=False
+        self.c.recovery_message=''
     def mark_stable(self):
         if self.c.voice_worker and self.c.voice_state in READY:self.attempts=0
     def before_sleep(self):
