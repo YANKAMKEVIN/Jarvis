@@ -21,7 +21,9 @@ SIGNATURE = fourcc('Jrvs')
 
 
 class CarbonBackend:
-    def __init__(self):
+    def __init__(self, modifiers=768, identifier=1):
+        self.modifiers=modifiers
+        self.identifier=identifier
         self.api = C.CDLL('/System/Library/Frameworks/Carbon.framework/Carbon')
         api = self.api
         api.GetApplicationEventTarget.argtypes = []
@@ -32,6 +34,8 @@ class CarbonBackend:
         api.RegisterEventHotKey.argtypes = [C.c_uint32, C.c_uint32, HotkeyID,
             C.c_void_p, C.c_uint32, C.POINTER(C.c_void_p)]
         api.RegisterEventHotKey.restype = C.c_int32
+        api.GetEventKind.argtypes=[C.c_void_p]
+        api.GetEventKind.restype=C.c_uint32
         api.GetEventParameter.argtypes = [C.c_void_p, C.c_uint32, C.c_uint32,
             C.c_void_p, C.c_uint32, C.c_void_p, C.c_void_p]
         api.GetEventParameter.restype = C.c_int32
@@ -42,25 +46,27 @@ class CarbonBackend:
         self.hotkey = C.c_void_p()
         self.callback = None
 
-    def start(self, trigger):
+    def start(self, trigger, released=None):
         def receive(next_handler, event, userdata):
             try:
                 identifier = HotkeyID()
                 result = self.api.GetEventParameter(event, fourcc('----'), fourcc('hkid'),
                     None, C.sizeof(identifier), None, C.byref(identifier))
-                if result == 0 and identifier.signature == SIGNATURE and identifier.id == 1:
-                    trigger()  # Emits a queued Qt signal; never calls Qt UI here.
+                if result == 0 and identifier.signature == SIGNATURE and identifier.id == getattr(self,'identifier',1):
+                    callback = released if released is not None and self.api.GetEventKind(event)==9 else trigger
+                    callback()  # Emits a queued Qt signal; never calls Qt UI here.
                     return 0
             except Exception:
                 pass
             return -9874  # eventNotHandledErr
         self.callback = CALLBACK(receive)  # Keep the C callback alive until removal.
         target = self.api.GetApplicationEventTarget()
-        spec = EventType(fourcc('keyb'), 6)  # kEventHotKeyPressed
-        if self.api.InstallEventHandler(target, self.callback, 1, C.byref(spec), None, C.byref(self.handler)):
+        kinds=(6,9) if released is not None else (6,)
+        spec=(EventType*len(kinds))(*(EventType(fourcc('keyb'),kind) for kind in kinds))
+        if self.api.InstallEventHandler(target, self.callback, len(kinds), spec, None, C.byref(self.handler)):
             self.close()
             return False
-        if self.api.RegisterEventHotKey(49, (1 << 8) | (1 << 9), HotkeyID(SIGNATURE, 1),
+        if self.api.RegisterEventHotKey(49, getattr(self,'modifiers',768), HotkeyID(SIGNATURE,getattr(self,'identifier',1)),
                                        target, 1, C.byref(self.hotkey)):  # kEventHotKeyExclusive
             self.close()
             return False
@@ -131,4 +137,41 @@ class GlobalHotkey(QObject):
             except Exception:
                 return False
             # Keep the backend alive so its callback cannot be collected during cleanup.
+        return True
+
+
+class HoldHotkey(QObject):
+    pressed=Signal()
+    released=Signal()
+    changed=Signal()
+    def __init__(self,begin,end,parent=None,backend_factory=None,platform=None,demo=False):
+        super().__init__(parent)
+        self.factory=backend_factory or (lambda:CarbonBackend(modifiers=(1<<8)|(1<<11),identifier=2))
+        self.platform=platform or sys.platform;self.demo=demo
+        self.backend=None;self.active=False;self.begin=begin;self.end=end
+        self.message='Maintien pour parler désactivé.'
+        self.pressed.connect(self.dispatch_press,Qt.ConnectionType.QueuedConnection)
+        self.released.connect(self.dispatch_release,Qt.ConnectionType.QueuedConnection)
+    def dispatch_press(self):
+        if self.active:self.begin()
+    def dispatch_release(self):
+        self.end()
+    def set_enabled(self,enabled):
+        if not self.close():
+            self.message='Raccourci de maintien non libéré. Relancez Jarvis.'
+        elif not enabled:self.message='Maintien pour parler désactivé.'
+        elif self.demo or self.platform!='darwin':self.message='Espace sur le compagnon · raccourci global indisponible.'
+        else:
+            try:
+                self.backend=self.factory()
+                self.active=bool(self.backend.start(self.pressed.emit,self.released.emit))
+            except Exception:self.active=False
+            self.message='Maintenir ⌘⌥Espace pour parler.' if self.active else '⌘⌥Espace indisponible · Espace sur le compagnon reste disponible.'
+            if not self.active:self.close()
+        self.changed.emit()
+    def close(self):
+        self.active=False;self.end()
+        if self.backend is not None:
+            try:return self.backend.close() is not False
+            except Exception:return False
         return True

@@ -99,6 +99,7 @@ def card(title, text):
 
 
 class Controller(QObject):
+    notice = Signal(object)
     appearance_requested = Signal()
     appearance_changed = Signal(str)
     changed = Signal()
@@ -112,6 +113,10 @@ class Controller(QObject):
     def __init__(self, demo=False):
         super().__init__()
         self.demo = demo
+        self.ptt_enabled=False
+        self.ptt_held=False
+        self.ptt_timer=QTimer(self);self.ptt_timer.setSingleShot(True);self.ptt_timer.setInterval(45000)
+        self.ptt_timer.timeout.connect(self.end_push_to_talk)
         self.avatar_feedback = None
         self.feedback_timer = QTimer(self)
         self.feedback_timer.setSingleShot(True)
@@ -121,6 +126,8 @@ class Controller(QObject):
         self.reduced_motion = False
         self.voice_worker = None
         self.voice_state = "off"
+        self.voice_desired=False
+        self.recovery_message=""
         self.voice_mic_open = False
         self.input_suppressed = False
         self.voice_error = ""
@@ -253,19 +260,21 @@ class Controller(QObject):
         if self.voice_worker:
             self.voice_worker.set_sounds(enabled)
 
-    def start_voice(self, reconnect=None):
+    def start_voice(self, reconnect=None,_automatic=False):
         if self.demo or self.voice_worker is not None or self.audio_worker is not None:
             return
         if self.device_config_invalid:
             self.voice_state, self.voice_error = 'error', 'Choix audio enregistré invalide. Sélectionnez vos périphériques dans Réglages.'
             self.changed.emit()
             return
+        self.voice_desired=True
+        if hasattr(self,'recovery') and not _automatic:self.recovery.manual_start()
         reconnect = self.can_reconnect if reconnect is None else reconnect
         self.reconnecting = bool(reconnect)
         self.can_reconnect = False
         self.user_stop_requested = False
         if not reconnect:
-            self.microphone_muted = False
+            self.microphone_muted = self.ptt_enabled and not self.ptt_held
         from jarvis.desktop.live_runtime import VoiceSetupError, preload_live_plugins
         self.voice_state, self.voice_error = "starting", ""
         self.voice_turns = 0
@@ -289,6 +298,7 @@ class Controller(QObject):
         from jarvis.desktop.live_worker import LiveWorker
         worker = LiveWorker(self)
         self.voice_worker = worker
+        if self.ptt_enabled:worker.set_push_to_talk(True)
         if self.input_choice is not None or self.output_choice is not None:
             worker.set_devices(self.input_choice, self.output_choice)
         if self.microphone_muted:
@@ -303,6 +313,8 @@ class Controller(QObject):
         worker.start()
 
     def stop_voice(self):
+        self.voice_desired=False
+        self.end_push_to_talk()
         self.user_stop_requested = True
         self.can_reconnect = False
         if self.voice_worker is not None:
@@ -339,6 +351,9 @@ class Controller(QObject):
             self.changed.emit()
             return
         if event.get('type') == 'missions':
+            for item in event['missions']:
+                if item:
+                    self.mission_notice(item,self.missions.get(item['id'],{}).get('status'))
             for mission in event['missions']:
                 if mission and mission.get('status') in {'completed', 'failed'} and self.missions.get(mission['id'], {}).get('status') != mission['status']:
                     self.avatar_feedback = 'success' if mission['status'] == 'completed' else 'error'
@@ -355,6 +370,7 @@ class Controller(QObject):
             self.changed.emit()
             return
         if event.get('type') == 'task_progress':
+            self.mission_notice(event,self.task.get('status') if self.task and self.task['id']==event['id'] else None)
             if self.task and self.task['id'] != event['id']:
                 previous = dict(self.task)
                 if previous['status'] in {'running', 'cancelling'}:
@@ -366,6 +382,8 @@ class Controller(QObject):
             self.changed.emit()
             return
         if event.get("type") == "tool_receipt":
+            if event.get('status')=='confirmation':
+                self.notice.emit({'key':'confirmation:'+event.get('label',''), 'text':'J’attends votre accord vocal', 'destination':'details'})
             states = {"received": "Résultat reçu", "confirmation": "Accord vocal attendu",
                       "error": "L’outil signale un problème"}
             self.tool_notice = f"{event['label']} · {states.get(event.get('status'), 'Résultat reçu')}"
@@ -390,6 +408,7 @@ class Controller(QObject):
             self.input_suppressed = event.get("input_suppressed", False)
             self.voice_error = event.get("message", "")
             if state == 'error':
+                self.notice.emit({'key':'voice:error:'+self.voice_error,'text':'Connexion vocale interrompue · voir les détails','destination':'settings'})
                 self.can_reconnect = bool(event.get('retryable')) and not self.user_stop_requested
             if state in {'listening', 'muted', 'speaking', 'thinking'}:
                 self.reconnecting = False
@@ -402,6 +421,53 @@ class Controller(QObject):
                     if mission['status'] in {'queued', 'waiting_dependency', 'paused', 'running', 'cancelling'}:
                         mission['status'] = 'unknown'
             self.changed.emit()
+
+    def set_push_to_talk(self,enabled):
+        self.end_push_to_talk()
+        self.ptt_enabled=bool(enabled)
+        if self.voice_worker:self.voice_worker.set_push_to_talk(enabled)
+        if enabled and self.voice_worker:
+            self.microphone_muted=True;self.voice_worker.set_muted(True)
+        self.changed.emit()
+
+    def begin_push_to_talk(self):
+        if not self.ptt_enabled or self.ptt_held or self.demo or self.audio_worker is not None or self.voice_state=='stopping':return
+        if self.voice_worker and self.voice_state=='error':return
+        self.ptt_held=True;self.ptt_timer.start()
+        if not self.voice_worker:self.start_voice()
+        if self.voice_worker:
+            if self.voice_state=='speaking':self.voice_worker.interrupt()
+            self.microphone_muted=False;self.voice_worker.set_muted(False)
+        else:
+            self.ptt_held=False;self.ptt_timer.stop()
+        self.changed.emit()
+
+    def end_push_to_talk(self):
+        if not self.ptt_held:return
+        self.ptt_held=False;self.ptt_timer.stop();self.microphone_muted=True
+        if self.voice_worker:
+            self.voice_worker.finish_push_to_talk()
+        self.changed.emit()
+
+    def run_routine(self,name):
+        if self.demo or not self.voice_worker or self.voice_state in {'starting','stopping','error'}:return
+        self.voice_worker.run_routine(name)
+
+    def mission_notice(self,mission,previous):
+        status=mission.get('status')
+        labels={'completed':'Votre mission est terminée','failed':'Une mission a échoué',
+                'needs_confirmation':'Une mission attend votre accord vocal','needs_clarification':'Une mission attend une précision'}
+        if status in labels and status!=previous:
+            self.notice.emit({'key':f"mission:{mission['id']}:{status}",'text':labels[status], 'mission_id':mission['id']})
+
+    def contextual_voice_action(self):
+        if self.ptt_enabled:return
+        if self.demo or self.audio_worker is not None or self.voice_state in {'starting','stopping'}: return
+        if self.voice_worker:
+            if self.voice_state=='error': return
+            if self.voice_state=='speaking': self.interrupt_voice()
+            else: self.toggle_microphone()
+        else: self.start_voice()
 
     def avatar_state(self):
         if self.voice_state == 'error' or self.avatar_feedback == 'error':
@@ -426,6 +492,7 @@ class Controller(QObject):
             self.exit_ready.emit()
 
     def toggle_microphone(self):
+        if self.ptt_enabled:return
         if self.voice_worker and self.voice_state not in {"starting", "stopping", "error"}:
             self.microphone_muted = self.voice_mic_open
             self.voice_worker.set_muted(self.microphone_muted)
@@ -602,7 +669,7 @@ class VoicePanel(QWidget):
             notice = "Micro fermé"
         else:
             notice = "Le micro s’ouvre uniquement après votre activation."
-        self.voice_notice.setText(notice)
+        self.voice_notice.setText(c.recovery_message or notice)
         self.voice_notice.setStyleSheet("color: #e5a0aa;" if c.voice_error else "color: #91a9c1;")
         self.footnote.setText("JARVIS · ASSISTANT VOCAL" if not active else "GEMINI LIVE · CONFIRMATIONS VOCALES")
 
@@ -696,6 +763,7 @@ class DesktopWindow(QMainWindow):
             sounds.setChecked(controller.sounds_enabled)
             sounds.toggled.connect(self.set_sounds)
             settings_layout.addWidget(sounds)
+            settings_layout.addWidget(button("Configurer les routines vocales…",shell.show_routines))
             settings_layout.addWidget(label('PÉRIPHÉRIQUES ET TESTS LOCAUX', 'eyebrow'))
             self.audio_settings = AudioSettings(controller)
             settings_layout.addWidget(self.audio_settings)
@@ -778,6 +846,7 @@ class DesktopShell:
         controller.appearance = self.appearance_preference.load()
         controller.appearance_requested.connect(self.show_appearances)
         self.appearance_dialog = None
+        self.routines_dialog = None
         self.position_restored = False
         self.orb_position_restored = False
         self.transfer = None
@@ -801,6 +870,21 @@ class DesktopShell:
         self.hotkey.changed.connect(self.hotkey_changed)
         self.hotkey.set_enabled(controller.hotkey_enabled)
         app.aboutToQuit.connect(self.hotkey.close)
+        from jarvis.desktop.hotkey import HoldHotkey
+        controller.ptt_enabled=self.settings.value('input/push_to_talk',False) in (True,'true')
+        self.hold_hotkey=HoldHotkey(controller.begin_push_to_talk,controller.end_push_to_talk,parent=controller,
+                                   demo=controller.demo or app.platformName()=='offscreen')
+        self.hold_hotkey.set_enabled(controller.ptt_enabled)
+        app.aboutToQuit.connect(self.hold_hotkey.close)
+        from jarvis.desktop.recovery import VoiceRecovery,MacPowerMonitor
+        self.recovery=VoiceRecovery(controller,self.settings.value('voice/auto_reconnect',app.platformName()!='offscreen') in (True,'true'))
+        controller.recovery=self.recovery
+        self.power=MacPowerMonitor(controller)
+        self.power.sleeping.connect(self.recovery.before_sleep)
+        self.power.waking.connect(self.recovery.after_wake)
+        if not controller.demo:self.power.start()
+        app.aboutToQuit.connect(self.power.close)
+        app.aboutToQuit.connect(self.recovery.close)
         self.quit_guard = QuitGuard(self, app)
         app.installEventFilter(self.quit_guard)
         self.onboarding = None
@@ -924,6 +1008,15 @@ class DesktopShell:
         self.settings.setValue('audio/input_device', json.dumps(self.controller.input_choice))
         self.settings.setValue('audio/output_device', json.dumps(self.controller.output_choice))
 
+    def set_auto_reconnect(self,enabled):
+        self.settings.setValue('voice/auto_reconnect',enabled)
+        self.recovery.set_enabled(enabled)
+
+    def set_push_to_talk(self,enabled):
+        self.controller.set_push_to_talk(enabled)
+        self.settings.setValue('input/push_to_talk',enabled)
+        self.hold_hotkey.set_enabled(enabled)
+
     def set_global_hotkey(self, enabled):
         self.controller.hotkey_enabled = enabled
         self.settings.setValue('input/global_hotkey', enabled)
@@ -943,6 +1036,13 @@ class DesktopShell:
         self.controller.appearance = self.appearance_preference.save(appearance)
         self.controller.appearance_changed.emit(self.controller.appearance)
         self.controller.changed.emit()
+
+    def show_routines(self):
+        from jarvis.desktop.routines import RoutineDialog
+        if self.routines_dialog is not None:
+            self.routines_dialog.close();self.routines_dialog.deleteLater()
+        self.routines_dialog=RoutineDialog(self.controller,self.visible_window())
+        self.routines_dialog.show()
 
     def show_appearances(self):
         from jarvis.desktop.avatar_selector import AvatarSelector

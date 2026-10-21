@@ -186,3 +186,32 @@ def test_optional_tones_defer_to_speech_and_share_the_feedback_guard():
         finally:
             audio.close()
     asyncio.run(scenario())
+
+def test_hold_release_preserves_final_speech_then_sends_only_synthetic_silence():
+    async def scenario():
+        audio=LocalAudio(asyncio.get_running_loop(),NS(RawOutputStream=FakeStream,RawInputStream=FakeStream))
+        audio.open();original=audio.microphone
+        data=b'\x01\x00'*480
+        audio._input_callback(data,480,None,None)
+        audio.finish_push_to_talk()
+        assert not audio.mic_open and not original.active and audio.input.tail_frames==45
+        audio._input_callback(b'\x02\x00'*480,480,None,None)
+        assert bytes((await audio.input.__anext__()).data)==data
+        assert bytes((await audio.input.__anext__()).data)==bytes(960)
+        audio.set_microphone(True)
+        assert audio.microphone is original and audio.input.tail_frames==0
+        audio.close()
+    asyncio.run(scenario())
+
+
+def test_system_default_change_requests_recovery_but_explicit_devices_do_not():
+    from jarvis.desktop.devices import AudioDeviceError
+    async def scenario():
+        now=[0.]
+        devices=NS(RawOutputStream=FakeStream,RawInputStream=FakeStream,default=NS(device=[1,2]))
+        audio=LocalAudio(asyncio.get_running_loop(),devices,clock=lambda:now[0]);audio.open()
+        now[0]=3;devices.default.device=[1,3]
+        with pytest.raises(AudioDeviceError,match='système a changé'):audio.check_health()
+        audio.input_device=4;audio.output_device=5;now[0]=6
+        audio.check_health();audio.close()
+    asyncio.run(scenario())

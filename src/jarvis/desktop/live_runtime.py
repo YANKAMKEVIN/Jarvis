@@ -124,6 +124,8 @@ class LiveRuntime:
         self.prepare = prepare
         self.stop_requested = Event()
         self.mute_requested = Event()
+        self.ptt_release_requested = Event()
+        self.ptt_mode_requested=Event()
         self.interrupt_requested = Event()
         self.ready = False
         self.failed = False
@@ -139,6 +141,7 @@ class LiveRuntime:
         self.input_choice = self.output_choice = None
         self.closing = False
         self.announcements = SimpleQueue()
+        self.routine_requests=SimpleQueue()
 
     def set_devices(self, input_choice, output_choice):
         self.input_choice, self.output_choice = input_choice, output_choice
@@ -156,8 +159,29 @@ class LiveRuntime:
     def set_muted(self, muted):
         self.mute_requested.set() if muted else self.mute_requested.clear()
 
+    def set_push_to_talk(self,enabled):
+        self.ptt_mode_requested.set() if enabled else self.ptt_mode_requested.clear()
+
+    def finish_push_to_talk(self):
+        self.mute_requested.set()
+        self.ptt_release_requested.set()
+
     def interrupt(self):
         self.interrupt_requested.set()
+
+    def run_routine(self,name):
+        if isinstance(name,str) and 0<len(name)<=80:self.routine_requests.put(name)
+
+    async def _launch_routine(self,name):
+        registry=self.components.assistant.registry
+        try:
+            macro=await asyncio.to_thread(registry.macro_store.get,name)
+            if macro is None:
+                result={'ok':False,'message':'Routine introuvable.'}
+            else:result=registry.tasks.start(macro['goal'])
+        except Exception:result={'ok':False,'message':'Routine locale indisponible.'}
+        self.emit(project_activity('run_macro',result,uuid.uuid4().hex))
+        self._task_progress()
 
     def announce(self, message):
         """Queue a proactive alert; spoken only once Jarvis is idle, never over a reply."""
@@ -244,6 +268,7 @@ class LiveRuntime:
     async def run(self):
         phase = "setup"
         error_message = None
+        caught_audio_error=None
         try:
             if self.stop_requested.is_set():
                 return
@@ -275,7 +300,8 @@ class LiveRuntime:
             self.state("muted" if self.mute_requested.is_set() else "listening")
             phase = "session"
             from jarvis.live.prompts import INSIGHT_ANNOUNCEMENT, LIVE_SESSION_GREETING
-            c.session.generate_reply(instructions=LIVE_SESSION_GREETING)
+            if not self.ptt_mode_requested.is_set():
+                c.session.generate_reply(instructions=LIVE_SESSION_GREETING)
             suppressed = False
             next_meter = 0.0
             next_task_poll = 0.0
@@ -288,6 +314,9 @@ class LiveRuntime:
                     if not sounds:
                         c.audio.clear_cue()
                 now = asyncio.get_running_loop().time()
+                try:routine=self.routine_requests.get_nowait()
+                except Empty:pass
+                else:await self._launch_routine(routine)
                 if self.cancel_task_requested.is_set():
                     self.cancel_task_requested.clear()
                     tasks = getattr(c.assistant.registry, 'tasks', None)
@@ -309,13 +338,19 @@ class LiveRuntime:
                 if current_suppression != suppressed:
                     suppressed = current_suppression
                     self.state("muted" if self.mute_requested.is_set() else self.agent_state)
+                if self.ptt_release_requested.is_set():
+                    self.ptt_release_requested.clear()
+                    if self.mute_requested.is_set() and c.audio.mic_open:
+                        if hasattr(c.audio,'finish_push_to_talk'): c.audio.finish_push_to_talk()
+                        else:c.audio.set_microphone(False)
+                        self.state('muted')
                 wanted = not self.mute_requested.is_set()
                 if wanted != c.audio.mic_open:
                     c.audio.set_microphone(wanted)
                     if sounds:
                         c.audio.play_cue("ready" if wanted else "muted")
                     self.state(self.agent_state if wanted else "muted")
-                if self.agent_state == "listening" and now >= next_announcement:
+                if self.agent_state == "listening" and now >= next_announcement and (not self.ptt_mode_requested.is_set() or self.mute_requested.is_set()):
                     try:
                         queued_at, message = self.announcements.get_nowait()
                     except Empty:
@@ -339,6 +374,7 @@ class LiveRuntime:
             if self.failed:
                 error_message = "La session Gemini s’est interrompue. Vérifiez la connexion, la clé et le modèle, puis relancez le vocal."
         except (VoiceSetupError, AudioDeviceError) as error:
+            caught_audio_error=error
             error_message = str(error)
         except Exception:
             error_message = {
@@ -379,6 +415,6 @@ class LiveRuntime:
             final = {"type": "state", "state": "error" if error_message else "off",
                      "mic_open": False, "message": error_message or ""}
             if error_message:
-                final["retryable"] = phase in {"connection", "session"}
+                final["retryable"] = phase in {"connection", "session"} or (phase=="audio" and isinstance(caught_audio_error,AudioDeviceError))
             self.emit(final)
 

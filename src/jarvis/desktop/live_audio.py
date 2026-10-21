@@ -27,6 +27,7 @@ class MicrophoneInput(AudioInput):
         super().__init__(label="Jarvis microphone")
         self.frames = Queue(maxsize=25)  # At most half a second of speech.
         self.closed = False
+        self.tail_frames = 0
 
     def push(self, data):
         if self.closed:
@@ -44,6 +45,7 @@ class MicrophoneInput(AudioInput):
                 pass
 
     def clear(self):
+        self.tail_frames = 0
         while True:
             try:
                 self.frames.get_nowait()
@@ -55,8 +57,14 @@ class MicrophoneInput(AudioInput):
             try:
                 data = self.frames.get_nowait()
             except Empty:
-                await asyncio.sleep(0.01)
-                continue
+                if self.tail_frames:
+                    await asyncio.sleep(.02)
+                    if not self.tail_frames: continue
+                    self.tail_frames-=1
+                    data=bytes(BLOCK_SAMPLES*2)
+                else:
+                    await asyncio.sleep(0.01)
+                    continue
             return rtc.AudioFrame(data=data, sample_rate=SAMPLE_RATE,
                                   num_channels=1, samples_per_channel=len(data) // 2)
         raise StopAsyncIteration
@@ -168,12 +176,28 @@ class LocalAudio:
         self.cue = b""
         self.input_device = None
         self.output_device = None
+        self.default_snapshot=None
+        self.last_default_check=0
 
     def configure_devices(self, input_choice, output_choice):
         self.input_device = resolve_device(self.devices, input_choice, 'input')
         self.output_device = resolve_device(self.devices, output_choice, 'output')
 
+    def read_defaults(self):
+        try:
+            pair=tuple(self.devices.default.device)
+            return pair if len(pair)==2 and all(isinstance(v,int) for v in pair) else None
+        except (AttributeError,TypeError):return None
+
     def check_health(self):
+        now=self.clock()
+        if now-self.last_default_check>=2:
+            self.last_default_check=now
+            defaults=self.read_defaults()
+            if defaults is not None and self.default_snapshot is not None:
+                if ((self.input_device is None and defaults[0]!=self.default_snapshot[0]) or
+                    (self.output_device is None and defaults[1]!=self.default_snapshot[1])):
+                    raise AudioDeviceError('Le périphérique système a changé. Reconnexion audio nécessaire.')
         try:
             healthy = (self.speaker is not None and self.speaker.active
                        and (not self.mic_open or (self.microphone is not None and self.microphone.active)))
@@ -235,6 +259,7 @@ class LocalAudio:
         data[:] = pcm
 
     def open(self, microphone=True):
+        self.default_snapshot=self.read_defaults()
         try:
             self.speaker = self.devices.RawOutputStream(device=self.output_device, samplerate=SAMPLE_RATE,
                 channels=1, dtype="int16", blocksize=BLOCK_SAMPLES, callback=self._output_callback)
@@ -265,6 +290,15 @@ class LocalAudio:
             if self.microphone is not None:
                 self.microphone.stop()
             self.input.clear()
+
+    def finish_push_to_talk(self):
+        # Close the single capture stream first, retain its final queued frames,
+        # then send a bounded synthetic silence tail to Gemini's turn detector.
+        with self.capture_lock:
+            was_open=self.mic_open
+            self.mic_open=False
+        if self.microphone is not None:self.microphone.stop()
+        if was_open:self.input.tail_frames=45
 
     def close(self):
         self.mic_open = False

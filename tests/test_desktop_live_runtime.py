@@ -403,3 +403,33 @@ def test_proactive_alerts_wait_for_idle_and_drop_stale_ones(monkeypatch):
         await asyncio.wait_for(task, 1)
         assert not any("vieille alerte" in r for r in replies)
     asyncio.run(scenario())
+
+def test_hold_mode_skips_greeting_and_release_before_ready_never_opens_capture():
+    async def scenario():
+        c=components();calls=[]
+        c.session.generate_reply=lambda **kw:calls.append(kw)
+        runtime=LiveRuntime(lambda e:None,factory=lambda:c,prepare=lambda:None)
+        runtime.set_push_to_talk(True);runtime.set_muted(True);runtime.finish_push_to_talk()
+        task=asyncio.create_task(runtime.run());await until(lambda:runtime.ready)
+        assert not c.audio.mic_open and not calls
+        runtime.set_muted(False);await until(lambda:c.audio.mic_open)
+        runtime.finish_push_to_talk();await until(lambda:not c.audio.mic_open)
+        runtime.stop();await asyncio.wait_for(task,1)
+    asyncio.run(scenario())
+
+
+def test_routine_request_uses_stored_goal_and_same_task_manager():
+    from unittest.mock import Mock
+    async def scenario():
+        c=components()
+        c.assistant.registry.macro_store=NS(get=Mock(return_value={'goal':'Read my agenda'}))
+        c.assistant.registry.tasks=NS(start=Mock(return_value={'ok':True,'task_id':'routine-task'}))
+        events=[];runtime=LiveRuntime(events.append,factory=lambda:c,prepare=lambda:None)
+        runtime.run_routine('Ma journée')
+        task=asyncio.create_task(runtime.run())
+        await until(lambda:c.assistant.registry.tasks.start.called)
+        c.assistant.registry.macro_store.get.assert_called_once_with('Ma journée')
+        c.assistant.registry.tasks.start.assert_called_once_with('Read my agenda')
+        assert any(e.get('type')=='activity' and e.get('status')=='received' for e in events)
+        runtime.stop();await asyncio.wait_for(task,1)
+    asyncio.run(scenario())

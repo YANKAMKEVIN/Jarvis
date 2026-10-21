@@ -80,3 +80,17 @@ def test_native_callback_filters_identifier_and_cleans_partial_registration():
     backend.api.fail = True
     assert not backend.start(lambda: None)
     assert backend.api.removed == 2 and not backend.handler.value
+
+def test_hold_hotkey_queues_press_and_release_and_disable_closes_gate():
+    from jarvis.desktop.hotkey import HoldHotkey
+    instance=app()
+    class Backend:
+        def start(self,press,release):self.press=press;self.release=release;return True
+        def close(self):return True
+    backend=Backend();events=[]
+    hold=HoldHotkey(lambda:events.append('press'),lambda:events.append('release'),backend_factory=lambda:backend,platform='darwin')
+    hold.set_enabled(True);events.clear()
+    backend.press();backend.release();assert not events
+    instance.processEvents();assert events==['press','release']
+    backend.press();hold.set_enabled(False);instance.processEvents()
+    assert events[-1]=='release' and events.count('press')==1

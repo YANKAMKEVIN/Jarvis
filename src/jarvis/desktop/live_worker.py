@@ -24,8 +24,17 @@ class LiveWorker(QThread):
     def set_muted(self, muted):
         self.runtime.set_muted(muted)
 
+    def set_push_to_talk(self,enabled):
+        self.runtime.set_push_to_talk(enabled)
+
+    def finish_push_to_talk(self):
+        self.runtime.finish_push_to_talk()
+
     def interrupt(self):
         self.runtime.interrupt()
+
+    def run_routine(self,name):
+        self.runtime.run_routine(name)
 
     def announce(self, message):
         self.runtime.announce(message)

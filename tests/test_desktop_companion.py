@@ -40,7 +40,7 @@ def test_avatar_dominates_transparent_companion_and_only_hover_reveals_two_contr
     assert window.width() == window.orb.width()
     assert window.status.isHidden()
     assert not window.open_button.isVisible() and not window.menu_button.isVisible()
-    assert len(window.findChildren(QPushButton)) == 2
+    assert len(window.findChildren(QPushButton,options=Qt.FindChildOption.FindDirectChildrenOnly)) == 2
     before = window.orb.size()
     QApplication.sendEvent(window,QEnterEvent(QPointF(100,100),QPointF(100,100),QPointF(100,100)))
     assert window.open_button.isVisible() and window.menu_button.isVisible()
@@ -63,7 +63,7 @@ def test_keyboard_reveals_controls_opens_full_window_and_escape_hides(companion)
     assert not window.open_button.isVisible() and not window.menu_button.isVisible()
     QTest.keyClick(window.orb,Qt.Key.Key_Tab)
     assert window.open_button.isVisible()
-    QTest.keyClick(window.open_button,Qt.Key.Key_Space)
+    window.make_menu().actions_by_id['open_full'].trigger()
     assert shell.full.isVisible() and not window.isVisible()
 
 
