@@ -14,6 +14,8 @@ FLAGS = SimpleNamespace(
     NSWindowCollectionBehaviorFullScreenPrimary=128,
     NSWindowCollectionBehaviorFullScreenAuxiliary=256,
     NSWindowCollectionBehaviorFullScreenNone=512,
+    NSPanel=object(),
+    NSWindowStyleMaskNonactivatingPanel=128,
 )
 
 
@@ -40,6 +42,8 @@ def test_cocoa_bridge_resolves_nsview_and_applies_to_its_window(monkeypatch):
     monkeypatch.setattr(macos_spaces.QGuiApplication,'platformName',lambda:'cocoa')
     native = Mock()
     native.collectionBehavior.side_effect = [2|128|16,1|256|16]
+    native.isKindOfClass_.return_value = True
+    native.styleMask.return_value = 1
     bridge = Mock(return_value=SimpleNamespace(window=lambda:native))
     monkeypatch.setitem(sys.modules,'objc',SimpleNamespace(objc_object=bridge))
     monkeypatch.setitem(sys.modules,'AppKit',FLAGS)
@@ -48,6 +52,35 @@ def test_cocoa_bridge_resolves_nsview_and_applies_to_its_window(monkeypatch):
     assert macos_spaces.join_all_spaces(widget)
     assert bridge.call_args.kwargs['c_void_p'].value == 1234
     native.setCollectionBehavior_.assert_called_once_with(1|256|16)
+    # A panel becomes non-activating, survives deactivation and keeps its frame.
+    native.isKindOfClass_.assert_called_once_with(FLAGS.NSPanel)
+    native.setStyleMask_.assert_called_once_with(1|128)
+    native.setHidesOnDeactivate_.assert_called_once_with(False)
+    native.setFrame_display_.assert_called_once_with(native.frame.return_value, False)
+
+
+def test_plain_windows_keep_their_style(monkeypatch):
+    import sys
+    QApplication.instance() or QApplication([])
+    monkeypatch.setattr(macos_spaces.sys,'platform','darwin')
+    monkeypatch.setattr(macos_spaces.QGuiApplication,'platformName',lambda:'cocoa')
+    native = Mock()
+    native.collectionBehavior.side_effect = [0,1|256]
+    native.isKindOfClass_.return_value = False
+    monkeypatch.setitem(sys.modules,'objc',SimpleNamespace(objc_object=lambda **kw:SimpleNamespace(window=lambda:native)))
+    monkeypatch.setitem(sys.modules,'AppKit',FLAGS)
+    widget = Mock()
+    widget.winId.return_value = 1234
+    assert macos_spaces.join_all_spaces(widget)
+    native.setStyleMask_.assert_not_called()
+
+
+def test_floating_windows_are_tool_windows_on_macos(monkeypatch):
+    from PySide6.QtCore import Qt
+    monkeypatch.setattr(macos_spaces.sys,'platform','darwin')
+    assert macos_spaces.floating_window_type() == Qt.WindowType.Tool
+    monkeypatch.setattr(macos_spaces.sys,'platform','linux')
+    assert macos_spaces.floating_window_type() == Qt.WindowType.Window
 
 
 def test_missing_native_window_is_safe(monkeypatch):

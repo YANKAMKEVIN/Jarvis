@@ -50,7 +50,8 @@ class InteractiveOrb(Orb):
 class OrbWindow(QWidget):
     avatar_class = InteractiveOrb
     def __init__(self, controller, shell):
-        super().__init__(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint |
+        from jarvis.desktop.macos_spaces import floating_window_type
+        super().__init__(None, floating_window_type() | Qt.WindowType.FramelessWindowHint |
                          Qt.WindowType.WindowStaysOnTopHint)
         self.controller, self.shell = controller, shell
         self.assistant = self

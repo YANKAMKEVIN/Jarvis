@@ -209,6 +209,19 @@ collection flags, and removes conflicting move-to-active-Space/fullscreen modes.
 The main assistant is not configured with this behavior. This follows virtual
 desktops on the current physical display; it does not teleport between monitors.
 
+### Over full-screen apps
+
+Joining every Space was not enough over another app's **full-screen** Space:
+macOS does not admit an ordinary window there, so the avatar vanished when the
+user switched to, say, a full-screen ChatGPT. Both floating windows are now Qt
+tool windows (an `NSPanel` on Cocoa) that the helper turns into
+**non-activating panels** (`NSWindowStyleMaskNonactivatingPanel`) with
+`hidesOnDeactivate` off, keeping their frame. Verified natively: over a
+full-screen ChatGPT, the compact companion and the orb are on the active Space
+and on screen at an unchanged position, and the companion still becomes the key
+window for keyboard control. The main assistant window, the Dock icon and
+Cmd-Tab are unchanged; floating avatars no longer appear in Cmd-Tab.
+
 `macos_spaces.py` never casts a non-Cocoa/offscreen handle. Cocoa is an explicit,
 macOS-only desktop dependency in both installation manifests. Install updates
 with `python -m pip install -e '.[desktop,live]'` and restart Jarvis.
