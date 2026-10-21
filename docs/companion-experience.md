@@ -169,3 +169,36 @@ entre écrans/bureaux pendant ces interactions.
 - Roue Python construite puis installée dans un répertoire isolé : préférences,
   maintien, bulles, configuration des routines et les 16 assets vérifiés.
 - Aucun micro ni appel Gemini pendant les diagnostics et les captures.
+
+## Danse des personnages
+
+Dans les commandes du compagnon (`•••` ou clic droit), **Faire danser** lance une
+chorégraphie de huit secondes, y compris dans `jarvis-desktop --demo --compact`.
+En session vocale, demander « Danse », « Tu sais danser ? » ou « Montre-moi une
+danse » utilise la commande de présentation dédiée. « Arrête de danser » arrête
+la danse sans fermer le vocal ni les missions. La reconnaissance réelle par
+Gemini reste à essayer avec un micro.
+
+NovaBot, Neo Guide, Kitsune, Digital Avatar, Synth Companion et Holo Face
+utilisent leurs poses 2D existantes : balancements, petits bonds, poses alternées
+et inclinaisons adaptées au personnage. Holo Face garde une amplitude réduite.
+Ces images ne possèdent pas de squelette articulé : il ne s'agit pas encore de
+nouveaux mouvements de jambes dessinés ou d'une danse 3D.
+
+En mode compact, la fenêtre accompagne le mouvement sur 32 pixels au maximum
+horizontalement et 7 verticalement, dans la surface disponible du même écran.
+Elle reprend sa place à la fin ; ce déplacement temporaire n'est pas enregistré
+comme position préférée. Glisser le personnage, appuyer sur Échap, masquer le
+compagnon, changer son apparence ou ses préférences interrompt la danse. Les
+animations réduites et les apparences abstraites désactivent cette commande.
+Les missions déléguées ne disposent pas de cet outil de présentation.
+
+![Danse 2D : véritable capture Qt, sans micro](screenshots/experience/avatar-dance.gif)
+
+`QT_QPA_PLATFORM=offscreen python scripts/capture_avatar_dance.py` produit les
+81 images PNG de cet aperçu dans un dossier temporaire affiché en sortie. Elles
+peuvent être assemblées en GIF avec Pillow, sans dépendance supplémentaire pour
+l'application. `tests/test_desktop_dance.py` vérifie les limites, l'arrêt, le
+retour, la persistance, la conservation des missions et les refus ; le test du
+runtime vérifie le branchement et le nettoyage de la commande vocale sans appel
+réseau ni ouverture du micro.

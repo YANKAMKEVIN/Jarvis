@@ -8,6 +8,11 @@ from jarvis.desktop.notice_bubble import NoticeBubble
 
 
 class CompanionAvatar(InteractiveOrb):
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.window_owner.controller.dance.stop()
+        super().mousePressEvent(event)
+
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.press is not None:
             self.press = None
@@ -27,6 +32,7 @@ class CompanionAvatar(InteractiveOrb):
             self.window_owner.reveal_controls(keyboard=True)
             event.accept()
         elif event.key() == Qt.Key.Key_Escape:
+            self.window_owner.controller.dance.stop()
             self.window_owner.conceal_controls()
             event.accept()
         else:
@@ -78,6 +84,7 @@ class CompanionWindow(OrbWindow):
         self.render()
 
     def set_preference(self,key,value):
+        self.controller.dance.stop()
         setattr(self.preferences,key,value)
         self.preferences.save(self.shell.settings)
         if not self.preferences.quiet: self.discreet=False
@@ -114,7 +121,7 @@ class CompanionWindow(OrbWindow):
 
     def enter_discreet(self):
         c=self.controller
-        busy=c.voice_state in {'starting','listening','speaking','thinking'} or any(m['status'] in {'running','needs_confirmation','needs_clarification'} for m in c.focus_missions())
+        busy=c.dance.active or c.voice_state in {'starting','listening','speaking','thinking'} or any(m['status'] in {'running','needs_confirmation','needs_clarification'} for m in c.focus_missions())
         if not busy and not self.hovered and not self.keyboard_controls and not self.menu_open:
             self.discreet=True;self.apply_preferences()
         else: self.reset_idle()
@@ -125,6 +132,7 @@ class CompanionWindow(OrbWindow):
         self.reset_idle()
 
     def screen_changed(self,screen):
+        self.controller.dance.stop()
         previous=getattr(self,'tracked_screen',None)
         if previous is not None:
             try:previous.availableGeometryChanged.disconnect(self.apply_anchor)
@@ -187,6 +195,7 @@ class CompanionWindow(OrbWindow):
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.KeyPress:
             if event.key() == Qt.Key.Key_Escape:
+                self.controller.dance.stop()
                 self.controller.end_push_to_talk()
                 self.conceal_controls()
                 return True
@@ -218,6 +227,7 @@ class CompanionWindow(OrbWindow):
             self.apply_anchor();self.reset_idle();self.bubble.present_next()
 
     def hideEvent(self, event):
+        self.controller.dance.stop()
         self.controller.end_push_to_talk()
         if hasattr(self,"idle_timer"):
             self.idle_timer.stop();self.bubble.suspend()
@@ -228,6 +238,26 @@ class CompanionWindow(OrbWindow):
 
     def render(self):
         super().render()
+        dance = self.controller.dance
+        origin = getattr(self, "dance_origin", None)
+        if dance.active and self.isVisible():
+            if self.discreet:
+                self.wake_companion()
+            if origin is None:
+                self.dance_origin = origin = self.pos()
+            from jarvis.desktop.avatar_dance import travel
+            dx, dy = travel(dance.elapsed)
+            target = origin + QPoint(dx, dy)
+            screen = self.screen().availableGeometry()
+            target.setX(max(screen.left(), min(target.x(), screen.right() - self.width() + 1)))
+            target.setY(max(screen.top(), min(target.y(), screen.bottom() - self.height() + 1)))
+            self.move(target)
+        elif origin is not None:
+            self.dance_origin = None
+            screen = self.screen().availableGeometry()
+            origin.setX(max(screen.left(), min(origin.x(), screen.right() - self.width() + 1)))
+            origin.setY(max(screen.top(), min(origin.y(), screen.bottom() - self.height() + 1)))
+            self.move(origin)
         status, _, _ = presence(self.controller)
         notice = self.controller.recovery_message or self.controller.voice_error or self.controller.tool_notice
         count = len(self.controller.focus_missions())
@@ -278,6 +308,7 @@ class CompanionWindow(OrbWindow):
         action('details', 'Cartes et activité', self.shell.show_details)
         action('appearance', 'Choisir une apparence…', self.shell.show_appearances)
         action('routines','Routines vocales…',self.shell.show_routines)
+        action('dance', 'Faire danser', lambda: self.controller.dance.stop() if self.controller.dance.active else self.controller.dance.start())
         action('settings', 'Réglages', self.shell.show_settings)
         recovery=action('recovery','Reconnecter automatiquement après coupure');recovery.setCheckable(True);recovery.setChecked(self.shell.recovery.enabled)
         recovery.triggered.connect(self.shell.set_auto_reconnect)
@@ -305,6 +336,9 @@ class CompanionWindow(OrbWindow):
 
     def update_menu(self, menu):
         c, actions = self.controller, menu.actions_by_id
+        from jarvis.desktop.avatar_dance import DANCERS
+        actions["dance"].setText("Arrêter la danse" if c.dance.active else "Faire danser")
+        actions["dance"].setEnabled(c.dance.active or (not c.reduced_motion and c.appearance in DANCERS))
         active = c.voice_worker is not None
         status, _, _ = presence(c)
         actions['status'].setText(status)

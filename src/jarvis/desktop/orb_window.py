@@ -88,6 +88,7 @@ class OrbWindow(QWidget):
     def render(self):
         c = self.controller
         self.orb.set_appearance(c.appearance)
+        self.orb.dance = c.dance
         self.orb.state = c.avatar_state()
         self.orb.set_motion(not c.reduced_motion)
         self.orb.update()

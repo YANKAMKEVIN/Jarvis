@@ -290,6 +290,8 @@ class LiveRuntime:
             phase = "audio"
             if self.input_choice is not None or self.output_choice is not None:
                 c.audio.configure_devices(self.input_choice, self.output_choice)
+            if hasattr(c.assistant.registry, "set_presentation_observer"):
+                c.assistant.registry.set_presentation_observer(self.emit)
             if hasattr(c.assistant.registry, "set_activity_observer"):
                 c.assistant.registry.set_activity_observer(self._registry_activity)
             if hasattr(c.assistant.registry,"set_task_notifier"):
@@ -416,6 +418,8 @@ class LiveRuntime:
                     self._task_progress()
                 except Exception:
                     error_message = error_message or "Une tâche vocale n’a pas pu être fermée correctement. Vérifiez son résultat avant de réessayer."
+                if hasattr(c.assistant.registry, "set_presentation_observer"):
+                    c.assistant.registry.set_presentation_observer(None)
                 if hasattr(c.assistant.registry, "set_activity_observer"):
                     c.assistant.registry.set_activity_observer(None)
                 for close in (c.session.aclose, c.model.aclose):

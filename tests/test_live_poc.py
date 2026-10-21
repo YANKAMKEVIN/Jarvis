@@ -60,6 +60,7 @@ EXPECTED_LIVE_TOOL_NAMES = sorted([
     "convert_units",
     "create_calendar_event",
     "create_folder",
+    "dance_avatar",
     "delete_macro",
     "describe_screen",
     "double_click",

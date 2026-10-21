@@ -70,6 +70,7 @@ DIRECT_PROMPT_APPS = {"claude"}
 # browser navigation, action confirmation, data erase, action replay) is
 # blocked.
 SAFE_MODE_ALLOWED = frozenset({
+    "dance_avatar",
     # The safe-mode switch itself — never blocked, above all the way out.
     "enable_safe_mode", "disable_safe_mode",
     # System and media reads.
@@ -335,6 +336,7 @@ class ToolRegistry:
         # Morning briefing runs in the background like a web search.
         self._briefing_task: asyncio.Task | None = None
         self.activity_observer = None
+        self.presentation_observer = None
         self.desktop_gate = DesktopGate()
         self.task_announcement_lock = asyncio.Lock()
         # Session-scoped safe mode: when True, only SAFE_MODE_ALLOWED tools run;
@@ -370,6 +372,9 @@ class ToolRegistry:
 
         provider = FallbackProvider(SearXNGProvider(), KeylessWebProvider())
         return KnowledgeCapability(KnowledgeService(brain=LocalBrain(), provider=provider))
+
+    def set_presentation_observer(self, observer) -> None:
+        self.presentation_observer = observer
 
     def set_activity_observer(self, observer) -> None:
         """Optional in-memory consumer; observer failures never affect a tool."""
@@ -618,6 +623,14 @@ class ToolRegistry:
         return decorate
 
     def livekit_tools(self) -> list[Any]:
+        @function_tool(name="dance_avatar", description="Sur demande explicite de danser ou tu sais danser, transmet une danse 2D de huit secondes au compagnon desktop. stop=True arrête la danse, sans arrêter le vocal. Ne joue aucune musique. Le desktop peut refuser si animations réduites ou apparence abstraite.")
+        async def dance_avatar(stop: bool = False) -> dict:
+            observer = self.presentation_observer
+            if observer is None:
+                return {"ok": False, "error": "desktop_unavailable"}
+            observer({"type": "avatar_dance", "action": "stop" if stop else "start"})
+            return {"ok": True, "status": "request_delivered", "message": "Demande transmise au compagnon; animation selon apparence et réglages."}
+
         @function_tool(
             name="set_volume",
             description=(
@@ -3886,6 +3899,7 @@ class ToolRegistry:
             clear_personal_data,
         ]
 
+        tools.append(dance_avatar)
         tools.extend(productivity_tools(self))
 
         # Single safe-mode enforcement point: every voice and planner tool is
@@ -3897,7 +3911,7 @@ class ToolRegistry:
         # action store), so a message it prepares is confirmable by voice. It
         # also gets web_answer, a blocking web search kept out of the voice
         # tool set (the voice uses the background search_the_web instead).
-        self.planner_tools = tools + [self._guard_read_only(web_answer)]
+        self.planner_tools = [tool for tool in tools if tool.info.name != "dance_avatar"] + [self._guard_read_only(web_answer)]
         if not hasattr(self, "desktop_gate"):
             self.desktop_gate = DesktopGate()
         self.tasks = TaskManager(

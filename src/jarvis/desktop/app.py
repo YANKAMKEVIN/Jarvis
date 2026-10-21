@@ -114,6 +114,8 @@ class Controller(QObject):
     def __init__(self, demo=False):
         super().__init__()
         self.demo = demo
+        from jarvis.desktop.avatar_dance import AvatarDance
+        self.dance = AvatarDance(self)
         self.ptt_hotkey_message="Maintenez ⌘⌥Espace, ou Espace lorsque le compagnon a le focus."
         self.ptt_enabled=False
         self.ptt_held=False
@@ -325,6 +327,14 @@ class Controller(QObject):
         self.changed.emit()
 
     def voice_event(self, event):
+        if event.get("type") == "avatar_dance":
+            if event.get("action") == "stop":
+                self.dance.stop()
+            elif not self.dance.start():
+                self.tool_notice = "Danse indisponible : choisissez un personnage et activez les animations."
+                self.tool_timer.start()
+                self.changed.emit()
+            return
         if event.get('type')=='routine_result':
             self.routine_result.emit(event)
             if not event.get('ok'):
@@ -619,6 +629,7 @@ class VoicePanel(QWidget):
         self.orb.setFixedSize(orb_size, orb_size)
         self.orb_slot.setMinimumHeight(orb_size + (0 if self.compact else self.appearance_button.sizeHint().height() + 12))
         self.orb.set_appearance(c.appearance)
+        self.orb.dance = c.dance
         self.orb.state = c.avatar_state()
         self.orb.update()
         self.controls.active = active
@@ -814,6 +825,8 @@ class DesktopWindow(QMainWindow):
             widget.setChecked(index == i)
 
     def set_reduced_motion(self, checked):
+        if checked:
+            self.controller.dance.stop()
         self.controller.reduced_motion = checked
         self.shell.settings.setValue("appearance/reduced_motion", checked)
         self.controller.changed.emit()
@@ -1053,6 +1066,7 @@ class DesktopShell:
         self.controller.changed.emit()
 
     def set_appearance(self, appearance):
+        self.controller.dance.stop()
         self.controller.appearance = self.appearance_preference.save(appearance)
         self.controller.appearance_changed.emit(self.controller.appearance)
         self.controller.changed.emit()
@@ -1111,7 +1125,8 @@ class DesktopShell:
 
     def remember_companion(self):
         if self.position_restored and not self.controller.demo:
-            self.settings.setValue("companion/position", self.compact.pos())
+            origin = getattr(self.compact, "dance_origin", None)
+            self.settings.setValue("companion/position", origin if origin is not None else self.compact.pos())
 
     def remember_orb(self):
         if self.orb_position_restored and not self.controller.demo:

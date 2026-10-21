@@ -44,6 +44,7 @@ class Orb(QWidget):
         super().__init__()
         self.setFixedSize(size, size)
         self.pedestal = True
+        self.dance = None
         self.phase = 0.0
         self.appearance = 'nova_bot'
         self.previous_frame = self.frame_image = self.frame_key = None
@@ -114,11 +115,14 @@ class Orb(QWidget):
 
     def current_image(self):
         from jarvis.desktop.avatar_assets import pose_image
-        return pose_image(self.appearance, self.state)
+        state = self.state
+        if self.motion and self.dance and self.dance.active:
+            state = ("listening", "success", "speaking", "success")[int(self.dance.elapsed * 2) % 4]
+        return pose_image(self.appearance, state)
 
     def paintEvent(self, event):
         image = self.current_image()
-        key = (self.appearance, self.state)
+        key = (self.appearance, image.cacheKey())
         if key != self.frame_key:
             if self.frame_image is not None:
                 self.previous_frame = self.frame_image
@@ -148,6 +152,9 @@ class Orb(QWidget):
         frame = (blended_motion(self.appearance, phase, energy, self.interaction, self.motion)
                  if self.appearance in ABSTRACT_IDS else
                  sample_motion(self.appearance, phase, energy, self.state, self.motion))
+        if self.motion and self.dance and self.dance.active:
+            from jarvis.desktop.avatar_dance import dance_frame
+            frame = dance_frame(self.appearance, self.dance.elapsed)
         p.translate(frame.x * side, frame.y * side)
         p.rotate(frame.rotation)
         p.scale(frame.sx, frame.sy)

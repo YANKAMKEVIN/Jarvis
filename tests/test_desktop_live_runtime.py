@@ -477,3 +477,22 @@ def test_task_announcement_waits_until_push_to_talk_is_released():
         assert calls[0]['instructions']=='Mission completed'
         runtime.stop();await asyncio.wait_for(task,1)
     asyncio.run(scenario())
+
+
+def test_presentation_requests_cross_runtime_bridge_and_detach_on_close():
+    async def scenario():
+        events = []
+        c = components()
+        registry = c.assistant.registry
+        registry.presentation = None
+        registry.set_presentation_observer = lambda observer: setattr(registry, 'presentation', observer)
+        runtime = LiveRuntime(events.append, factory=lambda: c, prepare=lambda: None)
+        task = asyncio.create_task(runtime.run())
+        await until(lambda: runtime.ready)
+        registry.presentation({'type':'avatar_dance', 'action':'start'})
+        assert events[-1] == {'type':'avatar_dance', 'action':'start'}
+        assert c.audio.mic_open  # Presentation does not interrupt the voice session.
+        runtime.stop()
+        await asyncio.wait_for(task, 1)
+        assert registry.presentation is None
+    asyncio.run(scenario())
