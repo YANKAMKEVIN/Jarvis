@@ -213,5 +213,7 @@ def test_system_default_change_requests_recovery_but_explicit_devices_do_not():
         now[0]=3;devices.default.device=[1,3]
         with pytest.raises(AudioDeviceError,match='système a changé'):audio.check_health()
         audio.input_device=4;audio.output_device=5;now[0]=6
+        audio._input_callback(bytes(960),480,None,None)
+        audio._output_callback(bytearray(960),480,NS(outputBufferDacTime=0,currentTime=0),None)
         audio.check_health();audio.close()
     asyncio.run(scenario())

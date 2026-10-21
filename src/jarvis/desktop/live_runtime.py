@@ -84,6 +84,18 @@ def preload_live_plugins():
         raise setup_failure("sdk_import", error) from None
 
 
+def desktop_turn_detection_config():
+    """Keep natural pauses while ending short spoken turns predictably."""
+    from google.genai import types
+    return types.RealtimeInputConfig(automatic_activity_detection=types.AutomaticActivityDetection(
+        disabled=False,
+        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+        prefix_padding_ms=300,
+        silence_duration_ms=700,
+    ))
+
+
 def create_components(voice=None):
     try:
         from livekit.agents import Agent, AgentSession
@@ -106,7 +118,8 @@ def create_components(voice=None):
         raise VoiceSetupError("Configuration Gemini invalide. Vérifiez le modèle, la voix et la température.") from None
     audio = setup_step("audio_import", lambda: LocalAudio(asyncio.get_running_loop()))
     assistant = setup_step("macos_tools", lambda: create_assistant_class(Agent)())
-    model = setup_step("gemini_model", lambda: create_realtime_model(google, config))
+    model = setup_step("gemini_model", lambda: create_realtime_model(google, config,
+        realtime_input_config=desktop_turn_detection_config()))
     # Gemini handles turn detection. No inference service or LiveKit room/token.
     session = setup_step("agent_session", lambda: AgentSession(llm=model, vad=None, turn_handling={
         "turn_detection": "realtime_llm",
