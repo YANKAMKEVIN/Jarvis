@@ -84,7 +84,7 @@ def preload_live_plugins():
         raise setup_failure("sdk_import", error) from None
 
 
-def create_components():
+def create_components(voice=None):
     try:
         from livekit.agents import Agent, AgentSession
         from livekit.plugins import google
@@ -99,6 +99,9 @@ def create_components():
     setup_step("logging", install_livekit_pii_log_filter)
     try:
         config = get_live_config()
+        if voice is not None:
+            from dataclasses import replace
+            config = replace(config, voice=voice)
     except (ValueError, TypeError):
         raise VoiceSetupError("Configuration Gemini invalide. Vérifiez le modèle, la voix et la température.") from None
     audio = setup_step("audio_import", lambda: LocalAudio(asyncio.get_running_loop()))
@@ -121,6 +124,7 @@ class LiveRuntime:
     def __init__(self, emit, factory=create_components, prepare=prepare_environment):
         self.emit = emit
         self.factory = factory
+        self.voice_override = None
         self.prepare = prepare
         self.stop_requested = Event()
         self.mute_requested = Event()
@@ -146,6 +150,14 @@ class LiveRuntime:
         self.closing = False
         self.announcements = SimpleQueue()
         self.routine_requests=SimpleQueue()
+
+    def set_voice(self, voice):
+        from jarvis.desktop.voices import VOICE_IDS
+        if voice not in VOICE_IDS:
+            raise ValueError("Unknown desktop voice")
+        if self.components is not None:
+            raise RuntimeError("Voice is fixed for this session")
+        self.voice_override = voice
 
     def set_devices(self, input_choice, output_choice):
         self.input_choice, self.output_choice = input_choice, output_choice
@@ -295,7 +307,7 @@ class LiveRuntime:
             if self.stop_requested.is_set():
                 return
             setup_step("environment", self.prepare)
-            self.components = self.factory()
+            self.components = self.factory(voice=self.voice_override) if self.voice_override is not None else self.factory()
             c = self.components
             phase = "audio"
             if self.input_choice is not None or self.output_choice is not None:

@@ -202,3 +202,44 @@ l'application. `tests/test_desktop_dance.py` vérifie les limites, l'arrêt, le
 retour, la persistance, la conservation des missions et les refus ; le test du
 runtime vérifie le branchement et le nettoyage de la commande vocale sans appel
 réseau ni ouverture du micro.
+
+## Voix par avatar
+
+**Voix des avatars…** est accessible dans les réglages, le menu du compagnon et
+la barre de menus macOS. Les 16 avatars reçoivent une voix initiale ; plusieurs
+peuvent partager une même voix. Le catalogue de départ contient Puck (enjouée),
+Kore (ferme), Charon (informative), Aoede (légère) et Fenrir (expressive).
+Ce sont cinq choix proposés dans Jarvis, pas la totalité des voix Gemini.
+La [documentation Live de Google](https://ai.google.dev/gemini-api/docs/live-api/capabilities#change-voice-and-language)
+décrit le choix de voix et renvoie vers AI Studio pour les écouter. Le bouton
+**Écouter les voix dans Google AI Studio** ouvre ce service dans le navigateur ;
+il ne lance pas d'aperçu audio local et n'ouvre pas le microphone dans Jarvis.
+
+Choisir un avatar dans cette fenêtre permet d'éditer sa voix sans changer
+l'apparence active. Chaque sélection de voix est enregistrée automatiquement,
+indépendamment des autres avatars. **Rétablir la voix initiale de cet avatar**
+ne modifie que le personnage sélectionné. Les préférences illisibles ou les noms
+de voix inconnus reviennent à la voix initiale correspondante.
+
+Changer d'apparence sélectionne aussi sa voix enregistrée pour le prochain
+démarrage vocal. Si une session est déjà ouverte, elle garde sa voix ; la fenêtre
+indique la voix en cours et celle de la prochaine connexion. Aucun changement
+n'arrête le micro, la conversation ou les missions. Arrêter puis redémarrer le
+vocal applique le nouveau choix. Une reconnexion automatique utilise également
+le dernier choix de l'avatar actif.
+
+Les associations sont stockées dans QSettings sous `voice/avatars/<avatar>`.
+Dans l'interface desktop, elles prennent la priorité sur
+`JARVIS_GEMINI_LIVE_VOICE`, sans modifier cette variable dans l'environnement.
+Le mode vocal CLI garde sa configuration habituelle. La voix est transmise au
+modèle à la création de la session, après chargement de l'environnement.
+
+![Sélecteur réel Qt des voix par avatar](screenshots/experience/avatar-voices.png)
+
+La démo permet de tester et mémoriser les choix sans réseau ni micro :
+`jarvis-desktop --demo --compact`, puis **••• → Voix des avatars…**.
+`QT_QPA_PLATFORM=offscreen python scripts/capture_avatar_voices.py` reproduit la
+capture avec un stockage temporaire. `tests/test_desktop_voices.py` vérifie les
+16 associations, la persistance, l'isolation des avatars, les préférences
+invalides, la conservation de la session et la transmission de la voix au
+modèle simulé. L'écoute réelle des cinq timbres avec Gemini reste un essai manuel.

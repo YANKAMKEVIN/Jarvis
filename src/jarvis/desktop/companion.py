@@ -307,6 +307,7 @@ class CompanionWindow(OrbWindow):
         action('missions', 'Voir les missions', self.shell.show_mission_details)
         action('details', 'Cartes et activité', self.shell.show_details)
         action('appearance', 'Choisir une apparence…', self.shell.show_appearances)
+        action('voices', 'Voix des avatars…', self.shell.show_voices)
         action('routines','Routines vocales…',self.shell.show_routines)
         action('dance', 'Faire danser', lambda: self.controller.dance.stop() if self.controller.dance.active else self.controller.dance.start())
         action('settings', 'Réglages', self.shell.show_settings)

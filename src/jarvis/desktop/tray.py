@@ -68,6 +68,7 @@ class TrayControls:
         self.action('Orbe seul', shell.show_orb)
         self.action('Cartes et activité', shell.show_details)
         self.action('Réglages audio', shell.show_settings)
+        self.action('Voix des avatars…', shell.show_voices)
         self.action('Consommation (tokens)…', shell.show_usage)
         self.action('Activité machine…', shell.show_metrics)
         self.insights = None

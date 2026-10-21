@@ -129,6 +129,8 @@ class Controller(QObject):
         self.appearance = "nova_bot"
         self.reduced_motion = False
         self.voice_worker = None
+        self.selected_voice = "Puck"
+        self.session_voice = None
         self.voice_state = "off"
         self.voice_desired=False
         self.recovery_message=""
@@ -302,6 +304,9 @@ class Controller(QObject):
         from jarvis.desktop.live_worker import LiveWorker
         worker = LiveWorker(self)
         self.voice_worker = worker
+        self.session_voice = self.selected_voice
+        if hasattr(worker, "set_voice"):
+            worker.set_voice(self.session_voice)
         if self.ptt_enabled:worker.set_push_to_talk(True)
         if self.input_choice is not None or self.output_choice is not None:
             worker.set_devices(self.input_choice, self.output_choice)
@@ -501,6 +506,7 @@ class Controller(QObject):
     def voice_finished(self, worker):
         if self.voice_worker is worker:
             self.voice_worker = None
+            self.session_voice = None
             self.audio_levels.emit(0.0, 0.0)
             self.voice_mic_open = False
             self.input_suppressed = False
@@ -789,6 +795,7 @@ class DesktopWindow(QMainWindow):
             sounds.setChecked(controller.sounds_enabled)
             sounds.toggled.connect(self.set_sounds)
             settings_layout.addWidget(sounds)
+            settings_layout.addWidget(button("Voix des avatars…", shell.show_voices))
             settings_layout.addWidget(button("Configurer les routines vocales…",shell.show_routines))
             settings_layout.addWidget(label('PÉRIPHÉRIQUES ET TESTS LOCAUX', 'eyebrow'))
             self.audio_settings = AudioSettings(controller)
@@ -873,6 +880,10 @@ class DesktopShell:
         from jarvis.desktop.appearances import AppearancePreference
         self.appearance_preference = AppearancePreference(self.settings)
         controller.appearance = self.appearance_preference.load()
+        from jarvis.desktop.voices import VoicePreferences
+        self.voice_preferences = VoicePreferences(self.settings)
+        controller.selected_voice = self.voice_preferences.load(controller.appearance)
+        self.voice_dialog = None
         controller.appearance_requested.connect(self.show_appearances)
         self.appearance_dialog = None
         self.routines_dialog = None
@@ -1068,6 +1079,7 @@ class DesktopShell:
     def set_appearance(self, appearance):
         self.controller.dance.stop()
         self.controller.appearance = self.appearance_preference.save(appearance)
+        self.controller.selected_voice = self.voice_preferences.load(self.controller.appearance)
         self.controller.appearance_changed.emit(self.controller.appearance)
         self.controller.changed.emit()
 
@@ -1077,6 +1089,20 @@ class DesktopShell:
             self.routines_dialog.close();self.routines_dialog.deleteLater()
         self.routines_dialog=RoutineDialog(self.controller,self.visible_window())
         self.routines_dialog.show()
+
+    def set_avatar_voice(self, appearance, voice):
+        self.voice_preferences.save(appearance, voice)
+        if appearance == self.controller.appearance:
+            self.controller.selected_voice = voice
+        self.controller.changed.emit()
+
+    def show_voices(self):
+        from jarvis.desktop.voice_selector import VoiceSelector
+        if self.voice_dialog is not None:
+            self.voice_dialog.close()
+            self.voice_dialog.deleteLater()
+        self.voice_dialog = VoiceSelector(self, self.visible_window())
+        self.voice_dialog.show()
 
     def show_appearances(self):
         from jarvis.desktop.avatar_selector import AvatarSelector

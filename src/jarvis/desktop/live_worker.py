@@ -45,6 +45,9 @@ class LiveWorker(QThread):
     def cancel_task(self, task_id=None):
         self.runtime.cancel_task(task_id)
 
+    def set_voice(self, voice):
+        self.runtime.set_voice(voice)
+
     def set_devices(self, input_choice, output_choice):
         self.runtime.set_devices(input_choice, output_choice)
 
