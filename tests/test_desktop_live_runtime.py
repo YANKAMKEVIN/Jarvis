@@ -496,3 +496,31 @@ def test_presentation_requests_cross_runtime_bridge_and_detach_on_close():
         await asyncio.wait_for(task, 1)
         assert registry.presentation is None
     asyncio.run(scenario())
+
+
+def test_announcements_wait_for_the_user_to_finish_and_task_results_never_expire(monkeypatch):
+    import jarvis.desktop.live_runtime as live_runtime
+    monkeypatch.setattr(live_runtime, "ANNOUNCEMENT_GAP", 0.0)
+
+    async def scenario():
+        c = components()
+        calls = []
+        c.session.generate_reply = lambda **kw: calls.append(kw["instructions"])
+        runtime = LiveRuntime(lambda e: None, factory=lambda: c, prepare=lambda: None)
+        task = asyncio.create_task(runtime.run())
+        await until(lambda: runtime.ready)
+        calls.clear()  # greeting
+        c.session.handlers["user_state_changed"](NS(new_state="speaking"))
+        runtime.announce("Disque presque plein.")
+        await asyncio.sleep(0.15)
+        assert calls == []  # never over the user's sentence
+        c.session.handlers["user_state_changed"](NS(new_state="listening"))
+        await until(lambda: len(calls) == 1)
+        assert "Disque presque plein." in calls[0]
+        # A mission result queued long ago is still spoken.
+        runtime.task_announcements.append((live_runtime.monotonic() - 3600, "Message prêt pour Marie."))
+        await until(lambda: len(calls) == 2)
+        assert calls[1] == "Message prêt pour Marie."
+        runtime.stop()
+        await asyncio.wait_for(task, 1)
+    asyncio.run(scenario())

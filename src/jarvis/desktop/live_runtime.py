@@ -130,6 +130,7 @@ class LiveRuntime:
         self.ready = False
         self.failed = False
         self.agent_state = "listening"
+        self.user_state = "listening"
         self.components = None
         self.interruption_task = None
         self.seen_items = deque(maxlen=512)
@@ -138,7 +139,8 @@ class LiveRuntime:
         self.task_cancellations = SimpleQueue()
         self.observed_tools = set()
         self.activity_serial=0
-        self.task_announcements=deque(maxlen=8)
+        # Mission results have no other spoken channel: they never expire.
+        self.task_announcements = deque()
         self.last_task_snapshot = None
         self.input_choice = self.output_choice = None
         self.closing = False
@@ -207,6 +209,14 @@ class LiveRuntime:
         self.agent_state = event.new_state
         if self.ready and not self.stop_requested.is_set():
             self.state(self.presentation_state())
+
+    def _user_changed(self, event):
+        self.user_state = event.new_state
+
+    def _can_announce(self):
+        """Idle agent, user not mid-sentence, push-to-talk key released."""
+        return (self.agent_state == "listening" and self.user_state != "speaking"
+                and (not self.ptt_mode_requested.is_set() or self.mute_requested.is_set()))
 
     def _conversation(self, event):
         item = event.item
@@ -299,6 +309,7 @@ class LiveRuntime:
             c.session.input.audio = c.audio.input
             c.session.output.audio = c.audio.output
             c.session.on("agent_state_changed", self._agent_changed)
+            c.session.on("user_state_changed", self._user_changed)
             c.session.on("conversation_item_added", self._conversation)
             c.session.on("error", self._error)
             c.session.on("function_tools_executed", self._tools_executed)
@@ -366,17 +377,22 @@ class LiveRuntime:
                     if sounds:
                         c.audio.play_cue("ready" if wanted else "muted")
                     self.state(self.presentation_state())
-                if self.agent_state == "listening" and now >= next_announcement and (not self.ptt_mode_requested.is_set() or self.mute_requested.is_set()):
-                    task_notice=bool(self.task_announcements)
-                    try:
-                        queued_at,message=self.task_announcements.popleft() if task_notice else self.announcements.get_nowait()
-                    except Empty:
-                        pass
+                if now >= next_announcement and self._can_announce():
+                    instructions = None
+                    if self.task_announcements:
+                        _, instructions = self.task_announcements.popleft()
                     else:
-                        if monotonic()-queued_at<=ANNOUNCEMENT_MAX_AGE:
-                            instructions=message if task_notice else INSIGHT_ANNOUNCEMENT.format(message=message)
-                            c.session.generate_reply(instructions=instructions)
-                            next_announcement=now+ANNOUNCEMENT_GAP
+                        try:
+                            queued_at, message = self.announcements.get_nowait()
+                        except Empty:
+                            pass
+                        else:
+                            # A stale alert is dropped: the tray notification carried it.
+                            if monotonic() - queued_at <= ANNOUNCEMENT_MAX_AGE:
+                                instructions = INSIGHT_ANNOUNCEMENT.format(message=message)
+                    if instructions is not None:
+                        c.session.generate_reply(instructions=instructions)
+                        next_announcement = now + ANNOUNCEMENT_GAP
                 if self.interrupt_requested.is_set():
                     self.interrupt_requested.clear()
                     if self.interruption_task is None or self.interruption_task.done():
