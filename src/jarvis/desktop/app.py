@@ -313,7 +313,8 @@ class Controller(QObject):
     def voice_event(self, event):
         if event.get('type') in {'activity', 'tool_receipt', 'task_progress'}:
             status = event.get('status')
-            if status in {'success', 'completed', 'done', 'verified', 'error', 'failed'}:
+            # 'received' is what a tool that succeeded without a state check reports.
+            if status in {'success', 'received', 'completed', 'done', 'verified', 'error', 'failed'}:
                 self.avatar_feedback = 'error' if status in {'error', 'failed'} else 'success'
                 self.feedback_timer.start()
         if event.get('type') == 'activity':

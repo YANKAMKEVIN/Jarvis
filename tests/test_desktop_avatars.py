@@ -17,6 +17,20 @@ def app():
     app.setStyleSheet(STYLE)
     return app
 
+def test_tool_results_drive_avatar_feedback():
+    QApplication.instance() or QApplication([])
+    c = Controller()
+    for status in ('running', 'confirmation', 'cancelled'):
+        c.voice_event({'type': 'activity', 'id': status, 'label': 'Test', 'status': status})
+        assert c.avatar_feedback is None, status
+    c.voice_event({'type': 'activity', 'id': 'ok', 'label': 'Test', 'status': 'received'})
+    assert c.avatar_feedback == 'success' and c.feedback_timer.isActive()
+    c.voice_event({'type': 'activity', 'id': 'ko', 'label': 'Test', 'status': 'error'})
+    assert c.avatar_state() == 'error'
+    c.clear_avatar_feedback()
+    assert c.avatar_state() == c.voice_state
+
+
 @pytest.mark.parametrize('appearance', CATALOG, ids=lambda a: a.id)
 def test_artwork_decodes_and_atlas_poses_are_distinct(appearance):
     frames = [pose_image(appearance.id, state) for state in ('listening', 'thinking', 'speaking', 'success')]
