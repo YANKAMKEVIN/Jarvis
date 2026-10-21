@@ -99,6 +99,7 @@ def card(title, text):
 
 
 class Controller(QObject):
+    routine_result = Signal(object)
     notice = Signal(object)
     appearance_requested = Signal()
     appearance_changed = Signal(str)
@@ -113,6 +114,7 @@ class Controller(QObject):
     def __init__(self, demo=False):
         super().__init__()
         self.demo = demo
+        self.ptt_hotkey_message="Maintenez ⌘⌥Espace, ou Espace lorsque le compagnon a le focus."
         self.ptt_enabled=False
         self.ptt_held=False
         self.ptt_timer=QTimer(self);self.ptt_timer.setSingleShot(True);self.ptt_timer.setInterval(45000)
@@ -320,9 +322,17 @@ class Controller(QObject):
         if self.voice_worker is not None:
             self.voice_state = "stopping"
             self.voice_worker.stop()
-            self.changed.emit()
+        self.changed.emit()
 
     def voice_event(self, event):
+        if event.get('type')=='routine_result':
+            self.routine_result.emit(event)
+            if not event.get('ok'):
+                self.tool_notice='Routine refusée : mode lecture seule.' if event.get('reason')=='read_only_mode' else 'La routine n’a pas pu démarrer. Consultez l’activité.'
+                self.tool_timer.start()
+                self.notice.emit({'key':'routine:error:'+event.get('reason',''),'text':self.tool_notice,'destination':'details'})
+                self.changed.emit()
+            return
         if event.get('type') in {'activity', 'tool_receipt', 'task_progress'}:
             status = event.get('status')
             # 'received' is what a tool that succeeded without a state check reports.
@@ -673,7 +683,7 @@ class VoicePanel(QWidget):
             notice='Micro ouvert pendant le maintien' if c.ptt_held else 'Micro fermé · maintien pour parler activé'
             if state=='muted':
                 self.status.setText('Maintenir pour parler')
-                self.hint.setText('Maintenez ⌘⌥Espace, ou Espace lorsque le compagnon a le focus.')
+                self.hint.setText(c.ptt_hotkey_message)
         self.voice_notice.setText(c.recovery_message or notice)
         self.voice_notice.setStyleSheet("color: #e5a0aa;" if c.voice_error else "color: #91a9c1;")
         self.footnote.setText("JARVIS · ASSISTANT VOCAL" if not active else "GEMINI LIVE · CONFIRMATIONS VOCALES")
@@ -879,6 +889,7 @@ class DesktopShell:
         from jarvis.desktop.hotkey import HoldHotkey
         self.hold_hotkey=HoldHotkey(controller.begin_push_to_talk,controller.end_push_to_talk,parent=controller,
                                    demo=controller.demo or app.platformName()=='offscreen')
+        self.hold_hotkey.changed.connect(self.hold_hotkey_changed)
         self.hold_hotkey.set_enabled(controller.ptt_enabled)
         app.aboutToQuit.connect(self.hold_hotkey.close)
         from jarvis.desktop.recovery import VoiceRecovery,MacPowerMonitor
@@ -1012,6 +1023,10 @@ class DesktopShell:
     def save_devices(self):
         self.settings.setValue('audio/input_device', json.dumps(self.controller.input_choice))
         self.settings.setValue('audio/output_device', json.dumps(self.controller.output_choice))
+
+    def hold_hotkey_changed(self):
+        self.controller.ptt_hotkey_message=self.hold_hotkey.message
+        self.controller.changed.emit()
 
     def set_auto_reconnect(self,enabled):
         self.settings.setValue('voice/auto_reconnect',enabled)

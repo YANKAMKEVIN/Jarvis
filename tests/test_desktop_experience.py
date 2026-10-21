@@ -157,3 +157,37 @@ def test_recovery_never_resubmits_existing_missions(ui):
     c.start_voice=Mock();shell.recovery.enabled=True;shell.recovery.retry()
     assert c.missions==old
     c.start_voice.assert_called_once_with(reconnect=True,_automatic=True)
+
+def test_pending_reconnection_can_be_cancelled_from_companion_menu(ui):
+    app,c,shell=ui;c.demo=False;r=shell.recovery;r.enabled=True
+    c.voice_desired=True;c.voice_state='error';c.can_reconnect=True;r.observe()
+    assert r.timer.isActive()
+    menu=shell.compact.make_menu();assert menu.actions_by_id['cancel_recovery'].isVisible()
+    menu.actions_by_id['cancel_recovery'].trigger()
+    assert not r.timer.isActive() and not c.voice_desired
+
+def test_connection_in_progress_can_be_stopped_without_waiting_for_timeout(ui):
+    app,c,shell=ui;c.demo=False;c.voice_worker=Mock();c.voice_state='starting';c.voice_desired=True
+    menu=shell.compact.make_menu();assert menu.actions_by_id['session'].isEnabled()
+    menu.actions_by_id['session'].trigger()
+    c.voice_worker.stop.assert_called_once();assert not c.voice_desired
+
+def test_routine_refusal_is_visible_in_configuration_and_companion(ui,tmp_path):
+    from jarvis.desktop.routines import RoutineDialog
+    from jarvis.macros import MacroStore
+    app,c,shell=ui;store=MacroStore(tmp_path/'receipt.db');store.save('Focus','Read agenda')
+    dialog=RoutineDialog(c,store=store)
+    try:
+        c.demo=False;c.voice_worker=Mock();c.voice_state='listening'
+        dialog.list.setCurrentRow(0);dialog.launch()
+        c.voice_event({'type':'routine_result','name':'Focus','ok':False,'reason':'read_only_mode'})
+        assert 'lecture seule' in dialog.notice.text()
+        assert shell.compact.bubble.current is not None
+        assert 'lecture seule' in shell.compact.bubble.current.text
+    finally:dialog.close();dialog.deleteLater()
+
+def test_duplicate_wake_does_not_replace_a_healthy_live_session(ui):
+    app,c,shell=ui;c.voice_desired=True;c.voice_state='listening';c.voice_worker=Mock()
+    shell.recovery.after_wake()
+    c.voice_worker.stop.assert_not_called()
+    assert not shell.recovery.timer.isActive()

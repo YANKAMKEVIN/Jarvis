@@ -159,7 +159,7 @@ state interpolation. Native macOS fluidity/live audio remain manual checks.
 frameless, always-on-top window. The avatar is 320 × 320 and keeps its size even
 when missions arrive. There is no permanent title, card, footer or voice dock.
 The resting pose has no pedestal. Two 32 px overlay controls appear on hover:
-open the full assistant, and open the companion menu. Their appearance never
+use the contextual voice action, and open the companion menu; the full assistant is available from that menu. Their appearance never
 changes the avatar layout. Leaving hides them; keyboard focus and an open menu
 keep them available. Tab/Space/Enter reveal controls; Tab navigates; Escape hides.
 
@@ -223,3 +223,6 @@ manual verification on the user's Mac.
 References: [Apple collection behaviors](https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct),
 [Qt native handle types](https://doc.qt.io/qt-6/mixing-qt-with-other-ui-toolkits.html),
 [PyObjC native pointers](https://pyobjc.readthedocs.io/en/latest/notes/ctypes.html).
+
+The subsequent six experience improvements are documented in
+[the companion experience guide](companion-experience.md).

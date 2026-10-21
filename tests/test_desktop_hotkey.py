@@ -108,3 +108,29 @@ def test_stale_hold_press_cannot_open_microphone_after_rapid_reregistration():
     old_press();instance.processEvents();assert not events
     backend.press();instance.processEvents();assert events==['press']
     hold.close()
+
+def test_carbon_hold_callback_registers_both_edges_and_filters_its_identifier():
+    class API:
+        kind=6
+        signature=SIGNATURE
+        def GetApplicationEventTarget(self):return 1
+        def InstallEventHandler(self,target,callback,count,spec,data,out):
+            assert count==2 and [spec[i].eventKind for i in range(count)]==[6,9]
+            self.callback=callback;out._obj.value=2;return 0
+        def RegisterEventHotKey(self,key,mods,identifier,target,options,out):
+            assert key==49 and mods==2304 and identifier.id==2
+            out._obj.value=3;return 0
+        def GetEventKind(self,event):return self.kind
+        def GetEventParameter(self,event,name,kind,actual,size,actual_size,out):
+            identifier=C.cast(out,C.POINTER(HotkeyID)).contents
+            identifier.signature=self.signature;identifier.id=2;return 0
+        def UnregisterEventHotKey(self,value):return 0
+        def RemoveEventHandler(self,value):return 0
+    backend=CarbonBackend.__new__(CarbonBackend);backend.api=API()
+    backend.identifier=2;backend.modifiers=2304
+    backend.handler=C.c_void_p();backend.hotkey=C.c_void_p();backend.callback=None
+    events=[];assert backend.start(lambda:events.append('down'),lambda:events.append('up'))
+    assert backend.api.callback(None,None,None)==0
+    backend.api.kind=9;assert backend.api.callback(None,None,None)==0
+    backend.api.signature=0;assert backend.api.callback(None,None,None)!=0
+    assert events==['down','up'];assert backend.close()

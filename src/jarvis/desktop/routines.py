@@ -7,13 +7,13 @@ from jarvis.macros import MacroStore,MacroError
 
 TEMPLATES={
     'Ma journée':'Lis mon agenda et mes rappels pour aujourd’hui. Résume les horaires, conflits et priorités. Ne crée, ne modifie et n’envoie rien.',
-    'Concentration':'Demande-moi la tâche sur laquelle je veux me concentrer et la durée souhaitée. Lance ensuite un minuteur de cette durée. Ne change aucun réglage système et n’envoie aucun message.',
+    'Concentration':'Lance un minuteur de 25 minutes intitulé Concentration, puis annonce le début de cette session. Ne change aucun réglage système et n’envoie aucun message.',
 }
 
 class RoutineDialog(QDialog):
     def __init__(self,controller,parent=None,store=None):
         super().__init__(parent)
-        self.controller=controller;self.store=store or MacroStore()
+        self.controller=controller;self.store=store or MacroStore();self.pending_name=None
         self.setWindowTitle('Routines vocales');self.resize(620,600)
         self.setStyleSheet('QDialog {background:#0d1c2b;} QLineEdit,QPlainTextEdit,QListWidget {background:#13283b;color:#e3f5ff;border:1px solid #42617a;}')
         layout=QVBoxLayout(self)
@@ -35,6 +35,7 @@ class RoutineDialog(QDialog):
         self.notice=QLabel('Les exemples ne sont enregistrés ni exécutés avant votre choix.');self.notice.setWordWrap(True);self.notice.setTextFormat(Qt.TextFormat.PlainText);layout.addWidget(self.notice)
         close=QPushButton('Fermer');close.clicked.connect(self.close);layout.addWidget(close)
         controller.changed.connect(self.refresh_enabled)
+        controller.routine_result.connect(self.receipt)
         self.reload();self.refresh_enabled()
     def reload(self,selected=None):
         self.list.blockSignals(True);self.list.clear()
@@ -65,6 +66,14 @@ class RoutineDialog(QDialog):
     def refresh_enabled(self):
         c=self.controller
         self.run.setEnabled(not c.demo and c.voice_worker is not None and c.voice_state not in {'starting','stopping','error'})
+    def receipt(self,event):
+        if event.get('name')!=self.pending_name:return
+        self.pending_name=None
+        messages={'read_only_mode':'Routine refusée : le mode lecture seule est activé.',
+                  'macro_not_found':'Routine introuvable. Enregistrez-la à nouveau.'}
+        self.notice.setText('Mission lancée · consultez les missions de Jarvis.' if event.get('ok') else messages.get(event.get('reason'),'La routine n’a pas pu démarrer. Consultez l’activité.'))
+        self.refresh_enabled()
+
     def launch(self):
         item=self.list.currentItem()
         if not item:self.notice.setText('Enregistrez et sélectionnez une routine avant de la lancer.');return
@@ -73,6 +82,7 @@ class RoutineDialog(QDialog):
             self.notice.setText('Routine locale indisponible.');return
         if not row or self.name.text().strip()!=row['name'] or self.goal.toPlainText().strip()!=row['goal']:
             self.notice.setText('Enregistrez vos modifications avant de lancer la routine.');return
+        self.pending_name=item.text()
         self.controller.run_routine(item.text());self.run.setEnabled(False)
         QTimer.singleShot(1000,self.refresh_enabled)
         self.notice.setText('Demande transmise · suivez sa mission dans Jarvis.')

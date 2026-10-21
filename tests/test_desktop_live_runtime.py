@@ -459,7 +459,9 @@ def test_routine_ui_invokes_existing_guarded_tool_and_cannot_bypass_safe_mode(tm
         await runtime._launch_routine('Focus');registry.tasks.start.assert_called_once_with('Read agenda')
         registry.read_only_mode=True
         await runtime._launch_routine('Focus')
-        assert registry.tasks.start.call_count==1 and events[-1]['status']=='error'
+        assert registry.tasks.start.call_count==1
+        assert any(e.get('type')=='activity' and e.get('status')=='error' for e in events)
+        assert events[-1]['type']=='routine_result' and events[-1]['reason']=='read_only_mode'
         await registry.aclose()
     asyncio.run(scenario())
 

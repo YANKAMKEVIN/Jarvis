@@ -72,13 +72,15 @@ class VoiceRecovery(QObject):
             c.voice_worker.set_muted(True);c.voice_worker.stop()
             c.voice_state='stopping';c.changed.emit()
     def after_wake(self):
+        if not self.sleeping:return
         self.sleeping=False
         c=self.c
         if c.voice_desired and not c.user_stop_requested:
+            self.attempts=0;self.restored_notified=False
             self.pending_wake=True;c.can_reconnect=True
             if c.voice_worker:c.voice_worker.stop()
             else:c.voice_state='error'
-            c.notice.emit({'key':'wake:voice','text':'Réveil du Mac · récupération du vocal','destination':'settings'})
+            c.notice.emit({'key':'wake:voice','text':'Réveil du Mac · récupération du vocal' if self.enabled else 'Réveil du Mac · reconnexion disponible','destination':'settings'})
             c.changed.emit();self.observe()
     def close(self):
         self.closed=True;self.timer.stop();self.stable.stop()

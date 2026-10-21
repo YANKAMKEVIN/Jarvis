@@ -184,6 +184,7 @@ class LiveRuntime:
         except Exception:result={'ok':False,'message':'Routine locale indisponible.'}
         if self.activity_serial==before:
             self.emit(project_activity('run_macro',result,uuid.uuid4().hex))
+        self.emit({'type':'routine_result','name':name,'ok':bool(result.get('ok')),'reason':result.get('error_code','')})
         self._task_progress()
 
     async def _announce_task(self,instructions):
@@ -356,7 +357,7 @@ class LiveRuntime:
                     if self.mute_requested.is_set() and c.audio.mic_open:
                         if hasattr(c.audio,'finish_push_to_talk'): c.audio.finish_push_to_talk()
                         else:c.audio.set_microphone(False)
-                        self.state('muted')
+                        self.state(self.presentation_state())
                 wanted = not self.mute_requested.is_set()
                 if wanted != c.audio.mic_open:
                     c.audio.set_microphone(wanted)

@@ -179,6 +179,7 @@ class CompanionWindow(OrbWindow):
 
     def leaveEvent(self, event):
         self.hovered = False
+        if hasattr(self,"idle_timer"):self.reset_idle()
         if hasattr(self, 'open_button'):
             self.refresh_controls()
         super().leaveEvent(event)
@@ -240,11 +241,16 @@ class CompanionWindow(OrbWindow):
             label=('Interrompre la réponse' if c.voice_state=='speaking' and c.voice_worker else
                    ('Couper le micro' if c.voice_mic_open else 'Réactiver le micro') if c.voice_worker else
                    'Reconnecter' if c.can_reconnect else 'Démarrer Jarvis')
-            if c.ptt_enabled:label='Maintenir pour parler · ⌘⌥Espace'
+            if c.ptt_enabled:
+                registered=getattr(getattr(self.shell,'hold_hotkey',None),'active',False)
+                label='Maintenir pour parler · ⌘⌥Espace' if registered else 'Maintenir ce bouton pour parler · Espace sur le compagnon'
             self.voice_button.setText('■' if c.voice_state=='speaking' else '●' if c.voice_mic_open else '▶')
             self.voice_button.setAccessibleName(label);self.voice_button.setToolTip(label)
             self.voice_button.setEnabled(not c.demo and c.audio_worker is None and c.voice_state not in {'starting','stopping'} and not(c.voice_worker and c.voice_state=='error'))
-        if hasattr(self,'idle_timer') and self.discreet and c.voice_state in {'listening','speaking','thinking','error'}: self.wake_companion()
+        if hasattr(self,'idle_timer'):
+            if getattr(self,'last_voice_state',None)!=c.voice_state:
+                self.last_voice_state=c.voice_state;self.reset_idle()
+            if self.discreet and c.voice_state in {'listening','speaking','thinking','error'}:self.wake_companion()
         if getattr(self, 'menu', None) is not None:
             self.update_menu(self.menu)
 
@@ -262,6 +268,7 @@ class CompanionWindow(OrbWindow):
         action('notice', '').setEnabled(False)
         menu.addSeparator()
         action('session', '', lambda: self.controller.stop_voice() if self.controller.voice_worker else self.controller.start_voice())
+        action('cancel_recovery','Annuler la reconnexion',self.controller.stop_voice)
         action('microphone', '', self.controller.toggle_microphone)
         action('interrupt', 'Interrompre la réponse', self.controller.interrupt_voice)
         action('stop_test', 'Arrêter le test audio local', self.controller.stop_audio_job)
@@ -305,7 +312,11 @@ class CompanionWindow(OrbWindow):
         actions['notice'].setText(notice)
         actions['notice'].setVisible(bool(notice))
         actions['session'].setText('Fermeture…' if active and c.voice_state == 'error' else 'Arrêter le vocal' if active else 'Reconnecter' if c.can_reconnect else 'Démarrer Jarvis')
-        actions['session'].setEnabled(not c.demo and c.audio_worker is None and c.voice_state not in {'starting','stopping'} and not (active and c.voice_state == 'error'))
+        actions['session'].setEnabled(not c.demo and c.audio_worker is None and c.voice_state!='stopping' and (c.voice_state!='starting' or active) and not (active and c.voice_state=='error'))
+        if active and c.voice_state=='starting':actions['session'].setText('Annuler la connexion')
+        actions['cancel_recovery'].setVisible(self.shell.recovery.timer.isActive() or c.reconnecting)
+        actions['recovery'].setChecked(self.shell.recovery.enabled)
+        actions['ptt'].setChecked(c.ptt_enabled)
         actions['microphone'].setText('Couper le micro' if c.voice_mic_open else 'Réactiver le micro')
         for key in ('microphone','interrupt'):
             actions[key].setVisible(active and not (key=='microphone' and c.ptt_enabled))

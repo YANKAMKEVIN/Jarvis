@@ -289,7 +289,7 @@ PYTHONPATH=src .venv/bin/python scripts/diagnose_accessibility.py --app Safari
 Trois vues partagent la même session : orbe seul, compagnon compact et fenêtre
 complète, entièrement vocales : orbe, état d’écoute et commandes audio.
 Avatar réactif au son, compagnon transparent déplaçable avec position mémorisée,
-deux commandes au survol (ouvrir Jarvis et menu), et sons optionnels. Cartes d’agenda, rappels et réponses web, avec un
+deux commandes au survol (vocal contextuel et menu), et sons optionnels. Cartes d’agenda, rappels et réponses web, avec un
 suivi des actions et une annulation coopérative des tâches. Raccourci global
 macOS, choix/tests des périphériques et reconnexion explicite après coupure.
 Menu permanent avec état de capture et commandes vocales, même fenêtres masquées. Aucun champ de saisie
@@ -302,6 +302,9 @@ Deux cartes de mission peuvent être suivies en parallèle : recherches avec
 outils de lecture limités, missions sur le bureau mises en file, annulation
 par identifiant et accès depuis le menu du compagnon. Jusqu’à deux exécutions et six
 demandes vivantes, dans la même session vocale.
+
+Les réglages du compagnon, les bulles, le maintien pour parler, les routines et
+la récupération du vocal sont décrits dans [le guide de l’expérience](docs/companion-experience.md).
 
 Installation :
 
