@@ -177,6 +177,25 @@ class Controller(QObject):
         self.devices_changed.emit()
         self.changed.emit()
 
+    def start_voice_preview(self, voice):
+        from jarvis.desktop.voices import VOICE_IDS
+        if self.demo or self.voice_worker is not None or self.audio_worker is not None or voice not in VOICE_IDS:
+            return False
+        if self.device_config_invalid:
+            self.audio_event.emit({"type": "audio_test", "kind": "voice_preview", "state": "error",
+                "message": "Sélectionnez à nouveau votre sortie audio dans Réglages."})
+            return False
+        from jarvis.desktop.voice_preview import VoicePreview
+        worker = VoicePreview(voice, self.output_choice, parent=self)
+        self.audio_worker = worker
+        self.audio_job_kind = "voice_preview"
+        self.audio_job_state = "preparing"
+        worker.event.connect(self.handle_audio_event)
+        worker.finished.connect(lambda: self.audio_finished(worker))
+        self.changed.emit()
+        worker.start()
+        return True
+
     def start_audio_job(self, kind):
         if self.demo or self.voice_worker is not None or self.audio_worker is not None:
             return
@@ -679,11 +698,13 @@ class VoicePanel(QWidget):
         if c.audio_worker is not None:
             self.status.setText('Micro en test local' if c.local_mic_open else 'Test audio local' if c.audio_job_kind != 'scan' else 'Périphériques audio')
             self.hint_area.setCurrentIndex(0)
-            self.hint.setText('Arrêtez le test dans Réglages pour démarrer le vocal.')
+            if c.audio_job_kind == 'voice_preview':
+                self.status.setText('Aperçu vocal · micro fermé')
+            self.hint.setText('Arrêtez l’aperçu ou le test audio pour démarrer le vocal.')
         if c.local_mic_open:
             notice = 'Micro ouvert pour le test local · aucune voix envoyée à Gemini'
         elif c.audio_worker is not None:
-            notice = 'Opération audio locale en cours · Gemini déconnecté'
+            notice = 'Aperçu généré par Gemini · micro fermé' if c.audio_job_kind == 'voice_preview' else 'Opération audio locale en cours · Gemini déconnecté'
         elif c.voice_error:
             notice = c.voice_error
         elif c.demo:

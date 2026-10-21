@@ -32,7 +32,7 @@ def test_all_defaults_persistence_isolation_and_corrupt_preferences(tmp_path):
     settings = QSettings(path, QSettings.Format.IniFormat)
     prefs = VoicePreferences(settings)
     assert set(DEFAULT_VOICES) == {a.id for a in CATALOG}
-    assert {prefs.load(a.id) for a in CATALOG} == VOICE_IDS
+    assert {prefs.load(a.id) for a in CATALOG} <= VOICE_IDS
     other = prefs.load('neo_guide')
     prefs.save('nova_bot', 'Aoede')
     settings.sync()
@@ -74,7 +74,7 @@ def test_menu_opens_selector_without_microphone(shell):
     assert s.voice_dialog.isVisible()
     assert c.voice_worker is None and not c.voice_mic_open
     assert s.voice_dialog.avatars.count() == 16
-    assert s.voice_dialog.voices.count() == 5
+    assert s.voice_dialog.voices.count() == 30
 
 
 def test_controller_passes_selected_voice_before_start(shell, monkeypatch):

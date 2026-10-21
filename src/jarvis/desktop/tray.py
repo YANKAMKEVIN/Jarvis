@@ -10,6 +10,8 @@ def presence(controller):
     if c.local_mic_open:
         return 'Test micro local · micro ouvert', '#87dcff', True
     if c.audio_worker is not None:
+        if c.audio_job_kind == 'voice_preview':
+            return 'Aperçu vocal · micro fermé', '#aebdd0', False
         return 'Test audio local' if c.audio_job_kind != 'scan' else 'Lecture des périphériques', '#aebdd0', False
     state = c.voice_state
     if state == 'error':
@@ -130,5 +132,6 @@ class TrayControls:
         self.microphone.setText('Couper le micro' if c.voice_mic_open else 'Réactiver le micro')
         self.microphone.setEnabled(active and not blocked and not c.demo)
         self.interrupt.setEnabled(active and not blocked and not c.demo and c.voice_state in {'speaking', 'thinking'})
+        self.stop_test.setText('Arrêter l’aperçu vocal' if c.audio_job_kind == 'voice_preview' else 'Arrêter le test audio local')
         self.stop_test.setVisible(c.audio_worker is not None)
         self.stop_test.setEnabled(c.audio_worker is not None and not c.demo)

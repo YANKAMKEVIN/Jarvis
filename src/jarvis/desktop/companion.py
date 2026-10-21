@@ -356,6 +356,7 @@ class CompanionWindow(OrbWindow):
         for key in ('microphone','interrupt'):
             actions[key].setVisible(active and not (key=='microphone' and c.ptt_enabled))
             actions[key].setEnabled(active and c.voice_state not in {'starting','stopping','error'} and not c.demo)
+        actions['stop_test'].setText('Arrêter l’aperçu vocal' if c.audio_job_kind == 'voice_preview' else 'Arrêter le test audio local')
         actions['stop_test'].setVisible(c.audio_worker is not None)
         count = len(c.focus_missions())
         actions['missions'].setText(f'Voir les missions ({count})' if count else 'Voir les missions')

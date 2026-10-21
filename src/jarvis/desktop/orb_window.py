@@ -103,6 +103,8 @@ class OrbWindow(QWidget):
             state = 'Observation d’écran'
         if c.audio_worker is not None:
             state = 'Test micro local' if c.local_mic_open else 'Préparation audio' if c.audio_job_state == 'preparing' else 'Audio local'
+        if c.audio_worker is not None and c.audio_job_kind == 'voice_preview':
+            state = 'Aperçu vocal · micro fermé'
         if c.demo:
             state = 'Démo · micro fermé'
         count = len(c.cards)

@@ -335,6 +335,8 @@ sur **Interrompre**, puis attendre la reprise de l’écoute. Les confirmations 
 outils restent vocales. Les modes terminal existants restent disponibles.
 
 Pour actualiser un lanceur existant : `python scripts/build_desktop_app.py --update`.
+Le menu **Voix des avatars…** propose 30 voix, des favoris et un aperçu en français sans ouvrir le micro. Arrêtez le vocal avant de lancer un aperçu ; une clé Gemini et un accès réseau sont nécessaires. Voir [les voix et aperçus](docs/companion-experience.md#voix-par-avatar-et-aperçus-intégrés).
+
 Voir [le guide vocal](docs/desktop-voice.md) et [le guide desktop](docs/desktop-ui.md)
 pour les limites, les tests et les prochaines étapes.
 

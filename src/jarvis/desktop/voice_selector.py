@@ -1,8 +1,8 @@
 """Assign voices without replacing an active session or opening the microphone."""
-from PySide6.QtCore import Qt, QSize, QUrl
-from PySide6.QtGui import QDesktopServices, QIcon, QPixmap
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QHBoxLayout,
-    QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout)
+    QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout)
 from jarvis.desktop.appearances import CATALOG, BY_ID
 from jarvis.desktop.avatar_assets import pose_image
 from jarvis.desktop.voices import VOICES
@@ -15,7 +15,7 @@ class VoiceSelector(QDialog):
         self.setWindowTitle('Voix des avatars')
         self.setStyleSheet('QDialog, QListWidget { background: #0d1c2b; color: #e4f4ff; } '
                            'QListWidget::item:selected { background: #29485f; border: 1px solid #83cfff; }')
-        self.resize(730, 630)
+        self.resize(760, 740)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 22, 22, 18)
         layout.setSpacing(12)
@@ -44,6 +44,10 @@ class VoiceSelector(QDialog):
         self.name.setStyleSheet('font-size: 20px; font-weight: 600;')
         right.addWidget(self.name)
         right.addWidget(QLabel('Voix de cet avatar'))
+        self.search = QLineEdit()
+        self.search.setPlaceholderText('Rechercher parmi les 30 voix…')
+        self.search.setAccessibleName('Rechercher une voix par nom ou description')
+        right.addWidget(self.search)
         self.voices = QComboBox()
         self.voices.setAccessibleName('Voix attribuée à cet avatar')
         for voice in VOICES:
@@ -55,10 +59,20 @@ class VoiceSelector(QDialog):
         self.reset = QPushButton('Rétablir la voix initiale de cet avatar')
         self.reset.clicked.connect(self.reset_voice)
         right.addWidget(self.reset)
-        self.listen = QPushButton('Écouter les voix dans Google AI Studio ↗')
-        self.listen.setToolTip('Ouvre le catalogue vocal de Google dans votre navigateur.')
-        self.listen.clicked.connect(lambda: QDesktopServices.openUrl(QUrl('https://aistudio.google.com/')))
+        self.favorite = QPushButton()
+        self.favorite.clicked.connect(self.toggle_favorite)
+        right.addWidget(self.favorite)
+        self.listen = QPushButton('Écouter un aperçu')
+        self.listen.clicked.connect(lambda: self.controller.start_voice_preview(self.voices.currentData()))
         right.addWidget(self.listen)
+        self.stop = QPushButton('Arrêter l’aperçu')
+        self.stop.clicked.connect(self.stop_preview)
+        right.addWidget(self.stop)
+        self.preview_message = 'Phrase fixe en français · générée par Gemini · micro fermé'
+        self.preview_status = QLabel(self.preview_message)
+        self.preview_status.setWordWrap(True)
+        right.addWidget(self.preview_status)
+        self.controller.audio_event.connect(self.preview_event)
         right.addStretch()
         body.addLayout(right, 2)
         layout.addLayout(body, 1)
@@ -71,6 +85,7 @@ class VoiceSelector(QDialog):
         layout.addWidget(buttons)
         self.avatars.currentItemChanged.connect(self.select_avatar)
         self.voices.currentIndexChanged.connect(self.choose_voice)
+        self.search.textChanged.connect(self.filter_voices)
         self.controller.changed.connect(self.render_status)
         self.controller.appearance_changed.connect(self.follow_avatar)
         self.follow_avatar(self.controller.appearance)
@@ -86,17 +101,20 @@ class VoiceSelector(QDialog):
         return self.avatars.currentItem().data(Qt.ItemDataRole.UserRole)
 
     def select_avatar(self, *_):
+        self.stop_preview()
+        self.search.clear()
         avatar = self.selected_avatar()
         self.name.setText(BY_ID[avatar].name)
         self.portrait.setPixmap(QPixmap.fromImage(pose_image(avatar)).scaled(
             190, 190, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        self.voices.blockSignals(True)
-        self.voices.setCurrentIndex(self.voices.findData(self.shell.voice_preferences.load(avatar)))
-        self.voices.blockSignals(False)
+        self.populate_voices(self.shell.voice_preferences.load(avatar))
         self.saved.setText('Voix enregistrée pour cet avatar.')
 
     def choose_voice(self, _):
+        self.stop_preview()
         self.shell.set_avatar_voice(self.selected_avatar(), self.voices.currentData())
+        self.update_favorite()
+        self.filter_voices(self.search.text())
         self.saved.setText('Votre choix est enregistré.')
 
     def reset_voice(self):
@@ -105,8 +123,60 @@ class VoiceSelector(QDialog):
         self.shell.set_avatar_voice(avatar, voice)
         self.select_avatar()
 
+    def update_favorite(self):
+        selected = self.voices.currentData() in self.shell.voice_preferences.favorites()
+        self.favorite.setText('★ Retirer des favoris' if selected else '☆ Ajouter aux favoris')
+
+    def populate_voices(self, current):
+        favorites = self.shell.voice_preferences.favorites()
+        self.voices.blockSignals(True)
+        self.voices.clear()
+        for voice in sorted(VOICES, key=lambda voice: voice.id not in favorites):
+            prefix = '★ ' if voice.id in favorites else ''
+            self.voices.addItem(f'{prefix}{voice.id} · {voice.description}', voice.id)
+        self.voices.setCurrentIndex(self.voices.findData(current))
+        self.voices.blockSignals(False)
+        self.update_favorite()
+        self.filter_voices(self.search.text())
+
+    def toggle_favorite(self):
+        current = self.voices.currentData()
+        prefs = self.shell.voice_preferences
+        prefs.set_favorite(current, current not in prefs.favorites())
+        self.populate_voices(current)
+
+    def filter_voices(self, text):
+        # Keep the assigned voice visible even when it does not match the search.
+        needle = text.casefold().strip()
+        for index in range(self.voices.count()):
+            item = self.voices.model().item(index)
+            item.setEnabled(not needle or needle in self.voices.itemText(index).casefold() or index == self.voices.currentIndex())
+            self.voices.view().setRowHidden(index, not item.isEnabled())
+
+    def stop_preview(self):
+        if self.controller.audio_worker is not None and self.controller.audio_job_kind == "voice_preview":
+            self.controller.stop_audio_job()
+
+    def preview_event(self, event):
+        if event.get("kind") == "voice_preview":
+            self.preview_message = event["message"]
+            self.render_status()
+
+    def hideEvent(self, event):
+        self.stop_preview()
+        super().hideEvent(event)
+
     def render_status(self):
         c = self.controller
+        preview = c.audio_worker is not None and c.audio_job_kind == "voice_preview"
+        self.listen.setEnabled(not c.demo and c.voice_worker is None and c.audio_worker is None)
+        self.stop.setEnabled(preview)
+        if c.demo:
+            self.preview_status.setText("Démo · écoute désactivée. Lancez Jarvis sans --demo pour écouter les voix.")
+        elif c.voice_worker is not None:
+            self.preview_status.setText("Arrêtez le vocal pour écouter un aperçu sans ouvrir le micro.")
+        else:
+            self.preview_status.setText(self.preview_message)
         if c.voice_worker is not None:
             active = c.session_voice or 'Voix de la session'
             pending = c.selected_voice
