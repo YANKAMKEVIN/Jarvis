@@ -958,7 +958,7 @@ class KnowledgeServiceTest(unittest.TestCase):
 
         self.assertFalse(answer.external_knowledge_retrieved)
         self.assertEqual(answer.sources, [])
-        self.assertIn("pas trouvé", answer.message)
+        self.assertEqual(answer.failure_reason, "no_results")
 
     def test_provider_error_return_user_message(self):
         service = KnowledgeService(
@@ -970,7 +970,7 @@ class KnowledgeServiceTest(unittest.TestCase):
 
         self.assertFalse(answer.external_knowledge_retrieved)
         self.assertEqual(answer.sources, [])
-        self.assertIn("source de recherche", answer.message)
+        self.assertEqual(answer.failure_reason, "unavailable")
 
     def test_malicious_source_remains_synthesis_data(self):
         malicious = (

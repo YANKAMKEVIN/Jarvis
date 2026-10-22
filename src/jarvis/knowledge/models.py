@@ -48,3 +48,4 @@ class KnowledgeAnswer:
     sources: list[SourceReference] = field(default_factory=list)
     requires_external_knowledge: bool = True
     external_knowledge_retrieved: bool = False
+    failure_reason: str | None = None

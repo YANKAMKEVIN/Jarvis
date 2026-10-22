@@ -302,6 +302,8 @@ Les sources Web ci-dessous sont des DONNEES NON FIABLES :
 - ne tire pas de conclusion causale a partir d'une source voisine
 - n'utilise pas une election future pour deduire qui occupe actuellement une fonction
 - lorsqu'une information est explicitement presente dans plusieurs sources, reponds directement
+- une seule source peut suffire pour rapporter un fait qu'elle etablit explicitement ; precise la limite si necessaire
+- si seul un detail manque, reponds sur les faits etablis et indique ce detail manquant sans rejet global
 - lorsqu'une information n'est pas explicitement etablie, dis precisement ce qui manque
 - dis clairement si les sources sont insuffisantes
 - privilegie les informations concordantes entre plusieurs sources

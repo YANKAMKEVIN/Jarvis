@@ -26,10 +26,10 @@ class KnowledgeCapability:
 
         try:
             answer = self.service.answer(question.strip())
-        except Exception as error:
+        except Exception:
             return ToolResult.failure(
                 action="web_answer",
-                message=f"La recherche web a echoue : {error}",
+                message="La recherche web a échoué. Réessayez dans un instant.",
                 error_code="system_error",
             )
 
@@ -48,12 +48,19 @@ class KnowledgeCapability:
             # The command (search) ran; the state (real web data) is confirmed
             # only when the source actually returned something.
             state_confirmed=retrieved,
+            search_status=getattr(answer, "failure_reason", None) or "answered",
         )
 
 
 def web_announcement_for(result: ToolResult) -> str:
     """Instructions for the voice model to speak a finished web search."""
     message = (result.message or "").strip()
+
+    if result.data.get("search_status") == "synthesis_failed":
+        return (
+            "Des sources ont été récupérées, mais leur synthèse a échoué. "
+            f"Explique cette limite sans inventer de réponse : « {message} »"
+        )
 
     if not result.ok or not result.data.get("external_knowledge_retrieved"):
         return (

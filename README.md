@@ -232,8 +232,12 @@ rédaction.
 ## Tests
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest -q
+.venv/bin/python -m pip install -e '.[desktop,live,test]'
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -m 'not live' -q
 ```
+
+Les contrôles de qualité avec le vrai modèle local et le Web se lancent séparément.
+Voir [la stratégie de tests et les régressions couvertes](docs/testing-quality.md).
 
 ### Smoke test sur la vraie machine
 

@@ -10,7 +10,7 @@ def load_triggers(settings):
     if not isinstance(values,list):return []
     return [row for row in values[:50] if isinstance(row,dict) and
             isinstance(row.get('id'),str) and isinstance(row.get('routine'),str) and
-            row.get('kind') in {'time','application'} and isinstance(row.get('value'),str)]
+            isinstance(row.get('kind'),str) and row['kind'] in {'time','application'} and isinstance(row.get('value'),str)]
 
 
 def save_trigger(settings, routine, kind, value):

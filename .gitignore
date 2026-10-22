@@ -9,3 +9,7 @@ __pycache__/
 *.app/
 build/
 dist/
+.hypothesis/
+.coverage*
+htmlcov/
+coverage.xml
