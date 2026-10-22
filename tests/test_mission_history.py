@@ -7,6 +7,9 @@ from jarvis.capabilities.memory import MemoryCapability
 from jarvis.live.registry import create_live_registry
 from jarvis.memory.store import MISSION_RETENTION_SECONDS, MemoryStore
 from jarvis.planner.engine import TaskOutcome
+from jarvis.schedule.store import ScheduledMessageStore
+from jarvis.schedule.reminders import ReminderStore
+from jarvis.capabilities.checklists import ChecklistsCapability
 
 
 class MissionStoreTests(unittest.TestCase):
@@ -58,7 +61,10 @@ class MissionHistoryIntegrationTests(unittest.TestCase):
     def _registry(self, memory_path):
         registry = create_live_registry(
             memory_capability=MemoryCapability(MemoryStore(path=memory_path)),
+            schedule_store=ScheduledMessageStore(path=memory_path.parent / "scheduled.db"),
+            reminder_store=ReminderStore(path=memory_path.parent / "reminders.db"),
         )
+        registry.checklists = ChecklistsCapability(path=memory_path.parent / "checklists.db")
         tools = {t.info.name: t for t in registry.livekit_tools()}
         return registry, tools
 

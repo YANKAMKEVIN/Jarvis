@@ -311,7 +311,10 @@ class ScheduleToolsTest(unittest.TestCase):
 class CLITest(unittest.TestCase):
     def _env(self):
         tmp = tempfile.mkdtemp()
-        return {"JARVIS_SCHEDULE_PATH": str(Path(tmp) / "scheduled.db")}
+        return {
+            "JARVIS_SCHEDULE_PATH": str(Path(tmp) / "scheduled.db"),
+            "JARVIS_REMINDERS_PATH": str(Path(tmp) / "reminders.db"),
+        }
 
     def test_install_prints_agent_without_touching_system(self):
         out = StringIO()
@@ -332,10 +335,13 @@ class CLITest(unittest.TestCase):
 
     def test_deliver_empty_store_sends_nothing(self):
         # No due rows => deliver_due never touches the GUI or the screen check.
-        with patch.dict(os.environ, self._env(), clear=False):
+        with patch.dict(os.environ, self._env(), clear=False), patch(
+            "jarvis.schedule.__main__.macos_notifier"
+        ) as notifier:
             out = StringIO()
             with redirect_stdout(out):
                 code = schedule_main(["deliver"])
+        notifier.assert_not_called()
         self.assertEqual(code, 0)
         self.assertIn("sent=0", out.getvalue())
 
