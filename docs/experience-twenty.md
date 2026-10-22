@@ -38,3 +38,11 @@ L’annulation refuse un fichier modifié ou un emplacement déjà occupé. Elle
 Les humanoïdes articulés sont une option de dessin 2D ; les illustrations d’origine restent disponibles. Les apparences abstraites et Kitsune gardent leur animation existante. Réduire les mouvements désactive danse, suivi et salut animés.
 
 Les tests automatisés couvrent préférences, consentement, mémoire, déclencheurs, annulation, commandes, archive et rendu Qt. Le confort au micro, la lecture VoiceOver réelle et les routines propres à chaque utilisateur nécessitent également un essai sur son Mac.
+
+## Validation de cette version
+
+Le 22 octobre 2026 : 59 tests ciblés, 14 tests de l’interface macOS native et 218 tests sur une copie propre du commit passent. Le test réel Gemini confirme une modification de préférences et une réponse écrite avec des appareils audio simulés ; aucun micro ni haut-parleur réel n’est ouvert. Le paquet wheel se construit avec l’icône d’accessibilité embarquée.
+
+Aperçu du mode articulé, capturé directement depuis Qt :
+
+![Danse du compagnon articulé](screenshots/twenty/articulated-dance.gif)

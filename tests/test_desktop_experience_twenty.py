@@ -20,7 +20,8 @@ from jarvis.context_store import ContextStore
 
 @pytest.fixture
 def experience(tmp_path,monkeypatch):
-    app=QApplication.instance() or QApplication([]);app.setStyleSheet(STYLE)
+    app=QApplication.instance() or QApplication([])
+    if app.styleSheet()!=STYLE:app.setStyleSheet(STYLE)
     monkeypatch.setattr('jarvis.desktop.app.QSystemTrayIcon.isSystemTrayAvailable',lambda:False)
     monkeypatch.setenv('JARVIS_MACROS_PATH',str(tmp_path/'macros.db'))
     monkeypatch.setenv('JARVIS_MEMORY_PATH',str(tmp_path/'memory.db'))
@@ -32,7 +33,9 @@ def experience(tmp_path,monkeypatch):
     c.voice_worker=None;c.dance.stop();shell.experience.close()
     shell.recovery.close();shell.hold_hotkey.close();shell.power.close();shell.finish_transfer()
     if shell.voice_dialog:shell.voice_dialog.close()
-    for w in (shell.full,shell.compact,shell.orb_window):w.hide()
+    for w in (shell.full,shell.compact,shell.orb_window):
+        w.hide();w.deleteLater()
+    c.deleteLater();app.processEvents()
 
 
 def live(c):
@@ -192,7 +195,9 @@ def test_voice_setting_receipt_crosses_real_qt_worker_boundary(experience,monkey
         def run(self):
             tool=presentation_tools(NS(presentation_observer=self.event.emit))[0]
             self.result=asyncio.run(tool(voice='Kore',tone='warm'))
-    worker=Worker();worker.event.connect(c.voice_event);worker.start()
+    worker=Worker();worker.event.connect(c.voice_event)
+    # Finish layout/style events from fixture setup before timing the Qt receipt.
+    app.processEvents();QTest.qWait(50);worker.start()
     deadline=time.monotonic()+5
     while worker.isRunning() and time.monotonic()<deadline:QTest.qWait(20)
     assert worker.wait(1000) and worker.result['ok']

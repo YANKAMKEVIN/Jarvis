@@ -68,7 +68,9 @@ async def probe():
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--live',action='store_true');args=parser.parse_args()
     if not args.live:parser.error('--live is required: this uses the configured Gemini API quota')
-    try:print(asyncio.run(probe()))
+    try:
+        result=asyncio.run(probe());print(result)
+        if not all(result[key] for key in ('ready','settings_acknowledged','quiet_reply_received')) or result['session_error']:raise SystemExit(1)
     except Exception as error:print({'probe_error_type':type(error).__name__});raise SystemExit(1)
 
 if __name__=='__main__':main()
