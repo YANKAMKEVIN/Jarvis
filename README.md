@@ -287,13 +287,14 @@ PYTHONPATH=src .venv/bin/python scripts/diagnose_accessibility.py --app Safari
 ## Interface de bureau (première version)
 
 Trois vues partagent la même session : orbe seul, compagnon compact et fenêtre
-complète, entièrement vocales : orbe, état d’écoute et commandes audio.
+complète, conçues pour la voix : orbe, état d’écoute et commandes audio.
 Avatar réactif au son, compagnon transparent déplaçable avec position mémorisée,
 deux commandes au survol (vocal contextuel et menu), et sons optionnels. Cartes d’agenda, rappels et réponses web, avec un
 suivi des actions et une annulation coopérative des tâches. Raccourci global
 macOS, choix/tests des périphériques et reconnexion explicite après coupure.
-Menu permanent avec état de capture et commandes vocales, même fenêtres masquées. Aucun champ de saisie
-ni fil de messages. Les missions présentent leur objectif, l’outil en cours et
+Menu permanent avec état de capture et commandes vocales, même fenêtres masquées.
+La palette ⌘K et le panneau « Jarvis au quotidien… » ajoutent des actions explicites,
+un mode discret et des préférences : [guide des vingt améliorations](docs/experience-twenty.md). Les missions présentent leur objectif, l’outil en cours et
 leurs bilans ; l’analyse d’écran à la demande dispose d’un indicateur et d’une carte de résultat.
 Les missions apparaissent à côté de l’avatar dans Assistant, avec un petit bilan
 à la fin. Le mode compact affiche uniquement le grand avatar ; son menu permet

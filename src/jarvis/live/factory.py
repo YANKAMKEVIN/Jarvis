@@ -21,11 +21,14 @@ def create_realtime_model(google_module, config: LiveConfig, *, realtime_input_c
     )
 
 
-def create_assistant_class(agent_base_class, registry_factory=create_live_registry):
+def create_assistant_class(agent_base_class, registry_factory=create_live_registry, *, desktop=False):
     class JarvisLiveAssistant(agent_base_class):
         def __init__(self) -> None:
             self.registry = registry_factory()
             self.jarvis_tools=self.registry.livekit_tools()
+            if desktop:
+                from jarvis.desktop.presentation_tools import presentation_tools
+                self.jarvis_tools.extend(presentation_tools(self.registry))
             super().__init__(
                 instructions=LIVE_SYSTEM_PROMPT,
                 tools=self.jarvis_tools,

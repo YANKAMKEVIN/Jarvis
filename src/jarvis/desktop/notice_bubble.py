@@ -49,6 +49,9 @@ class NoticeBubble(QFrame):
         if not notice: return
         shell=self.companion.shell
         if notice.mission_id: shell.controller.select_mission(notice.mission_id)
-        if notice.destination=='settings': shell.show_settings()
+        if notice.destination=='undo':shell.experience.undo()
+        elif notice.destination=='history':shell.experience.history()
+        elif notice.destination=='experience':shell.experience.open()
+        elif notice.destination=='settings': shell.show_settings()
         elif notice.destination=='details': shell.show_details()
         else: shell.show_mission_details()

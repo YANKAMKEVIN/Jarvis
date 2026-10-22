@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from PySide6.QtCore import QPointF, QRectF, QTimer, Qt
-from PySide6.QtGui import QColor, QPainter, QPen, QRadialGradient
+from PySide6.QtGui import QCursor, QColor, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import QWidget
 from jarvis.desktop.avatar_motion import (ABSTRACT_IDS, interaction_weights,
     ease_interaction, blended_motion, sample_motion, paint_details)
@@ -19,7 +19,7 @@ def tint(color, alpha):
 # snapped to) so a change of state reads as a living transition, not a jump; the
 # glow drives a gentle breathing even in silence so the orb is never inert.
 STATE_COLORS = {
-    'thinking': '#bea5ff', 'error': '#f0a7ba', 'muted': '#6a8399',
+    'waiting': '#f6cf88', 'thinking': '#bea5ff', 'error': '#f0a7ba', 'muted': '#6a8399',
     'starting': '#9ad0ea', 'listening': '#87e3ff', 'speaking': '#8af0e0',
     'off': '#87e3ff', 'success': '#8af0be',
 }
@@ -45,6 +45,10 @@ class Orb(QWidget):
         self.setFixedSize(size, size)
         self.pedestal = True
         self.dance = None
+        self.tracking = True
+        self.articulated = False
+        self.gaze = (0.,0.)
+        self.wave_ticks = 0
         self.phase = 0.0
         self.appearance = 'nova_bot'
         self.previous_frame = self.frame_image = self.frame_key = None
@@ -93,7 +97,16 @@ class Orb(QWidget):
         level = outgoing if outgoing > 0 else incoming
         self.target = min(1.0, math.sqrt(max(0.0, level)) * 2.2)
 
+    def greet(self):
+        if self.motion:self.wave_ticks=45;self.update()
+
     def tick(self):
+        self.wave_ticks=max(0,self.wave_ticks-1)
+        if self.tracking:
+            cursor=self.mapFromGlobal(QCursor.pos());scale=max(1,self.width()/2)
+            target=(max(-1.,min(1.,(cursor.x()-self.width()/2)/scale)),max(-1.,min(1.,(cursor.y()-self.height()/2)/scale)))
+        else:target=(0.,0.)
+        self.gaze=tuple(value+(wanted-value)*.12 for value,wanted in zip(self.gaze,target))
         self.interaction = ease_interaction(self.interaction, self.state)
         self.transition = min(1.0, self.transition + .12)
         self.phase += (.012 + .014*self.interaction['thinking']) if self.appearance in ABSTRACT_IDS else (.026 if self.state == 'thinking' else .012)
@@ -115,7 +128,7 @@ class Orb(QWidget):
 
     def current_image(self):
         from jarvis.desktop.avatar_assets import pose_image
-        state = self.state
+        state = 'success' if self.motion and self.wave_ticks else self.state
         if self.motion and self.dance and self.dance.active:
             state = ("listening", "success", "speaking", "success")[int(self.dance.elapsed * 2) % 4]
         return pose_image(self.appearance, state)
@@ -155,7 +168,7 @@ class Orb(QWidget):
         if self.motion and self.dance and self.dance.active:
             from jarvis.desktop.avatar_dance import dance_frame
             frame = dance_frame(self.appearance, self.dance.elapsed)
-        p.translate(frame.x * side, frame.y * side)
+        p.translate(frame.x * side + (self.gaze[0]*side*.007 if self.motion and self.tracking else 0), frame.y * side)
         p.rotate(frame.rotation)
         p.scale(frame.sx, frame.sy)
         def draw(frame, opacity):
@@ -163,6 +176,12 @@ class Orb(QWidget):
             rect = QRectF(-size.width()/2, -size.height()/2, size.width(), size.height())
             p.setOpacity(opacity)
             p.drawImage(rect, frame)
+        if self.articulated:
+            from jarvis.desktop.articulated_avatar import paint_rig
+            dancing=bool(self.motion and self.dance and self.dance.active)
+            rig_phase=self.dance.elapsed if dancing else phase
+            if paint_rig(p,self.appearance,side,rig_phase,self.state,self.gaze if self.motion else (0,0),dancing,bool(self.motion and self.wave_ticks)):
+                p.restore();p.end();return
         blend = self.transition if self.motion else 1.0
         if self.previous_frame is not None and blend < 1:
             draw(self.previous_frame, 1-blend)

@@ -45,6 +45,12 @@ class LiveWorker(QThread):
     def cancel_task(self, task_id=None):
         self.runtime.cancel_task(task_id)
 
+    def set_profile(self, profile):
+        self.runtime.set_profile(profile)
+
+    def request_action(self, name, arguments):
+        return self.runtime.request_action(name, arguments)
+
     def set_voice(self, voice):
         self.runtime.set_voice(voice)
 

@@ -21,7 +21,9 @@ Les modes terminal existants restent indépendants.
 
 - Trois vues partagent une seule session vocale : fenêtre complète, compagnon
   compact et orbe seul au premier plan. Changer de vue ne relance ni connexion ni demande.
-- Aucun champ de saisie, bouton Envoyer, suggestion textuelle ou fil de messages.
+- La voix reste l’entrée principale. La palette ⌘K ajoute des actions explicites et
+  une mission saisie ; le mode discret affiche temporairement les réponses écrites.
+  Voir [les vingt améliorations](experience-twenty.md).
   L’orbe et les libellés indiquent connexion, écoute, réflexion, réponse et erreur.
 - **Démarrer Jarvis** ouvre la session puis le micro. Rien n’écoute au lancement.
 - **Couper le micro** ferme la capture ; le même bouton permet de la reprendre.

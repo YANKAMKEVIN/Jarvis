@@ -123,7 +123,7 @@ def test_component_factory_passes_voice_to_model_without_mutating_environment(mo
     original = LiveConfig('test-model', 'Fenrir', .8, 'test')
     monkeypatch.setattr('jarvis.live.config.get_live_config', lambda: original)
     monkeypatch.setattr('jarvis.desktop.live_audio.LocalAudio', lambda loop: object())
-    monkeypatch.setattr(factory, 'create_assistant_class', lambda agent: lambda: object())
+    monkeypatch.setattr(factory, 'create_assistant_class', lambda agent, **kwargs: lambda: object())
     model_factory = Mock(return_value=object())
     monkeypatch.setattr(factory, 'create_realtime_model', model_factory)
     monkeypatch.setattr(livekit.agents, 'AgentSession', lambda **kwargs: object())

@@ -16,6 +16,7 @@ class CompanionAvatar(InteractiveOrb):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.press is not None:
             self.press = None
+            if not self.dragged:self.greet()
             if self.dragged:
                 self.window_owner.set_preference('anchor','free')
             self.window_owner.shell.remember_companion()
@@ -306,6 +307,8 @@ class CompanionWindow(OrbWindow):
         action('open_full','Ouvrir Jarvis',self.shell.show_full)
         action('missions', 'Voir les missions', self.shell.show_mission_details)
         action('details', 'Cartes et activité', self.shell.show_details)
+        action('experience', 'Jarvis au quotidien…', lambda: self.shell.experience.open())
+        action('palette', 'Commandes · ⌘K', lambda: self.shell.experience.palette())
         action('appearance', 'Choisir une apparence…', self.shell.show_appearances)
         action('voices', 'Voix des avatars…', self.shell.show_voices)
         action('routines','Routines vocales…',self.shell.show_routines)

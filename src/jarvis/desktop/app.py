@@ -1,4 +1,4 @@
-"""Voice-only desktop companion; typed commands remain in the separate CLI."""
+"""Voice-first desktop companion with explicit, guarded command-palette actions."""
 from __future__ import annotations
 
 import signal
@@ -70,6 +70,9 @@ QMenu::item:selected { background: #29435f; }
 QMenu::item:disabled { color: #7b91a6; }
 """
 
+from importlib.resources import files as _resource_files
+STYLE += '\nQCheckBox::indicator:checked { image: url("'+str(_resource_files('jarvis.desktop').joinpath('assets','icons','check.svg'))+'"); }'
+
 def label(text, name=None):
     widget = QLabel(text)
     widget.setTextFormat(Qt.TextFormat.PlainText)
@@ -114,6 +117,9 @@ class Controller(QObject):
     def __init__(self, demo=False):
         super().__init__()
         self.demo = demo
+        self.request_status = ""
+        self.quiet_replies = []
+        self.undo_tickets = []
         from jarvis.desktop.avatar_dance import AvatarDance
         self.dance = AvatarDance(self)
         self.ptt_hotkey_message="Maintenez ⌘⌥Espace, ou Espace lorsque le compagnon a le focus."
@@ -303,6 +309,8 @@ class Controller(QObject):
         from jarvis.desktop.live_runtime import VoiceSetupError, preload_live_plugins
         self.voice_state, self.voice_error = "starting", ""
         self.voice_turns = 0
+        self.request_status = ""
+        self.undo_tickets = []
         if not reconnect:
             self.cards.clear()
             self.activity.clear()
@@ -326,6 +334,8 @@ class Controller(QObject):
         self.session_voice = self.selected_voice
         if hasattr(worker, "set_voice"):
             worker.set_voice(self.session_voice)
+        if hasattr(self, "experience") and hasattr(worker,"set_profile"):
+            worker.set_profile(self.experience.options.profile())
         if self.ptt_enabled:worker.set_push_to_talk(True)
         if self.input_choice is not None or self.output_choice is not None:
             worker.set_devices(self.input_choice, self.output_choice)
@@ -351,6 +361,30 @@ class Controller(QObject):
         self.changed.emit()
 
     def voice_event(self, event):
+        kind = event.get("type")
+        if kind == "companion_config" and hasattr(self, "experience"):
+            self.experience.configure(event);return
+        if kind == "request_progress":
+            self.request_status = event.get("message", "")
+            self.tool_notice = self.request_status
+            self.tool_timer.start()
+            self.changed.emit();return
+        if kind == "undo_available":
+            previous={row['id'] for row in self.undo_tickets}
+            self.undo_tickets=event['tickets']
+            new=[row for row in self.undo_tickets if row['id'] not in previous]
+            if new:self.notice.emit({'key':'undo:'+new[0]['id'],'text':'Action réversible · une annulation est disponible.','destination':'undo'})
+            self.changed.emit();return
+        if kind == "assistant_text":
+            if hasattr(self, "experience") and self.experience.options.quiet:
+                self.quiet_replies.append(event["text"][:4000]);self.quiet_replies = self.quiet_replies[-5:]
+                self.notice.emit({"key":"reply:"+str(self.voice_turns),"text":"Nouvelle réponse écrite disponible","destination":"experience"})
+                self.changed.emit()
+            return
+        if kind == "desktop_result":
+            self.request_status = event.get("message", "Résultat disponible.")[:500]
+            self.tool_notice = self.request_status;self.tool_timer.start()
+            self.changed.emit();return
         if event.get("type") == "avatar_dance":
             if event.get("action") == "stop":
                 self.dance.stop()
@@ -380,6 +414,7 @@ class Controller(QObject):
                 else:
                     self.screen_operations.discard(event['id'])
             now = datetime.now().strftime('%H:%M:%S')
+            self.request_status = event['label'] + ' · ' + STATUS_TEXT.get(event['status'], event['status'])
             self.activity[event['id']] = {'label': event['label'], 'status': event['status'], 'time': now}
             self.activity.move_to_end(event['id'])
             while len(self.activity) > 30:
@@ -516,6 +551,10 @@ class Controller(QObject):
     def avatar_state(self):
         if self.voice_state == 'error' or self.avatar_feedback == 'error':
             return 'error'
+        if self.avatar_feedback and self.voice_state not in {'speaking','thinking'}:return self.avatar_feedback
+        if self.voice_state not in {'speaking','thinking'}:
+            if any(m.get('status') in {'needs_confirmation','needs_clarification'} for m in self.focus_missions()):return 'waiting'
+            if any(m.get('status') in {'running','queued','waiting_dependency'} for m in self.focus_missions()):return 'thinking'
         return self.avatar_feedback if self.voice_state not in {'error', 'speaking', 'thinking'} and self.avatar_feedback else self.voice_state
 
     def clear_avatar_feedback(self):
@@ -526,6 +565,7 @@ class Controller(QObject):
         if self.voice_worker is worker:
             self.voice_worker = None
             self.session_voice = None
+            self.undo_tickets = []
             self.audio_levels.emit(0.0, 0.0)
             self.voice_mic_open = False
             self.input_suppressed = False
@@ -660,6 +700,8 @@ class VoicePanel(QWidget):
         self.controls.active = active
         self.controls.refresh()
         self.orb.set_motion(not c.reduced_motion)
+        if c.request_status and c.tool_timer.isActive() and state not in {"error","starting","stopping"} and c.audio_worker is None and not c.input_suppressed:
+            self.hint_area.setCurrentIndex(0);self.hint.setText(c.request_status)
         states = {"off": "Votre assistant vocal", "starting": "Connexion en cours…",
                   "listening": "Je vous écoute", "thinking": "Je réfléchis…",
                   "speaking": "Jarvis vous répond", "muted": "Micro coupé",
@@ -816,6 +858,8 @@ class DesktopWindow(QMainWindow):
             sounds.setChecked(controller.sounds_enabled)
             sounds.toggled.connect(self.set_sounds)
             settings_layout.addWidget(sounds)
+            settings_layout.addWidget(button("Jarvis au quotidien…", lambda: shell.experience.open()))
+            settings_layout.addWidget(button("Palette de commandes · ⌘K", lambda: shell.experience.palette()))
             settings_layout.addWidget(button("Voix des avatars…", shell.show_voices))
             settings_layout.addWidget(button("Configurer les routines vocales…",shell.show_routines))
             settings_layout.addWidget(label('PÉRIPHÉRIQUES ET TESTS LOCAUX', 'eyebrow'))
@@ -955,7 +999,13 @@ class DesktopShell:
         self.insights_spoken = self.settings.value('insights/voice', True) in (True, 'true')
         self._start_metrics_sampler()
         self._start_insight_monitor()
+        from jarvis.desktop.experience import Experience
+        self.experience = Experience(self)
+        controller.experience = self.experience
         self.maybe_show_onboarding()
+        if not controller.demo and app.platformName() != "offscreen" and self.settings.value("experience/setup_seen", False) not in (True,"true"):
+            if self.onboarding:self.onboarding.finished.connect(lambda: self.experience.setup())
+            else:self.experience.setup()
 
     def _start_metrics_sampler(self):
         """Accrue machine-metrics history while Jarvis runs (real desktop only)."""

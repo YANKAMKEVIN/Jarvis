@@ -2,7 +2,7 @@
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QHBoxLayout,
-    QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout)
+    QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QScrollArea, QWidget)
 from jarvis.desktop.appearances import CATALOG, BY_ID
 from jarvis.desktop.avatar_assets import pose_image
 from jarvis.desktop.voices import VOICES
@@ -74,7 +74,10 @@ class VoiceSelector(QDialog):
         right.addWidget(self.preview_status)
         self.controller.audio_event.connect(self.preview_event)
         right.addStretch()
-        body.addLayout(right, 2)
+        right_content=QWidget();right_content.setLayout(right)
+        right_scroll=QScrollArea();right_scroll.setWidgetResizable(True);right_scroll.setWidget(right_content)
+        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body.addWidget(right_scroll, 2)
         layout.addLayout(body, 1)
         self.status = QLabel()
         self.status.setWordWrap(True)

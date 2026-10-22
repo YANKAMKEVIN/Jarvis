@@ -11,6 +11,7 @@ import json
 import os
 from urllib.parse import urlparse
 
+from jarvis.document_consent import REMOTE_DOCUMENT_PERMISSION
 from jarvis.capabilities.results import ToolResult
 from jarvis.tools.filesystem import FileSystemError, FileSystemTools
 
@@ -52,7 +53,8 @@ class DocumentCapability:
     def _remote_model_block(self, action):
         """Refuse to ship document content to a non-local planner model, unless
         the user explicitly opted in. Returns a failure ToolResult or None."""
-        if os.environ.get("JARVIS_DOCUMENT_ALLOW_REMOTE", "").strip().lower() in _ALLOW_REMOTE_VALUES:
+        permission=REMOTE_DOCUMENT_PERMISSION.get()
+        if permission is True or (permission is None and os.environ.get("JARVIS_DOCUMENT_ALLOW_REMOTE", "").strip().lower() in _ALLOW_REMOTE_VALUES):
             return None
         model = self._get_model()
         endpoint = getattr(model, "url", None) or getattr(model, "base_url", None)

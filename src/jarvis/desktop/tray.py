@@ -71,6 +71,9 @@ class TrayControls:
         self.action('Cartes et activité', shell.show_details)
         self.action('Réglages audio', shell.show_settings)
         self.action('Voix des avatars…', shell.show_voices)
+        if hasattr(shell, 'settings'):
+            self.action('Jarvis au quotidien…', lambda: shell.experience.open())
+            self.action('Commandes · ⌘K', lambda: shell.experience.palette())
         self.action('Consommation (tokens)…', shell.show_usage)
         self.action('Activité machine…', shell.show_metrics)
         self.insights = None

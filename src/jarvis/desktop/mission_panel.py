@@ -53,6 +53,10 @@ class MissionPanel(QFrame):
         self.dismiss.clicked.connect(self.dismiss_bilan)
         for widget in (self.details, self.cancel, self.dismiss):
             buttons.addWidget(widget)
+        self.learn=QPushButton('Retenir la dernière réussite…')
+        self.learn.setAccessibleName('Mémoriser la dernière mission réussie comme procédure')
+        self.learn.clicked.connect(lambda: controller.experience.history().learn())
+        buttons.addWidget(self.learn)
         self.buttons = buttons
         layout.addLayout(buttons)
         self.opacity = QGraphicsOpacityEffect(self)
@@ -128,6 +132,8 @@ class MissionPanel(QFrame):
         self.cancel.setAccessibleName('Annuler la mission : ' + objective)
         self.cancel.setEnabled(status in {'queued', 'waiting_dependency', 'paused', 'running'} and c.voice_worker is not None and c.voice_state not in {'starting', 'stopping', 'error'} and not c.demo)
         self.dismiss.setVisible(not self.compact and not self.expanded)
+        self.learn.setVisible(not self.compact and status=='completed' and hasattr(c,'experience'))
+        self.learn.setEnabled(c.voice_worker is not None and c.voice_state in {'listening','speaking','thinking','muted'} and not c.demo)
         self.layout().setContentsMargins(12 if dense else 16, 10 if dense else 14, 12 if dense else 16, 10 if dense else 14)
         self.layout().setSpacing(5 if dense else 9)
         self.cancel.setStyleSheet('padding: 7px 10px;' if dense else '')

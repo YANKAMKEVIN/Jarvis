@@ -176,6 +176,8 @@ class LocalAudio:
         self.microphone = None
         self.speaker = None
         self.mic_open = False
+        self.quiet = False
+        self.allow_barge_in = False
         self.clock = clock
         self.capture_lock = Lock()
         self.suppress_until = 0.0
@@ -246,7 +248,7 @@ class LocalAudio:
 
     @property
     def input_suppressed(self):
-        return self.mic_open and self.clock() < self.suppress_until
+        return self.mic_open and not self.allow_barge_in and self.clock() < self.suppress_until
 
     def _input_callback(self, data, frames, timing, status):
         self.last_input_callback = self.clock()
@@ -264,8 +266,9 @@ class LocalAudio:
                 cue, self.cue = self.cue[:len(data)], self.cue[len(data):]
             if cue:
                 pcm = cue + bytes(len(data) - len(cue))
+        if self.quiet:pcm = bytes(len(data))
         self.output_meter = (pcm_level(pcm), self.clock())
-        if any(pcm):
+        if any(pcm) and not self.allow_barge_in:
             # Half duplex, not acoustic echo cancellation: don't feed Jarvis's
             # own speaker audio back to Gemini. Include hardware latency and
             # a short room echo tail; explicit mute still owns the device.

@@ -91,9 +91,9 @@ le Mac ; le changement d’Info.plist ne garantit pas à lui seul l’accord de 
   soumise à son option d’activation existante.
 - L’enregistrement LiveKit est désactivé (`record=False`). L’interface n’ajoute
   aucun fichier audio ni stockage durable de transcriptions.
-- L’interface est entièrement vocale, sans saisie ni fil de messages. Les mots
-  transcrits restent dans le contexte de la session SDK/Gemini ; ils ne sont pas
-  recopiés vers l’interface. Le pont transmet des notifications de tour pour le
+- La voix reste l’entrée principale. La palette permet une mission saisie et le
+  mode discret affiche les réponses de Jarvis en mémoire seulement. Les paroles
+  de l’utilisateur restent dans le contexte SDK/Gemini sans copie dans l’interface. Le pont transmet des notifications de tour pour le
   compteur, des niveaux audio numériques pour l’orbe et des libellés génériques
   d’outils sans arguments pour le suivi. Les cartes sélectionnées d’agenda,
   rappels et web transmettent aussi les champs utiles à leur affichage, en mémoire
