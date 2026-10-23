@@ -17,6 +17,12 @@ import xml.etree.ElementTree as ET
 
 ROOT=Path(__file__).resolve().parents[1]
 MUTATIONS=[
+    ('partial_note_kept_after_save_failure','jarvis/capabilities/notes.py',
+     'if created:', 'if False:',
+     'tests/test_qa_note_failures.py::test_failed_save_removes_its_partial_file'),
+    ('partial_note_append_not_rolled_back','jarvis/capabilities/notes.py',
+     'os.ftruncate(descriptor, original_size)', 'pass',
+     'tests/test_qa_note_failures.py::test_failed_append_rolls_back_partial_addition'),
     ('rejected_reminder_consumed','jarvis/schedule/reminders.py',
      'if accepted is False:', 'if False:',
      'tests/test_qa_delivery_journeys.py::test_missing_or_rejected_notification_is_not_reported_delivered'),

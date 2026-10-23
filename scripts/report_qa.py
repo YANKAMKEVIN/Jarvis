@@ -13,7 +13,7 @@ FAMILIES = {
     'documents': ('document', 'pdf'),
     'compute': ('compute',),
     'files': ('files', 'filesystem', 'spotlight'),
-    'personal_data': ('notes', 'memory', 'context', 'productivity', 'checklist'),
+    'personal_data': ('notes', 'qa_note', 'memory', 'context', 'productivity', 'checklist'),
     'desktop_control': ('app_capability', 'window', 'keyboard', 'mouse', 'accessibility', 'click_element', 'interaction'),
     'browser': ('browser',),
     'system_media': ('system', 'audio_capability', 'media_capability'),

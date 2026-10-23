@@ -161,3 +161,8 @@ banc de tests, pas une promesse de réactivité en utilisation réelle.
 ## Suite : livraison et reprise
 
 La campagne suivante et ses limites sont détaillées dans [QA livraison et reprise](qa-delivery-recovery.md). Elle ajoute des parcours avec SQLite réel, processus indépendants, notifications simulées et mesure courte de stockage. Elle ne clôt pas les validations matérielles ni l’endurance de deux heures.
+
+
+## Suite : intégrité des notes
+
+[QA intégrité des notes](qa-note-integrity.md) décrit les fautes d’encodage et d’écriture reproduites, les huit nouveaux cas et les limites de restauration et de concurrence avec des éditeurs externes.
