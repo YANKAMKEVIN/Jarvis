@@ -99,9 +99,10 @@ class KeylessNewsTests(unittest.TestCase):
         self.assertEqual(first.published_date, "2026-10-15T08:00:00+00:00")
         self.assertIn("Le Monde", first.snippet)
 
-    def test_malformed_feed_yields_empty(self):
+    def test_malformed_feed_is_reported_as_unavailable(self):
         provider = KeylessWebProvider(opener=opener_returning(b"not xml at all"))
-        self.assertEqual(provider.search("x", mode=SearchMode.NEWS), [])
+        with self.assertRaises(SearXNGError):
+            provider.search("x", mode=SearchMode.NEWS)
 
     def test_blank_query_yields_empty(self):
         provider = KeylessWebProvider(opener=opener_returning(GOOGLE_NEWS_RSS))
@@ -126,11 +127,12 @@ class KeylessGeneralTests(unittest.TestCase):
         self.assertIn("Europe", results[0].snippet)
         self.assertEqual(results[1].url, "https://direct.example.com/page")
 
-    def test_general_network_failure_degrades_to_empty(self):
+    def test_general_network_failure_is_reported(self):
         provider = KeylessWebProvider(
             opener=opener_raising(urllib.error.URLError("down"))
         )
-        self.assertEqual(provider.search("france", mode=SearchMode.GENERAL), [])
+        with self.assertRaises(SearXNGError):
+            provider.search("france", mode=SearchMode.GENERAL)
 
 
 class DecodeHrefTests(unittest.TestCase):

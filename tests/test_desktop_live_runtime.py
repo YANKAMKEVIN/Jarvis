@@ -213,8 +213,9 @@ def test_turn_notifications_omit_words_and_deduplicate_ids_only():
     runtime._conversation(event("same-id"))
     runtime._conversation(event("same-id"))
     runtime._conversation(event("new-id"))  # A deliberate repeated phrase is valid.
-    assert len(events) == 2
-    assert all(e["role"] == "user" and "text" not in e for e in events)
+    assert len([e for e in events if e["type"] == "transcript"]) == 2
+    assert all(e["role"] == "user" and "text" not in e for e in events if e["type"] == "transcript")
+    assert "PRIVATE_WORDS" not in str(events)
     assert "PRIVATE" not in str(events)
 
 

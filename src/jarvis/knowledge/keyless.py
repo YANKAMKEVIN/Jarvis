@@ -3,8 +3,8 @@
 These implement the same contract as SearXNGProvider -- `search(query, mode)
 -> list[SearchResult]` -- so KnowledgeService uses them unchanged. News goes
 through Google News' public RSS (clean XML, reliable); general queries go
-through DuckDuckGo's HTML endpoint (best effort, degrades to an empty list
-rather than raising on a parse miss).
+through DuckDuckGo's HTML endpoint. An unreachable engine or unrecognized page
+raises a provider error, distinct from a valid search with zero results.
 
 FallbackProvider lets the voice assistant prefer a local SearXNG when it is
 running and fall back to the keyless providers otherwise, with no config.
@@ -89,8 +89,10 @@ class KeylessWebProvider:
         body = self._fetch(f"{GOOGLE_NEWS_RSS}?{params}")
         try:
             root = ET.fromstring(body)
-        except ET.ParseError:
-            return []
+        except ET.ParseError as error:
+            raise SearXNGError("La réponse du moteur d’actualités est illisible.") from error
+        if root.tag.rsplit('}', 1)[-1] != 'rss':
+            raise SearXNGError("Le moteur d’actualités n’a pas fourni de flux RSS.")
 
         results: list[SearchResult] = []
         for item in root.iter("item"):
@@ -125,17 +127,14 @@ class KeylessWebProvider:
 
     def _search_general(self, query: str) -> list[SearchResult]:
         params = urllib.parse.urlencode({"q": query, "kl": f"{self.region.lower()}-{self.lang}"})
-        try:
-            body = self._fetch(f"{DUCKDUCKGO_HTML}?{params}")
-        except SearXNGError:
-            # General web is best effort: a blocked scrape yields no results
-            # rather than taking down the whole answer.
-            return []
+        body = self._fetch(f"{DUCKDUCKGO_HTML}?{params}")
         parser = _DuckDuckGoResultParser()
         try:
             parser.feed(body.decode("utf-8", errors="replace"))
-        except Exception:
-            return []
+        except Exception as error:
+            raise SearXNGError("La réponse du moteur de recherche est illisible.") from error
+        if not parser.results and not any(marker in body.lower() for marker in (b'no-results', b'no results found')):
+            raise SearXNGError("Le moteur n’a pas fourni une page de résultats exploitable.")
         results: list[SearchResult] = []
         for title, url, snippet in parser.results:
             if not url:
@@ -253,11 +252,16 @@ class _DuckDuckGoResultParser(HTMLParser):
         self.results: list[tuple[str, str, str]] = []
         self._in_title = False
         self._in_snippet = False
+        self._snippet_depth = 0
         self._title_parts: list[str] = []
         self._snippet_parts: list[str] = []
         self._pending_url: str | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self._in_snippet:
+            if tag not in {'br', 'img', 'hr', 'input', 'meta', 'link'}:
+                self._snippet_depth += 1
+            return
         attributes = {key: value or "" for key, value in attrs}
         classes = attributes.get("class", "")
         if tag == "a" and "result__a" in classes:
@@ -266,6 +270,7 @@ class _DuckDuckGoResultParser(HTMLParser):
             self._pending_url = _decode_ddg_href(attributes.get("href", ""))
         elif ("result__snippet" in classes) and tag in ("a", "div", "span"):
             self._in_snippet = True
+            self._snippet_depth = 1
             self._snippet_parts = []
 
     def handle_endtag(self, tag: str) -> None:
@@ -275,7 +280,12 @@ class _DuckDuckGoResultParser(HTMLParser):
             url = self._pending_url or ""
             self.results.append((title, url, ""))
             self._pending_url = None
-        elif self._in_snippet and tag in ("a", "div", "span"):
+        elif self._in_snippet:
+            if tag in {'br', 'img', 'hr', 'input', 'meta', 'link'}:
+                return
+            self._snippet_depth -= 1
+            if self._snippet_depth > 0:
+                return
             self._in_snippet = False
             snippet = " ".join("".join(self._snippet_parts).split())
             if snippet and self.results:

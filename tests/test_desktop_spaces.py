@@ -29,8 +29,9 @@ def test_spaces_flags_preserve_other_behaviors_and_are_idempotent():
 def test_offscreen_and_non_macos_never_access_native_handle(monkeypatch):
     app = QApplication.instance() or QApplication([])
     widget = Mock()
-    for platform in ('darwin', 'linux'):
+    for platform, backend in (('darwin', 'offscreen'), ('linux', 'cocoa'), ('linux', 'offscreen')):
         monkeypatch.setattr(macos_spaces.sys,'platform',platform)
+        monkeypatch.setattr(macos_spaces.QGuiApplication,'platformName',lambda:backend)
         assert macos_spaces.join_all_spaces(widget) is False
         widget.winId.assert_not_called()
 

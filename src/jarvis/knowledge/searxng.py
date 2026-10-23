@@ -70,7 +70,7 @@ class SearXNGProvider:
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise SearXNGError("La reponse SearXNG est invalide.") from error
 
-        results = payload.get("results")
+        results = payload.get("results") if isinstance(payload, dict) else None
 
         if not isinstance(results, list):
             raise SearXNGError("La reponse SearXNG ne contient pas de resultats.")

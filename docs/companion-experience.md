@@ -202,3 +202,72 @@ l'application. `tests/test_desktop_dance.py` vérifie les limites, l'arrêt, le
 retour, la persistance, la conservation des missions et les refus ; le test du
 runtime vérifie le branchement et le nettoyage de la commande vocale sans appel
 réseau ni ouverture du micro.
+
+## Voix par avatar et aperçus intégrés
+
+**Voix des avatars…** est accessible dans les réglages, le menu du compagnon et
+la barre de menus macOS. Les 16 avatars conservent leurs associations de voix.
+Le catalogue contient désormais 30 voix standard, dont les cinq choix initiaux,
+Zephyr, Leda, Orus, Sulafat et Gacrux. Une recherche par nom ou description filtre
+la liste ; la voix actuellement attribuée reste visible. Les étoiles marquent
+les favoris, placés en tête de liste et mémorisés entre les démarrages.
+
+Le catalogue provient de la [liste officielle des voix standard Google](https://ai.google.dev/gemini-api/docs/speech-generation#voice-options).
+Le [guide Live](https://ai.google.dev/gemini-api/docs/live-api/capabilities#change-voice-and-language)
+décrit leur utilisation avec les modèles audio natifs. Les voix personnalisées
+et le catalogue étendu au-delà de ces 30 noms ne sont pas proposés ici.
+
+Choisir un avatar dans cette fenêtre édite sa voix sans changer l'apparence
+active. Chaque choix est enregistré automatiquement et indépendamment des autres
+avatars. **Rétablir la voix initiale de cet avatar** ne modifie que ce personnage.
+Les préférences invalides reviennent à sa voix initiale. Les favoris ne changent
+ni les associations ni les sessions. Les associations sont stockées dans
+QSettings sous `voice/avatars/<avatar>` et les favoris sous `voice/favorites`.
+
+### Écouter et comparer
+
+Lancer `jarvis-desktop --compact`, arrêter le vocal s'il est actif, puis ouvrir
+**••• → Voix des avatars…**. Choisir une voix et cliquer **Écouter un aperçu**.
+La même phrase est prononcée en français : « Bonjour, je suis Jarvis. Je peux
+vous aider à organiser votre journée. Quelle est votre prochaine idée ? »
+**Arrêter l’aperçu**, fermer la fenêtre, changer de voix ou changer d'avatar
+interrompt l'aperçu. Aucun navigateur ni connexion à AI Studio n'est requis.
+
+L'aperçu est une requête Gemini Live distincte, avec le modèle configuré et la
+voix choisie. Seule cette phrase fixe est transmise : aucun contexte de session,
+outil ou audio d'entrée n'est joint. Le microphone n'est jamais ouvert. Il faut
+une clé Gemini valide et un accès réseau ; la génération utilise le quota API
+habituel. Les données PCM sont conservées uniquement en mémoire, limitées à 15
+secondes, puis jouées sur la sortie audio choisie dans les réglages. Aucune
+nouvelle capture ni aucun fichier audio n'est créé. La génération expire après
+30 secondes, les erreurs du fournisseur sont reformulées sans contenu privé.
+
+Les aperçus et les autres opérations audio s'excluent : aucun aperçu ne démarre
+pendant une conversation ou un test audio, et le démarrage du vocal attend la
+fin de l'aperçu. À la fermeture de Jarvis, la génération ou la lecture est
+interrompue et le worker est nettoyé avant de quitter. En démo, le catalogue,
+la recherche et les favoris fonctionnent, mais l'écoute reste désactivée.
+
+### Quand le choix est-il appliqué ?
+
+Changer d'apparence sélectionne sa voix enregistrée pour le prochain démarrage
+vocal. Une session déjà ouverte garde sa voix ; la fenêtre indique la voix en
+cours et celle de la prochaine connexion. Aucun changement n'arrête une
+conversation ou ses missions. Arrêter puis redémarrer le vocal applique le choix.
+Une reconnexion automatique utilise aussi la voix de l'avatar actif.
+
+Dans le desktop, les associations prennent la priorité sur
+`JARVIS_GEMINI_LIVE_VOICE`, sans modifier l'environnement. Le mode CLI garde sa
+configuration habituelle. La voix est transmise au modèle à la création de la
+session, après chargement de l'environnement.
+
+![Catalogue et aperçus : capture réelle Qt en mode démo](screenshots/experience/avatar-voices.png)
+
+`QT_QPA_PLATFORM=offscreen python scripts/capture_avatar_voices.py` reproduit la
+capture avec des préférences temporaires. `tests/test_desktop_voices.py` et
+`tests/test_desktop_voice_preview.py` vérifient les associations, les favoris,
+le filtrage, la transmission de voix, le format et les limites PCM, l'arrêt,
+la fermeture des clients, la sortie audio seule et les exclusions de session.
+Des générations réelles Puck et Sulafat ont fourni du PCM 24 kHz sans microphone.
+Les tests de lecture utilisent une sortie simulée ; l'écoute au haut-parleur
+et la comparaison subjective des 30 timbres restent des essais manuels.

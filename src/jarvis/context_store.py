@@ -72,6 +72,16 @@ class ContextStore:
             row_id = cursor.lastrowid
         return {"id": row_id, "text": trimmed, "at": now}
 
+    def update(self, entry_id: int, text: str) -> bool:
+        if not isinstance(text, str) or not text.strip() or len(text.strip()) > MAX_TEXT_LENGTH:
+            raise ContextError("Texte vide ou trop long.", "invalid_text")
+        with closing(self._connect()) as conn, conn:
+            return bool(conn.execute("UPDATE context SET text = ? WHERE id = ?", (text.strip(), int(entry_id))).rowcount)
+
+    def delete(self, entry_id: int) -> bool:
+        with closing(self._connect()) as conn, conn:
+            return bool(conn.execute("DELETE FROM context WHERE id = ?", (int(entry_id),)).rowcount)
+
     def clear(self) -> int:
         """Delete all context entries. Returns how many were removed."""
         with closing(self._connect()) as conn, conn:

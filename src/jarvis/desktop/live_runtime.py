@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import traceback
+import time
 from collections import deque
 from pathlib import Path
 from threading import Event
@@ -84,7 +85,19 @@ def preload_live_plugins():
         raise setup_failure("sdk_import", error) from None
 
 
-def create_components():
+def desktop_turn_detection_config():
+    """Keep natural pauses while ending short spoken turns predictably."""
+    from google.genai import types
+    return types.RealtimeInputConfig(automatic_activity_detection=types.AutomaticActivityDetection(
+        disabled=False,
+        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+        prefix_padding_ms=300,
+        silence_duration_ms=700,
+    ))
+
+
+def create_components(voice=None):
     try:
         from livekit.agents import Agent, AgentSession
         from livekit.plugins import google
@@ -99,11 +112,15 @@ def create_components():
     setup_step("logging", install_livekit_pii_log_filter)
     try:
         config = get_live_config()
+        if voice is not None:
+            from dataclasses import replace
+            config = replace(config, voice=voice)
     except (ValueError, TypeError):
         raise VoiceSetupError("Configuration Gemini invalide. Vérifiez le modèle, la voix et la température.") from None
     audio = setup_step("audio_import", lambda: LocalAudio(asyncio.get_running_loop()))
-    assistant = setup_step("macos_tools", lambda: create_assistant_class(Agent)())
-    model = setup_step("gemini_model", lambda: create_realtime_model(google, config))
+    assistant = setup_step("macos_tools", lambda: create_assistant_class(Agent, desktop=True)())
+    model = setup_step("gemini_model", lambda: create_realtime_model(google, config,
+        realtime_input_config=desktop_turn_detection_config()))
     # Gemini handles turn detection. No inference service or LiveKit room/token.
     session = setup_step("agent_session", lambda: AgentSession(llm=model, vad=None, turn_handling={
         "turn_detection": "realtime_llm",
@@ -121,6 +138,16 @@ class LiveRuntime:
     def __init__(self, emit, factory=create_components, prepare=prepare_environment):
         self.emit = emit
         self.factory = factory
+        self.voice_override = None
+        from jarvis.desktop.experience_core import TurnProgress, UndoLedger
+        self.turn_progress = TurnProgress()
+        self.undo_ledger = UndoLedger()
+        self.desktop_requests = SimpleQueue()
+        self.desktop_task = None
+        self.profile = {}
+        self.profile_dirty = True
+        self.service_calls = {}
+        self.result_recorder = None
         self.prepare = prepare
         self.stop_requested = Event()
         self.mute_requested = Event()
@@ -146,6 +173,77 @@ class LiveRuntime:
         self.closing = False
         self.announcements = SimpleQueue()
         self.routine_requests=SimpleQueue()
+
+    def set_profile(self, profile):
+        self.profile = dict(profile)
+        self.profile_dirty = True
+
+    def request_action(self, name, arguments):
+        if self.desktop_requests.qsize() >= 10: return False
+        self.desktop_requests.put((name, dict(arguments)))
+        return True
+
+    async def _apply_profile(self):
+        from jarvis.desktop.experience_core import profile_instructions
+        from jarvis.live.prompts import LIVE_SYSTEM_PROMPT
+        self.profile_dirty = False
+        c = self.components
+        c.audio.quiet = bool(self.profile.get("quiet"))
+        c.audio.allow_barge_in = bool(self.profile.get("headphones"))
+        if hasattr(c.assistant, "update_instructions"):
+            await c.assistant.update_instructions(LIVE_SYSTEM_PROMPT + "\n" + profile_instructions(self.profile))
+
+    async def _desktop_action(self, name, arguments):
+        from jarvis.desktop.experience_core import DesktopActionError
+        allowed = {"run_task", "run_macro", "morning_briefing", "describe_screen", "ask_about_screen",
+                   "ask_about_document", "extract_document_actions", "compare_documents",
+                   "save_task_procedure", "run_procedure", "move_file", "cancel_reminder"}
+        ticket = None
+        consent_token = None
+        try:
+            if name == "undo":
+                try:ticket = self.undo_ledger.validate(arguments.get("id"))
+                except ValueError as error:raise DesktopActionError(str(error)) from None
+                if ticket.get('kind')=='reminder':
+                    row=await asyncio.to_thread(self.components.assistant.registry.reminder_store.get,ticket['reminder_id'])
+                    if not row or row['status']!='pending' or row['due_at']!=ticket['due_at'] or row['recurrence']!=ticket['recurrence'] or row['due_at']<=time.time()+5:
+                        raise DesktopActionError('Le rappel est imminent, modifié ou déjà traité. Aucune annulation effectuée.')
+                    name,arguments='cancel_reminder',{'reminder_id':ticket['reminder_id']}
+                else:name, arguments = "move_file", {"source":ticket["new"], "destination":ticket["old"]}
+                self.undo_ledger.undoing = True
+            elif name in {"move_file", "cancel_reminder"}:
+                raise DesktopActionError("Utilisez une commande explicite ou une annulation vérifiée.")
+            if name not in allowed: raise DesktopActionError("Commande indisponible.")
+            tool = next(tool for tool in self.components.assistant.jarvis_tools if tool.info.name == name)
+            if name in {'ask_about_document','compare_documents','extract_document_actions'}:
+                from jarvis.document_consent import REMOTE_DOCUMENT_PERMISSION
+                consent=arguments.pop('_remote_allowed',None)
+                if consent is not None and not isinstance(consent,bool):raise DesktopActionError('Autorisation de document invalide.')
+                consent_token=REMOTE_DOCUMENT_PERMISSION.set(consent)
+            result = await tool(**arguments)
+            if ticket and result.get("ok"):
+                self.undo_ledger.tickets.pop(ticket["id"], None)
+            self.emit({"type":"desktop_result", "tool":name, "ok":bool(result.get("ok")),
+                       "message":result.get("message", "Résultat disponible dans l’activité.")})
+        except asyncio.CancelledError: raise
+        except DesktopActionError as error:
+            self.emit({"type":"desktop_result", "tool":name, "ok":False, "message":str(error)})
+        except Exception:
+            self.emit({"type":"desktop_result", "tool":name, "ok":False, "message":"Commande indisponible. Consultez l’activité puis réessayez."})
+        finally:
+            if consent_token is not None:
+                from jarvis.document_consent import REMOTE_DOCUMENT_PERMISSION
+                REMOTE_DOCUMENT_PERMISSION.reset(consent_token)
+            self.undo_ledger.undoing = False
+            self.emit({"type":"undo_available", "tickets":self.undo_ledger.summaries()})
+
+    def set_voice(self, voice):
+        from jarvis.desktop.voices import VOICE_IDS
+        if voice not in VOICE_IDS:
+            raise ValueError("Unknown desktop voice")
+        if self.components is not None:
+            raise RuntimeError("Voice is fixed for this session")
+        self.voice_override = voice
 
     def set_devices(self, input_choice, output_choice):
         self.input_choice, self.output_choice = input_choice, output_choice
@@ -207,11 +305,17 @@ class LiveRuntime:
 
     def _agent_changed(self, event):
         self.agent_state = event.new_state
+        if self.agent_state in {"thinking","speaking"}:self.turn_progress.response()
         if self.ready and not self.stop_requested.is_set():
             self.state(self.presentation_state())
 
     def _user_changed(self, event):
+        previous = self.user_state
         self.user_state = event.new_state
+        if previous == "speaking" and self.user_state != "speaking":
+            self.emit(self.turn_progress.received())
+        if self.user_state == "speaking" and self.agent_state == "speaking" and self.profile.get("headphones"):
+            self.interrupt_requested.set()
 
     def _can_announce(self):
         """Idle agent, user not mid-sentence, push-to-talk key released."""
@@ -228,7 +332,12 @@ class LiveRuntime:
                 if item_id in self.seen_items:
                     return
                 self.seen_items.append(item_id)
-            # The desktop needs only turn counts, never a copy of the words.
+            if role == "user":self.emit(self.turn_progress.received())
+            else:
+                self.turn_progress.response()
+                if self.profile.get("quiet"):
+                    self.emit({"type":"assistant_text", "text":text[:4000]})
+            # Conversation words stay private except opt-in quiet replies in RAM.
             self.emit({"type": "transcript", "role": role,
                        "interrupted": bool(getattr(item, "interrupted", False))})
 
@@ -239,8 +348,27 @@ class LiveRuntime:
 
     def _registry_activity(self, event):
         self.activity_serial+=1
+        self.turn_progress.response()
+        if event.get('phase') == 'started':
+            label = project_activity(event['tool'], None, event['id'], 'started')['label']
+            self.service_calls[event['id']] = [label, monotonic(), False]
+        else:self.service_calls.pop(event['id'], None)
+        if event.get("phase") == "result":
+            before = tuple(self.undo_ledger.tickets)
+            self.undo_ledger.record(event.get("tool"), event.get("result"))
+            if tuple(self.undo_ledger.tickets) != before:
+                self.emit({"type":"undo_available", "tickets":self.undo_ledger.summaries()})
         self.observed_tools.add(event['tool'])
-        self.emit(project_activity(event['tool'], event.get('result'), event['id'], event['phase']))
+        from jarvis.desktop.experience_core import ACTION_LABELS
+        projected = project_activity(event['tool'], event.get('result'), event['id'], event['phase'])
+        projected['label'] = ACTION_LABELS.get(event['tool'], projected['label'])
+        self.emit(projected)
+        if event.get('phase') == 'result' and self.profile.get('history'):
+            from jarvis.desktop.result_history import ResultRecorder,archive_receipt
+            if self.result_recorder is None:self.result_recorder=ResultRecorder(on_error=lambda:self.emit({"type":"desktop_result","ok":False,"message":"Stockage indisponible : certains résultats n’ont pas pu être archivés. Les cartes de la session restent disponibles."}))
+            row=archive_receipt(event['tool'],event['id'],event.get('result'),projected)
+            if row and not self.result_recorder.submit(row):
+                self.emit({'type':'desktop_result','ok':False,'message':'Historique occupé : ce résultat n’a pas été archivé. Les cartes restent disponibles dans la session.'})
 
     def _tools_executed(self, event):
         for call, output in zip(event.function_calls, event.function_call_outputs):
@@ -295,7 +423,7 @@ class LiveRuntime:
             if self.stop_requested.is_set():
                 return
             setup_step("environment", self.prepare)
-            self.components = self.factory()
+            self.components = self.factory(voice=self.voice_override) if self.voice_override is not None else self.factory()
             c = self.components
             phase = "audio"
             if self.input_choice is not None or self.output_choice is not None:
@@ -314,6 +442,9 @@ class LiveRuntime:
             c.session.on("error", self._error)
             c.session.on("function_tools_executed", self._tools_executed)
             c.session.on("close", self._closed)
+            # Set initial instructions before LiveKit creates its realtime session.
+            # Updating during connection can restart Gemini and lose the first turn.
+            await self._apply_profile()
             phase = "connection"
             started = await asyncio.wait_for(self._start(), timeout=30)
             if not started or self.stop_requested.is_set():
@@ -334,6 +465,19 @@ class LiveRuntime:
             next_task_poll = 0.0
             next_announcement = 0.0
             while not self.stop_requested.is_set():
+                if self.profile_dirty:await self._apply_profile()
+                progress = self.turn_progress.poll(self.agent_state, self.user_state, bool(getattr(c.audio, "input_suppressed", False)))
+                if progress:self.emit(progress)
+                if self.agent_state == 'listening' and self.user_state != 'speaking':
+                    for call in self.service_calls.values():
+                        if not call[2] and monotonic()-call[1]>=10:
+                            call[2]=True
+                            self.emit({'type':'request_progress','stage':'service_waiting',
+                                'message':call[0]+' · service en attente. Les détails restent disponibles dans l’activité.'})
+                if self.desktop_task is None or self.desktop_task.done():
+                    try:name, arguments = self.desktop_requests.get_nowait()
+                    except Empty:pass
+                    else:self.desktop_task = asyncio.create_task(self._desktop_action(name, arguments))
                 if hasattr(c.audio, 'check_health'):
                     c.audio.check_health()
                 if sounds != self.sounds_requested.is_set():
@@ -415,6 +559,10 @@ class LiveRuntime:
                 "session": "La session vocale a rencontré un problème. Vérifiez la connexion et les périphériques audio.",
             }[phase]
         finally:
+            if self.desktop_task is not None:
+                self.desktop_task.cancel()
+                await asyncio.gather(self.desktop_task, return_exceptions=True)
+            if self.result_recorder is not None:await asyncio.to_thread(self.result_recorder.close)
             self.closing = True
             self.ready = False
             self.emit({"type": "audio_level", "input": 0.0, "output": 0.0})

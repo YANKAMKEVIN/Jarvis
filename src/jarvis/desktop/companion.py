@@ -16,6 +16,7 @@ class CompanionAvatar(InteractiveOrb):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.press is not None:
             self.press = None
+            if not self.dragged:self.greet()
             if self.dragged:
                 self.window_owner.set_preference('anchor','free')
             self.window_owner.shell.remember_companion()
@@ -306,7 +307,10 @@ class CompanionWindow(OrbWindow):
         action('open_full','Ouvrir Jarvis',self.shell.show_full)
         action('missions', 'Voir les missions', self.shell.show_mission_details)
         action('details', 'Cartes et activité', self.shell.show_details)
+        action('experience', 'Jarvis au quotidien…', lambda: self.shell.experience.open())
+        action('palette', 'Commandes · ⌘K', lambda: self.shell.experience.palette())
         action('appearance', 'Choisir une apparence…', self.shell.show_appearances)
+        action('voices', 'Voix des avatars…', self.shell.show_voices)
         action('routines','Routines vocales…',self.shell.show_routines)
         action('dance', 'Faire danser', lambda: self.controller.dance.stop() if self.controller.dance.active else self.controller.dance.start())
         action('settings', 'Réglages', self.shell.show_settings)
@@ -355,6 +359,7 @@ class CompanionWindow(OrbWindow):
         for key in ('microphone','interrupt'):
             actions[key].setVisible(active and not (key=='microphone' and c.ptt_enabled))
             actions[key].setEnabled(active and c.voice_state not in {'starting','stopping','error'} and not c.demo)
+        actions['stop_test'].setText('Arrêter l’aperçu vocal' if c.audio_job_kind == 'voice_preview' else 'Arrêter le test audio local')
         actions['stop_test'].setVisible(c.audio_worker is not None)
         count = len(c.focus_missions())
         actions['missions'].setText(f'Voir les missions ({count})' if count else 'Voir les missions')

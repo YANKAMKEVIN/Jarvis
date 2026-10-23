@@ -20,14 +20,16 @@ from jarvis.desktop.devices import AudioDeviceError, pcm_level, resolve_device
 SAMPLE_RATE = 24000
 BLOCK_SAMPLES = 480  # 20 ms, mono PCM16
 ECHO_TAIL_SECONDS = 0.25
+CALLBACK_TIMEOUT_SECONDS = 3.0
 
 
 class MicrophoneInput(AudioInput):
-    def __init__(self):
+    def __init__(self, suppressed=lambda: False):
         super().__init__(label="Jarvis microphone")
         self.frames = Queue(maxsize=25)  # At most half a second of speech.
         self.closed = False
         self.tail_frames = 0
+        self.suppressed = suppressed
 
     def push(self, data):
         if self.closed:
@@ -62,6 +64,13 @@ class MicrophoneInput(AudioInput):
                     if not self.tail_frames: continue
                     self.tail_frames-=1
                     data=bytes(BLOCK_SAMPLES*2)
+                elif self.suppressed():
+                    # Keep the server clock/VAD moving while speaker feedback is
+                    # blocked. These are synthetic zeros, never microphone PCM.
+                    await asyncio.sleep(.02)
+                    if self.closed or not self.suppressed():
+                        continue
+                    data = bytes(BLOCK_SAMPLES * 2)
                 else:
                     await asyncio.sleep(0.01)
                     continue
@@ -162,11 +171,13 @@ class LocalAudio:
         if devices is None:
             import sounddevice as devices
         self.devices = devices
-        self.input = MicrophoneInput()
+        self.input = MicrophoneInput(lambda: self.mic_open and self.input_suppressed)
         self.output = SpeakerOutput(loop)
         self.microphone = None
         self.speaker = None
         self.mic_open = False
+        self.quiet = False
+        self.allow_barge_in = False
         self.clock = clock
         self.capture_lock = Lock()
         self.suppress_until = 0.0
@@ -178,6 +189,8 @@ class LocalAudio:
         self.output_device = None
         self.default_snapshot=None
         self.last_default_check=0
+        self.last_input_callback = None
+        self.last_output_callback = None
 
     def configure_devices(self, input_choice, output_choice):
         self.input_device = resolve_device(self.devices, input_choice, 'input')
@@ -205,6 +218,10 @@ class LocalAudio:
             healthy = False
         if not healthy:
             raise AudioDeviceError('Un périphérique audio s’est arrêté. Vérifiez sa connexion et les choix dans Réglages.')
+        if self.last_output_callback is not None and now - self.last_output_callback > CALLBACK_TIMEOUT_SECONDS:
+            raise AudioDeviceError('La sortie audio ne fournit plus de données. Reconnexion audio nécessaire.')
+        if self.mic_open and self.last_input_callback is not None and now - self.last_input_callback > CALLBACK_TIMEOUT_SECONDS:
+            raise AudioDeviceError('Le microphone ne fournit plus de données. Reconnexion audio nécessaire.')
 
     def play_cue(self, kind):
         """Quiet optional tones use this same output and its feedback guard."""
@@ -231,15 +248,17 @@ class LocalAudio:
 
     @property
     def input_suppressed(self):
-        return self.mic_open and self.clock() < self.suppress_until
+        return self.mic_open and not self.allow_barge_in and self.clock() < self.suppress_until
 
     def _input_callback(self, data, frames, timing, status):
+        self.last_input_callback = self.clock()
         with self.capture_lock:
             if self.mic_open and not self.input_suppressed:
                 self.input.push(data)
                 self.input_meter = (pcm_level(data), self.clock())
 
     def _output_callback(self, data, frames, timing, status):
+        self.last_output_callback = self.clock()
         latency = max(0, timing.outputBufferDacTime - timing.currentTime) + frames / SAMPLE_RATE
         pcm = self.output.read(len(data), latency)
         if not any(pcm):
@@ -247,8 +266,9 @@ class LocalAudio:
                 cue, self.cue = self.cue[:len(data)], self.cue[len(data):]
             if cue:
                 pcm = cue + bytes(len(data) - len(cue))
+        if self.quiet:pcm = bytes(len(data))
         self.output_meter = (pcm_level(pcm), self.clock())
-        if any(pcm):
+        if any(pcm) and not self.allow_barge_in:
             # Half duplex, not acoustic echo cancellation: don't feed Jarvis's
             # own speaker audio back to Gemini. Include hardware latency and
             # a short room echo tail; explicit mute still owns the device.
@@ -263,6 +283,7 @@ class LocalAudio:
         try:
             self.speaker = self.devices.RawOutputStream(device=self.output_device, samplerate=SAMPLE_RATE,
                 channels=1, dtype="int16", blocksize=BLOCK_SAMPLES, callback=self._output_callback)
+            self.last_output_callback = self.clock()
             self.speaker.start()
             if microphone:
                 self.set_microphone(True)
@@ -277,6 +298,7 @@ class LocalAudio:
                 if self.microphone is None:
                     self.microphone = self.devices.RawInputStream(device=self.input_device, samplerate=SAMPLE_RATE,
                         channels=1, dtype="int16", blocksize=BLOCK_SAMPLES, callback=self._input_callback)
+                self.last_input_callback = self.clock()
                 self.microphone.start()
                 self.mic_open = True
             except Exception:

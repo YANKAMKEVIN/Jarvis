@@ -91,9 +91,9 @@ le Mac ; le changement d’Info.plist ne garantit pas à lui seul l’accord de 
   soumise à son option d’activation existante.
 - L’enregistrement LiveKit est désactivé (`record=False`). L’interface n’ajoute
   aucun fichier audio ni stockage durable de transcriptions.
-- L’interface est entièrement vocale, sans saisie ni fil de messages. Les mots
-  transcrits restent dans le contexte de la session SDK/Gemini ; ils ne sont pas
-  recopiés vers l’interface. Le pont transmet des notifications de tour pour le
+- La voix reste l’entrée principale. La palette permet une mission saisie et le
+  mode discret affiche les réponses de Jarvis en mémoire seulement. Les paroles
+  de l’utilisateur restent dans le contexte SDK/Gemini sans copie dans l’interface. Le pont transmet des notifications de tour pour le
   compteur, des niveaux audio numériques pour l’orbe et des libellés génériques
   d’outils sans arguments pour le suivi. Les cartes sélectionnées d’agenda,
   rappels et web transmettent aussi les champs utiles à leur affichage, en mémoire
@@ -168,3 +168,40 @@ worker. Aucun micro ni connexion ne s’ouvre pendant ce préchargement.
 Un test en processus neuf utilise le vrai plugin puis construit un modèle dans
 un QThread, sans démarrer de connexion, pour éviter de masquer ce cas par les
 imports préalables des autres tests.
+
+## Fin de parole et écoute qui semble bloquée
+
+Le desktop configure explicitement la détection de parole Gemini : sensibilité
+de début et de fin élevée, 300 ms de contexte avant parole et 700 ms de silence
+pour terminer un tour. Ce délai préserve les petites pauses ; la réponse ajoute
+ensuite la latence réseau et la génération. Le CLI conserve ses réglages
+habituels. Les valeurs suivent les possibilités de la
+[configuration VAD Gemini](https://ai.google.dev/gemini-api/docs/live-api/capabilities#voice-activity-detection-vad).
+
+Pendant la lecture du haut-parleur et sa courte réverbération, Jarvis continue
+à bloquer le véritable son du micro pour éviter de s'entendre lui-même. Le flux
+vers Gemini fournit alors des trames silencieuses synthétiques, au lieu d'un
+trou de transmission. Couper explicitement le micro arrête toujours ce flux ;
+le maintien pour parler garde sa fin de parole silencieuse bornée existante.
+Aucune transcription ni aucun enregistrement n'est ajouté.
+
+Les callbacks audio sont aussi surveillés : un flux déclaré actif mais qui ne
+fournit plus de callbacks pendant plus de trois secondes devient une erreur
+audio récupérable. Si la reconnexion automatique est activée, elle suit sa
+procédure habituelle après nettoyage de l'ancienne session. Le silence réel ne
+déclenche pas cette récupération : ses callbacks continuent à arriver. Un micro
+volontairement coupé n'est pas considéré comme bloqué. Aucun objectif ou outil
+n'est rejoué automatiquement pour forcer une réponse.
+
+`tests/test_desktop_turn_detection.py` vérifie les paramètres, les trames
+silencieuses pendant l'anti-écho, la reprise du vrai PCM, le respect du micro
+coupé et les périphériques actifs mais sans callbacks. Les nouveaux paramètres
+ont également été acceptés par une session Gemini réelle avec une phrase fixe,
+sans microphone. Le blocage intermittent décrit par l'utilisateur n'a pas été
+reproduit avec son environnement sonore ; le test en conversation reste requis.
+
+Pour essayer après redémarrage de Jarvis : prononcer une question courte, laisser
+un silence, puis recommencer après une réponse complète de Jarvis. Vérifier aussi
+une phrase avec une petite pause au milieu et le fonctionnement du micro coupé.
+Si le délai persiste, comparer casque et haut-parleurs permet de distinguer la
+protection anti-écho d'un problème de détection ou de connexion.

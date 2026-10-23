@@ -416,9 +416,12 @@ class FileSystemTools:
         cap = max(200, min(int(max_chars), 40000))
         if resolved.suffix.lower() == ".pdf":
             text = self._read_pdf_text(resolved)
+        elif resolved.suffix.lower() == ".docx":
+            text = self._read_docx_text(resolved)
         else:
             try:
-                raw = resolved.read_bytes()[: cap * 4]  # a char is up to 4 UTF-8 bytes
+                with resolved.open("rb") as stream:
+                    raw = stream.read(cap * 4 + 1)  # a char is up to 4 UTF-8 bytes
             except OSError as error:
                 raise FileSystemError(f"Lecture impossible : {error}", "read_failed")
             if b"\x00" in raw[:4096]:
@@ -434,6 +437,25 @@ class FileSystemTools:
             "char_count": min(len(text), cap),
             "truncated": truncated,
         }
+
+    @staticmethod
+    def _read_docx_text(path: Path) -> str:
+        import zipfile
+        import xml.etree.ElementTree as ET
+        try:
+            with zipfile.ZipFile(path) as archive:
+                info = archive.getinfo('word/document.xml')
+                if info.file_size > 10 * 1024 * 1024:
+                    raise ValueError('Document XML trop volumineux')
+                with archive.open(info) as stream:xml = stream.read(10 * 1024 * 1024 + 1)
+                if len(xml) > 10 * 1024 * 1024:raise ValueError('Document XML trop volumineux')
+            if b'<!DOCTYPE' in xml.upper() or b'<!ENTITY' in xml.upper():
+                raise ValueError('Entites XML refusees')
+            root = ET.fromstring(xml)
+            ns = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+            return '\n'.join(''.join(node.text or '' for node in paragraph.iter(ns+'t')) for paragraph in root.iter(ns+'p'))
+        except (OSError, KeyError, ValueError, zipfile.BadZipFile, ET.ParseError, RuntimeError):
+            raise FileSystemError('Document DOCX illisible ou trop volumineux.', 'docx_unreadable') from None
 
     @staticmethod
     def _read_pdf_text(path: Path, max_pages: int = 50) -> str:

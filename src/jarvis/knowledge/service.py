@@ -75,30 +75,32 @@ class KnowledgeService:
         mode = self.detect_search_mode(question)
         current_date = self.today() if mode == SearchMode.NEWS else None
 
-        try:
+        selected = []
+        unavailable = False
+        for query, attempt_mode in self._search_attempts(question, mode):
             search_start = time.perf_counter()
-            results = self.provider.search(question, mode=mode)
-            timings["search"] = time.perf_counter() - search_start
-        except SearXNGError:
-            timings["total"] = time.perf_counter() - total_start
-            self._debug_perf(timings)
-            return KnowledgeAnswer(
-                "Je n'arrive pas à accéder à ma source de recherche pour le moment.",
-            )
-
-        source_start = time.perf_counter()
-        selected = self._select_results(
-            results,
-            mode=mode,
-            question=question,
-        )
-        timings["source_processing"] = time.perf_counter() - source_start
+            try:
+                results = self.provider.search(query, mode=attempt_mode)
+            except SearXNGError:
+                unavailable = True
+                continue
+            finally:
+                timings["search"] = timings.get("search", 0) + time.perf_counter() - search_start
+            source_start = time.perf_counter()
+            selected = self._select_results(results, mode=attempt_mode, question=question)
+            timings["source_processing"] = timings.get("source_processing", 0) + time.perf_counter() - source_start
+            if selected:
+                mode = attempt_mode
+                current_date = self.today() if mode == SearchMode.NEWS else None
+                break
 
         if not selected:
             timings["total"] = time.perf_counter() - total_start
             self._debug_perf(timings)
             return KnowledgeAnswer(
-                "Je n'ai pas trouvé suffisamment d'informations fiables pour te répondre.",
+                "Mes sources de recherche sont inaccessibles ou n’ont pas fourni de résultats exploitables."
+                if unavailable else "Mes recherches n’ont renvoyé aucun résultat exploitable pour cette demande.",
+                failure_reason="unavailable" if unavailable else "no_results",
             )
 
         if mode == SearchMode.NEWS:
@@ -112,6 +114,8 @@ class KnowledgeService:
                 search_mode=mode,
                 current_date=current_date,
             )
+            if not isinstance(message, str) or not message.strip():
+                raise ValueError("Empty synthesis")
             timings["llm"] = time.perf_counter() - llm_start
         except Exception:
             timings["llm"] = time.perf_counter() - llm_start
@@ -121,6 +125,7 @@ class KnowledgeService:
                 "Je n'arrive pas à synthétiser les informations récupérées pour le moment.",
                 sources=self._source_references(selected),
                 external_knowledge_retrieved=True,
+                failure_reason="synthesis_failed",
             )
 
         timings["total"] = time.perf_counter() - total_start
@@ -201,7 +206,11 @@ class KnowledgeService:
         for result in results:
             url = result.url.strip()
 
-            if not url or url in seen_urls:
+            try:
+                parsed = urllib.parse.urlparse(url)
+            except ValueError:
+                continue
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc or url in seen_urls:
                 continue
 
             has_title = bool(result.title.strip())
@@ -221,6 +230,17 @@ class KnowledgeService:
         return selected
 
     @classmethod
+    def _search_attempts(cls, question, mode):
+        """At most three distinct requests. Never synthesize without retrieved data."""
+        compact = re.sub(
+            r"^(?:donne[ -]moi|donne|peux[- ]tu me donner|cherche|recherche|trouve)\s+(?:(?:des|les)\s+)?(?:(?:infos|informations)\s+)?(?:sur\s+)?",
+            "", question.strip(), flags=re.IGNORECASE,
+        ).strip()
+        alternate = SearchMode.GENERAL if mode == SearchMode.NEWS else SearchMode.NEWS
+        attempts = [(question, mode), (compact, mode), (compact, alternate)]
+        return list(dict.fromkeys(attempts))[:3]
+
+    @classmethod
     def detect_search_mode(cls, question: str) -> SearchMode:
         normalized = cls._normalize(question)
 
@@ -235,6 +255,15 @@ class KnowledgeService:
         if any(re.search(pattern, normalized) for pattern in news_patterns):
             return SearchMode.NEWS
 
+        # Historical and explanatory sports questions are not live-score requests.
+        historical = re.search(r"\b(?:19|20)\d{2}\b", normalized)
+        explanatory = re.search(r"\b(?:comment|regles|format|histoire|definition)\b", normalized)
+        sport = re.search(r"\b(?:wnba|nba|nfl|wimbledon|roland garros|ligue 1|tour de france)\b", normalized)
+        event = re.search(r"\b(?:finale|playoffs|resultats?|score|classement|match)\b", normalized)
+        if sport and event and not historical and not explanatory:
+            return SearchMode.NEWS
+        if sport and re.search(r"\bnouvelles\b", normalized) and not historical:
+            return SearchMode.NEWS
         return SearchMode.GENERAL
 
     @classmethod
