@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from jarvis.storage_privacy import private_deletes, checkpoint_erasure
 import time
 from contextlib import closing
 from pathlib import Path
@@ -87,6 +88,8 @@ class ContextStore:
         with closing(self._connect()) as conn, conn:
             before = conn.execute("SELECT COUNT(*) FROM context").fetchone()[0]
             conn.execute("DELETE FROM context")
+            conn.commit()
+            checkpoint_erasure(conn)
             return int(before)
 
     def recent(self, limit: int = DEFAULT_RECENT) -> list[dict[str, Any]]:
@@ -105,7 +108,7 @@ class ContextStore:
             os.chmod(path.parent, 0o700)
             path.touch(mode=0o600)
             os.chmod(path, 0o600)
-        conn = sqlite3.connect(path, timeout=5)
+        conn = private_deletes(sqlite3.connect(path, timeout=5))
         conn.row_factory = sqlite3.Row
         conn.executescript(_SCHEMA)
         return conn

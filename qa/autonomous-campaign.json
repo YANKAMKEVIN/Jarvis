@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-23",
+  "scope": "Autonomous QA with synthetic data; no actual outbound messages or user-data erasure",
+  "endurance_2h": "Deferred until last, per user instruction; not started",
+  "offline_scenarios": {
+    "total": 47,
+    "scheduled_safety": 31,
+    "document_privacy": 5,
+    "privacy_erasure": 11,
+    "status": "passed"
+  },
+  "real_local_model_documents": {
+    "cases": 4,
+    "status": "passed",
+    "elapsed_pytest_seconds": 15.23,
+    "fixtures": [
+      "text facts",
+      "DOCX date",
+      "missing responsible person",
+      "contradictory instruction in document"
+    ],
+    "external_document_transfer": false
+  },
+  "sensitivity": {
+    "baseline_passed": true,
+    "detected": 14,
+    "total": 14
+  },
+  "resilience_probes": {
+    "passed": 4,
+    "total": 4,
+    "backend": "simulated model and audio runtime"
+  },
+  "persistence_smoke": {
+    "requested_seconds": 5,
+    "status": "passed",
+    "scope": "isolated storage only"
+  },
+  "initial_reproductions": {
+    "scheduled_first_17_cases": {
+      "failed": 14,
+      "passed": 3
+    },
+    "document_privacy_first_5_cases": {
+      "failed": 4,
+      "passed": 1
+    },
+    "erasure_first_5_cases": {
+      "failed": 5,
+      "passed": 0
+    }
+  },
+  "native_observation": "Valid lsappinfo display-name format observed read-only; absent/error states fail closed",
+  "remaining": [
+    "Physical microphone/speaker and device-change sessions",
+    "Real native target/focus races and account workflows",
+    "Broader semantic and adversarial corpus",
+    "Two-hour endurance deferred",
+    "Forensic erasure of backups/snapshots/SSD not certified"
+  ],
+  "source_control": "Camera WIP preserved; only independent QA registry hunks staged"
+}

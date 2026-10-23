@@ -414,8 +414,9 @@ class FileSystemTools:
             follow_symlink=True,
         )
         cap = max(200, min(int(max_chars), 40000))
+        pages_truncated = False
         if resolved.suffix.lower() == ".pdf":
-            text = self._read_pdf_text(resolved)
+            text, pages_truncated = self._read_pdf_text(resolved, max_chars=cap, _metadata=True)
         elif resolved.suffix.lower() == ".docx":
             text = self._read_docx_text(resolved)
         else:
@@ -429,7 +430,7 @@ class FileSystemTools:
                     "Ce fichier ne semble pas etre du texte lisible.", "binary_file"
                 )
             text = raw.decode("utf-8", errors="replace")
-        truncated = len(text) > cap
+        truncated = pages_truncated or len(text) > cap
         return {
             "path": str(resolved),
             "name": resolved.name,
@@ -458,7 +459,7 @@ class FileSystemTools:
             raise FileSystemError('Document DOCX illisible ou trop volumineux.', 'docx_unreadable') from None
 
     @staticmethod
-    def _read_pdf_text(path: Path, max_pages: int = 50) -> str:
+    def _read_pdf_text(path: Path, max_pages: int = 50, *, max_chars: int | None = None, _metadata: bool = False) -> str | tuple[str, bool]:
         try:
             from pypdf import PdfReader
         except Exception:
@@ -468,10 +469,19 @@ class FileSystemTools:
             )
         try:
             reader = PdfReader(str(path))
-            parts = [(page.extract_text() or "") for page in reader.pages[:max_pages]]
+            parts = []
+            length = 0
+            for page in reader.pages[:max_pages]:
+                part = page.extract_text() or ""
+                parts.append(part)
+                length += len(part) + (1 if len(parts) > 1 else 0)
+                if max_chars is not None and length > max_chars:
+                    break
+            pages_truncated = len(parts) < len(reader.pages)
         except Exception as error:
             raise FileSystemError(f"PDF illisible : {error}", "pdf_unreadable")
-        return "\n".join(parts)
+        text = "\n".join(parts)
+        return (text, pages_truncated) if _metadata else text
 
     def get_file_info(self, path: str | Path) -> dict[str, Any]:
         resolved = self.resolver.resolve_existing(

@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+from jarvis.storage_privacy import private_deletes, checkpoint_erasure
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -330,6 +331,8 @@ class MemoryStore:
             memory = self._get(conn, memory_id)
             if memory is not None:
                 conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+                conn.commit()
+                checkpoint_erasure(conn)
             return memory
 
     def log_episode(
@@ -417,6 +420,8 @@ class MemoryStore:
         with self._connect() as conn:
             count = conn.execute("SELECT COUNT(*) FROM missions").fetchone()[0]
             conn.execute("DELETE FROM missions")
+            conn.commit()
+            checkpoint_erasure(conn)
             return count
 
     # --- internals ------------------------------------------------------------
@@ -431,7 +436,7 @@ class MemoryStore:
                 path.touch(mode=0o600)
             os.chmod(path, 0o600)
 
-        conn = sqlite3.connect(path, timeout=5)
+        conn = private_deletes(sqlite3.connect(path, timeout=5))
         conn.row_factory = sqlite3.Row
 
         if not initialized:

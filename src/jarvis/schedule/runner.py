@@ -1,20 +1,23 @@
 """Deliver due scheduled messages.
 
-Run on a schedule (a launchd agent polling every minute). Each pass sends the
-messages that are due and deliverable now; anything not deliverable yet (screen
-locked, recipient not verifiable, send unconfirmed) is kept pending and retried
-on later passes, until a grace window elapses -- then it is marked failed and
-the user is notified. The recipient is always re-verified at send time, and a
-send that cannot be confirmed never counts as sent.
+Run on a schedule (a launchd agent polling every minute). Missing safe
+preconditions (screen locked, recipient unverified) are retried within a grace
+window. Once a send starts, its durable claim prevents unattended repetition
+following a crash. Only an explicitly confirmed effect counts as sent. An
+uncertain outcome is exposed for manual reconciliation; it is never retried
+automatically. Scheduled delivery workers serialize their GUI actions per store.
 """
 
 from __future__ import annotations
 
 import subprocess
+import re
+import os
+import fcntl
+from contextlib import contextmanager
 import time
-from typing import Any, Callable
+from typing import Callable
 
-from jarvis.schedule.store import RECURRENCES
 
 
 # How long after its due time a message keeps being retried while it cannot be
@@ -22,69 +25,88 @@ from jarvis.schedule.store import RECURRENCES
 DEFAULT_GRACE_SECONDS = 30 * 60
 
 
+@contextmanager
+def _delivery_lock(store):
+    # A stable sidecar serializes GUI delivery for this store across processes.
+    descriptor = os.open(str(store.path.resolve())+'.delivery.lock', os.O_CREAT | os.O_RDWR | getattr(os,'O_NOFOLLOW',0), 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def deliver_due(
-    store,
-    messaging,
-    *,
-    screen_unlocked: Callable[[], bool],
-    now: float | None = None,
-    grace_seconds: float = DEFAULT_GRACE_SECONDS,
+    store, messaging, *, screen_unlocked: Callable[[], bool],
+    now: float | None = None, grace_seconds: float = DEFAULT_GRACE_SECONDS,
     notifier: Callable[[str], None] | None = None,
 ) -> dict[str, list]:
-    """Send every due, deliverable message once. Returns a per-outcome summary."""
+    """Only confirmed sends succeed; uncertain outcomes never retry unattended."""
     moment = time.time() if now is None else float(now)
-    results: dict[str, list] = {"sent": [], "failed": [], "deferred": []}
-
+    results: dict[str,list] = {'sent': [], 'failed': [], 'deferred': []}
     for row in store.due(moment):
-        row_id = row["id"]
-        app = row["app"]
-        recipient = row["recipient"]
-        text = row["text"]
-        within_grace = moment <= row["due_at"] + grace_seconds
+        with _delivery_lock(store):
+            row_id = row['id']
+            if not store.claim_delivery(row_id):
+                continue
+            recipient = row['recipient']
+            within_grace = moment <= row['due_at'] + grace_seconds
 
-        def settle(reason: str) -> None:
-            # Transient problem: retry within grace, otherwise give up + notify.
-            if within_grace:
-                store.record_attempt(row_id, reason)
-                results["deferred"].append((row_id, reason))
-            else:
+            def fail(reason, uncertain=False):
                 store.mark_failed(row_id, reason)
-                results["failed"].append((row_id, reason))
-                _notify(
-                    notifier,
-                    f"Message planifie non envoye a {recipient} : {reason}.",
-                )
+                results['failed'].append((row_id,reason))
+                label = "non confirme" if uncertain else "non envoye"
+                _notify(notifier, f"Message planifie {label} pour {recipient} : {reason}.")
 
-        if not screen_unlocked():
-            settle("ecran verrouille")
-            continue
+            def settle(reason):
+                if within_grace:
+                    store.record_attempt(row_id,reason)
+                    results['deferred'].append((row_id,reason))
+                else:
+                    fail(reason)
 
-        verify = messaging.ensure_recipient(app, recipient)
-        if not getattr(verify, "ok", False):
-            settle(getattr(verify, "error_code", None) or "destinataire non verifie")
-            continue
-
-        sent = messaging.send_text(app, text)
-        if getattr(sent, "ok", False):
-            store.mark_sent(row_id)
-            results["sent"].append(row_id)
-            _notify(notifier, f"Message planifie envoye a {recipient}.")
-            _reschedule_recurring(store, row, moment)
-        else:
-            settle(getattr(sent, "error_code", None) or "echec d'envoi")
-
+            try:
+                unlocked = screen_unlocked()
+            except Exception:
+                unlocked = False
+            if unlocked is not True:
+                settle('ecran verrouille')
+                continue
+            try:
+                verify = messaging.ensure_recipient(row['app'],recipient)
+            except Exception:
+                settle('verification du destinataire indisponible')
+                continue
+            if getattr(verify,'ok',False) is not True:
+                settle(getattr(verify,'error_code',None) or 'destinataire non verifie')
+                continue
+            try:
+                still_unlocked = screen_unlocked()
+            except Exception:
+                still_unlocked = False
+            if still_unlocked is not True:
+                settle('ecran verrouille')
+                continue
+            try:
+                sent = messaging.send_text(row['app'],row['text'])
+            except Exception:
+                fail('envoi incertain ; verifier la conversation avant toute nouvelle tentative', uncertain=True)
+                continue
+            data = getattr(sent,'data',{})
+            if not isinstance(data,dict):
+                data = {}
+            if getattr(sent,'ok',False) is True and data.get('state_confirmed') is True:
+                # A DB failure leaves the durable sending claim, preventing a
+                # resend after an external effect whose settlement is unknown.
+                store.complete_delivery(row_id,moment)
+                results['sent'].append(row_id)
+                _notify(notifier, f"Message planifie envoye a {recipient}.")
+            elif (not getattr(sent,'ok',False) and not data.get('command_executed')
+                  and getattr(sent,'error_code',None) in {'composer_not_filled','composer_not_visible','composer_unsupported','invalid_text'}):
+                settle(sent.error_code)
+            else:
+                fail('envoi incertain ; verifier la conversation avant toute nouvelle tentative', uncertain=True)
     return results
-
-
-def _reschedule_recurring(store, row: dict, now: float):
-    """Arm the next occurrence of a recurring message after a successful send."""
-    period = RECURRENCES.get((row.get("recurrence") or "none"))
-    if not period:
-        return None
-    nxt = row["due_at"] + period
-    while nxt <= now:  # catch up if the Mac was off across several periods
-        nxt += period
-    return store.add(row["app"], row["recipient"], row["text"], nxt, row["recurrence"])
 
 
 def _notify(notifier: Callable[[str], None] | None, message: str) -> None:
@@ -99,15 +121,15 @@ def _notify(notifier: Callable[[str], None] | None, message: str) -> None:
 def macos_screen_unlocked() -> bool:
     """True unless the macOS login/lock window is frontmost."""
     try:
-        asn = subprocess.run(
-            ["lsappinfo", "front"], capture_output=True, text=True, timeout=5
-        ).stdout.strip()
-        info = subprocess.run(
-            ["lsappinfo", "info", "-only", "name", asn],
-            capture_output=True, text=True, timeout=5,
-        ).stdout
-        name = info.split("=", 1)[-1].strip().strip('"')
-        return name != "loginwindow"
+        front = subprocess.run(['lsappinfo','front'],capture_output=True,text=True,timeout=5)
+        asn = front.stdout.strip()
+        if front.returncode != 0 or not asn.startswith('ASN:'):
+            return False
+        info = subprocess.run(['lsappinfo','info','-only','name',asn],capture_output=True,text=True,timeout=5)
+        if info.returncode != 0:
+            return False
+        match = re.fullmatch(r'\s*"LSDisplayName"\s*=\s*"([^"\r\n]+)"\s*',info.stdout)
+        return bool(match and match.group(1) != 'loginwindow')
     except Exception:
         return False
 

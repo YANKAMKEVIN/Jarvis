@@ -17,6 +17,23 @@ import xml.etree.ElementTree as ET
 
 ROOT=Path(__file__).resolve().parents[1]
 MUTATIONS=[
+    ('unconfirmed_scheduled_send_accepted','jarvis/schedule/runner.py',
+     "if getattr(sent,'ok',False) is True and data.get('state_confirmed') is True:",
+     "if getattr(sent,'ok',False) is True:",
+     'tests/test_qa_scheduled_safety.py::test_unconfirmed_send_is_not_successful_or_retried'),
+    ('cancelled_schedule_claimed','jarvis/schedule/store.py',
+     "UPDATE scheduled SET status='sending' WHERE id=? AND status='pending'",
+     "UPDATE scheduled SET status='sending' WHERE id=?",
+     'tests/test_qa_scheduled_safety.py::test_cancel_between_selection_and_claim_prevents_send'),
+    ('sqlite_erasure_disabled','jarvis/storage_privacy.py',
+     'PRAGMA secure_delete=ON', 'PRAGMA secure_delete=OFF',
+     'tests/test_qa_privacy_erasure.py::test_archive_clear_removes_payload_from_database_and_wal'),
+    ('pdf_page_truncation_hidden','jarvis/tools/filesystem.py',
+     'truncated = pages_truncated or len(text) > cap', 'truncated = len(text) > cap',
+     'tests/test_qa_document_privacy.py::test_page_limit_is_reported_as_incomplete_even_for_short_pdf_pages'),
+    ('archive_parent_secret_kept','jarvis/desktop/result_history.py',
+     'and not contains_secret(str(Path(value).parent), high_entropy=False)', '',
+     'tests/test_qa_document_privacy.py::test_secret_in_parent_directory_is_not_archived'),
     ('partial_note_kept_after_save_failure','jarvis/capabilities/notes.py',
      'if created:', 'if False:',
      'tests/test_qa_note_failures.py::test_failed_save_removes_its_partial_file'),

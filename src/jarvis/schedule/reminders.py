@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import math
 import sqlite3
+from jarvis.storage_privacy import private_deletes, checkpoint_erasure
 import time
 from contextlib import closing
 from pathlib import Path
@@ -121,6 +122,14 @@ class ReminderStore:
             ).fetchone()
         return dict(row) if row is not None else None
 
+    def purge_pending(self) -> int:
+        """Delete pending contents after explicit consent, without cancelling history."""
+        with closing(self._connect()) as conn, conn:
+            count = conn.execute("DELETE FROM reminders WHERE status='pending'").rowcount
+            conn.commit()
+            checkpoint_erasure(conn)
+            return count
+
     def cancel(self, row_id: int) -> bool:
         with closing(self._connect()) as conn, conn:
             cursor = conn.execute(
@@ -146,7 +155,7 @@ class ReminderStore:
             if not path.exists():
                 path.touch(mode=0o600)
             os.chmod(path, 0o600)
-        conn = sqlite3.connect(path, timeout=5)
+        conn = private_deletes(sqlite3.connect(path, timeout=5))
         conn.row_factory = sqlite3.Row
         if not initialized:
             conn.executescript(_SCHEMA)

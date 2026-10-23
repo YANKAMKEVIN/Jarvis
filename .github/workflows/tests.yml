@@ -32,6 +32,8 @@ jobs:
         run: python -m coverage report --include='src/jarvis/knowledge/service.py,src/jarvis/knowledge/keyless.py,src/jarvis/capabilities/knowledge.py' --fail-under=90
       - name: Reminder recovery coverage gate
         run: python -m coverage report --include='src/jarvis/schedule/reminders.py' --fail-under=90
+      - name: Scheduled delivery and erasure coverage gate
+        run: python -m coverage report --include='src/jarvis/schedule/runner.py,src/jarvis/schedule/store.py,src/jarvis/storage_privacy.py' --fail-under=90
       - name: Check tests detect deliberately broken protections
         run: python scripts/check_regression_sensitivity.py --json mutations.json
       - name: Resilience qualification probes

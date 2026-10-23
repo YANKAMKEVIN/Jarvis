@@ -166,3 +166,8 @@ La campagne suivante et ses limites sont détaillées dans [QA livraison et repr
 ## Suite : intégrité des notes
 
 [QA intégrité des notes](qa-note-integrity.md) décrit les fautes d’encodage et d’écriture reproduites, les huit nouveaux cas et les limites de restauration et de concurrence avec des éditeurs externes.
+
+
+## Suite autonome : planification, documents et effacement
+
+[QA autonome](qa-autonomous-campaign.md) consigne les nouveaux parcours sans intervention, les évaluations documentaires réelles, les défauts reproduits et les limites. L’endurance de deux heures est différée à la fin à la demande de l’utilisateur.
