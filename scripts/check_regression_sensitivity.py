@@ -17,6 +17,12 @@ import xml.etree.ElementTree as ET
 
 ROOT=Path(__file__).resolve().parents[1]
 MUTATIONS=[
+    ('rejected_reminder_consumed','jarvis/schedule/reminders.py',
+     'if accepted is False:', 'if False:',
+     'tests/test_qa_delivery_journeys.py::test_missing_or_rejected_notification_is_not_reported_delivered'),
+    ('reminder_pending_recheck_removed','jarvis/schedule/reminders.py',
+     "WHERE id=? AND status='pending' AND due_at<=?", "WHERE id=? AND due_at<=?",
+     'tests/test_qa_delivery_journeys.py::test_two_delivery_passes_observing_same_due_row_do_not_duplicate'),
     ('search_no_retry','jarvis/knowledge/service.py',
      'return list(dict.fromkeys(attempts))[:3]', 'return list(dict.fromkeys(attempts))[:1]',
      'tests/test_search_resilience.py::test_empty_failed_or_unusable_first_search_recovers'),

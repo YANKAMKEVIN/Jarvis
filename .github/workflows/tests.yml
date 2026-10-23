@@ -30,10 +30,14 @@ jobs:
         run: python -m pytest -m 'not live' -q --cov=jarvis --cov-branch --cov-report=xml:coverage.xml --cov-report=json:coverage.json --junitxml=tests.xml
       - name: Search coverage gate
         run: python -m coverage report --include='src/jarvis/knowledge/service.py,src/jarvis/knowledge/keyless.py,src/jarvis/capabilities/knowledge.py' --fail-under=90
+      - name: Reminder recovery coverage gate
+        run: python -m coverage report --include='src/jarvis/schedule/reminders.py' --fail-under=90
       - name: Check tests detect deliberately broken protections
         run: python scripts/check_regression_sensitivity.py --json mutations.json
       - name: Resilience qualification probes
         run: python scripts/qa_resilience_probe.py --output resilience.json
+      - name: Local persistence endurance smoke
+        run: python scripts/qa_persistence_soak.py --seconds 5 --output storage-soak.json
       - name: Family regression ledger
         if: always()
         run: python scripts/report_qa.py --junit tests.xml --output qa-families.json
@@ -47,5 +51,6 @@ jobs:
             tests.xml
             mutations.json
             resilience.json
+            storage-soak.json
             qa-families.json
           retention-days: 14

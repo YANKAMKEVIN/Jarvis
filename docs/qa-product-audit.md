@@ -156,3 +156,8 @@ Le nettoyage complémentaire ferme aussi le gestionnaire d’expérience créé 
 le test afin de retirer ses filtres d’événements avant suppression des fenêtres.
 Les scénarios Qt sont revérifiés avec ce complément. Cette durée reste celle du
 banc de tests, pas une promesse de réactivité en utilisation réelle.
+
+
+## Suite : livraison et reprise
+
+La campagne suivante et ses limites sont détaillées dans [QA livraison et reprise](qa-delivery-recovery.md). Elle ajoute des parcours avec SQLite réel, processus indépendants, notifications simulées et mesure courte de stockage. Elle ne clôt pas les validations matérielles ni l’endurance de deux heures.

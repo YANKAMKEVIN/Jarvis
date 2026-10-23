@@ -112,13 +112,14 @@ def macos_screen_unlocked() -> bool:
         return False
 
 
-def macos_notifier(message: str) -> None:
-    """Post a macOS notification (best effort)."""
-    safe = message.replace('"', "'")
+def macos_notifier(message: str) -> bool:
+    """Report OS acceptance; arbitrary notification content stays an argument."""
+    script = 'on run argv\ndisplay notification (item 1 of argv) with title "Jarvis"\nend run'
     try:
-        subprocess.run(
-            ["osascript", "-e", f'display notification "{safe}" with title "Jarvis"'],
+        result = subprocess.run(
+            ["osascript", "-e", script, "--", message],
             capture_output=True, timeout=5,
         )
-    except Exception:
-        pass
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False

@@ -20,7 +20,7 @@ FAMILIES = {
     'clipboard_text': ('clipboard', 'text_workshop'),
     'calendar': ('calendar', 'briefing'),
     'messaging': ('mail', 'imap', 'messaging', 'whatsapp', 'confirmation'),
-    'scheduling': ('schedule', 'reminder'),
+    'scheduling': ('schedule', 'reminder', 'qa_delivery'),
     'missions': ('planner', 'mission', 'macro', 'request_routing', 'shortcuts', 'qa_resilience'),
     'claude': ('claude',),
     'metrics': ('insights', 'usage'),
