@@ -459,15 +459,9 @@ class ToolRegistry:
         if scope in ("context", "all"):
             counts["context"] = self.context_store.clear()
         if scope in ("reminders", "all"):
-            counts["reminders"] = sum(
-                1 for r in self.reminder_store.list("pending")
-                if self.reminder_store.cancel(r["id"])
-            )
+            counts["reminders"] = self.reminder_store.purge_pending()
         if scope in ("scheduled", "all"):
-            counts["scheduled"] = sum(
-                1 for m in self.schedule_store.list("pending")
-                if self.schedule_store.cancel(m["id"])
-            )
+            counts["scheduled"] = self.schedule_store.purge_pending()
         if scope in ("checklists", "all"):
             counts["checklists"] = checklist_store(self).clear()
         if scope in ("missions", "all"):
@@ -3501,6 +3495,12 @@ class ToolRegistry:
             """Return pending scheduled messages."""
             debug_live("tool_call", tool="list_scheduled_messages")
             rows = await asyncio.to_thread(self.schedule_store.list, "pending")
+            sending = await asyncio.to_thread(self.schedule_store.list, "sending")
+            failed = await asyncio.to_thread(self.schedule_store.list, "failed")
+            review = sending + [row for row in failed if (row.get("last_error") or "").startswith("envoi incertain")]
+            review_items = [{"id": row["id"], "recipient": row["recipient"],
+                             "status": row["status"], "reason": row.get("last_error") or "Envoi en cours ou interrompu : resultat a verifier."}
+                            for row in review]
             messages = [
                 {
                     "id": row["id"],
@@ -3513,9 +3513,11 @@ class ToolRegistry:
             ]
             return ToolResult.success(
                 action="list_scheduled_messages",
-                message=f"{len(messages)} message(s) planifie(s) en attente.",
+                message=f"{len(messages)} message(s) planifie(s) en attente. {len(review_items)} envoi(s) a verifier ; aucune relance automatique pour ceux-ci.",
                 scheduled=messages,
                 count=len(messages),
+                requires_review=review_items,
+                review_count=len(review_items),
             ).to_livekit_dict()
 
         @function_tool(

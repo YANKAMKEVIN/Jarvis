@@ -189,3 +189,14 @@ def test_controller_speaks_alerts_only_in_an_open_session():
         assert c.announce('alerte') is spoken
     assert c.voice_worker.announce.call_count == 2
     c.voice_worker = None
+
+
+def test_controller_reports_queue_rejection():
+    QApplication.instance() or QApplication([])
+    c = Controller()
+    c.voice_state = 'listening'
+    c.voice_worker = SimpleNamespace(announce=Mock(return_value=False), run_routine=Mock(return_value=False))
+    assert c.announce('alerte') is False
+    assert c.run_routine('test') is False
+    assert 'pleine' in c.tool_notice
+    c.voice_worker = None

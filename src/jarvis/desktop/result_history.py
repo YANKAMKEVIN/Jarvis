@@ -2,6 +2,7 @@
 import json
 import os
 import sqlite3
+from jarvis.storage_privacy import private_deletes, checkpoint_erasure
 import time
 from pathlib import Path
 from contextlib import closing
@@ -24,7 +25,7 @@ def archive_receipt(tool,identifier,result,projected):
     paths=[]
     for key in ('path','destination','created_path'):
         value=result.get(key)
-        if isinstance(value,str) and len(value)<=2048 and Path(value).is_absolute() and value not in paths and not contains_secret(Path(value).name):paths.append(value)
+        if isinstance(value,str) and len(value)<=2048 and Path(value).is_absolute() and value not in paths and not contains_secret(Path(value).name) and not contains_secret(str(Path(value).parent), high_entropy=False):paths.append(value)
     return {'id':identifier,'tool':tool,'title':title,'body':body,'paths':paths,'ok':bool(result.get('ok')),'at':time.time()}
 
 
@@ -35,7 +36,7 @@ class ResultHistoryStore:
         self.path.parent.mkdir(parents=True,exist_ok=True);os.chmod(self.path.parent,0o700)
         if not self.path.exists():self.path.touch(mode=0o600)
         os.chmod(self.path,0o600)
-        conn=sqlite3.connect(self.path,timeout=1);conn.row_factory=sqlite3.Row
+        conn=private_deletes(sqlite3.connect(self.path,timeout=1));conn.row_factory=sqlite3.Row
         conn.execute('CREATE TABLE IF NOT EXISTS results (id TEXT PRIMARY KEY, at REAL NOT NULL, tool TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, paths TEXT NOT NULL, ok INTEGER NOT NULL)')
         return conn
     def record(self,row):
@@ -49,7 +50,10 @@ class ResultHistoryStore:
             rows=conn.execute('SELECT * FROM results ORDER BY at DESC LIMIT 200').fetchall()
         return [dict(row,paths=json.loads(row['paths'])) for row in rows]
     def clear(self):
-        with closing(self.connect()) as conn,conn:conn.execute('DELETE FROM results')
+        with closing(self.connect()) as conn,conn:
+            conn.execute('DELETE FROM results')
+            conn.commit()
+            checkpoint_erasure(conn)
 
 
 class ResultRecorder:

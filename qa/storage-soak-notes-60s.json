@@ -1,0 +1,31 @@
+{
+  "backend": "Real isolated SQLite and Markdown; notification callbacks simulated",
+  "scope": "Local persistence only; not full voice/hardware endurance",
+  "requested_seconds": 60.0,
+  "elapsed_seconds": 60.033,
+  "two_hour_storage_run": false,
+  "cycles": 1020,
+  "notification_failures_injected_and_recovered": 102,
+  "latency_sample": {
+    "window": "last 2048 local cycles, includes fault/retry cycles; excludes pacing",
+    "count": 1020,
+    "median_ms": 3.187,
+    "p95_ms": 11.295
+  },
+  "resources": {
+    "fds_before": 4,
+    "fds_after": 4,
+    "threads_before": 1,
+    "threads_after": 1,
+    "python_retained_growth_after_warmup_bytes": 41041,
+    "python_peak_bytes": 67701,
+    "database_and_note_bytes": 78191
+  },
+  "checks": {
+    "cycles_executed": true,
+    "threads_bounded": true,
+    "fds_bounded": true,
+    "python_retained_memory_bounded": true
+  },
+  "passed": true
+}

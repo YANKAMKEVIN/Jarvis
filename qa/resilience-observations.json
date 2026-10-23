@@ -1,0 +1,44 @@
+{
+  "backend": "Simulated; no measured real-service latency",
+  "checks": [
+    {
+      "id": "QA-BUDGET",
+      "observation": {
+        "pending_after_budget": true,
+        "final_status": "completed"
+      },
+      "criterion": "A response received after the mission budget is not reported completed",
+      "passed": false
+    },
+    {
+      "id": "QA-CANCEL",
+      "observation": {
+        "pending_after_cancel": true,
+        "final_status": "cancelled"
+      },
+      "criterion": "Cancellation of an in-flight model call returns promptly",
+      "passed": false
+    },
+    {
+      "id": "QA-QUEUES",
+      "observation": {
+        "routines_queued": 10000,
+        "alerts_queued": 10000,
+        "desktop_requests_accepted": 10
+      },
+      "criterion": "All producer paths apply admission control under a 10000-request burst",
+      "passed": false
+    },
+    {
+      "id": "QA-MISSIONS",
+      "observation": {
+        "accepted": 6,
+        "rejected": 94,
+        "peak_concurrent_model_calls": 2
+      },
+      "criterion": "Mission requests are bounded to six live requests and two running plans",
+      "passed": true
+    }
+  ],
+  "qualified": false
+}

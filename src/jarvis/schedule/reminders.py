@@ -8,7 +8,9 @@ delivered by the same launchd pass as scheduled messages, as a notification.
 from __future__ import annotations
 
 import os
+import math
 import sqlite3
+from jarvis.storage_privacy import private_deletes, checkpoint_erasure
 import time
 from contextlib import closing
 from pathlib import Path
@@ -67,9 +69,15 @@ class ReminderStore:
         if len(text) > MAX_TEXT_LENGTH:
             raise ReminderError("Le texte du rappel est trop long.", "invalid_text")
         try:
+            if isinstance(due_at, bool):
+                raise ValueError
             due = float(due_at)
-        except (TypeError, ValueError):
+            if not math.isfinite(due):
+                raise ValueError
+        except (TypeError, ValueError, OverflowError):
             raise ReminderError("La date du rappel est invalide.", "invalid_due_at")
+        if recurrence is not None and not isinstance(recurrence, str):
+            raise ReminderError("Recurrence inconnue.", "invalid_recurrence")
         recurrence = (recurrence or "none").strip().lower()
         if recurrence != "none" and recurrence not in RECURRENCES:
             raise ReminderError("Recurrence inconnue.", "invalid_recurrence")
@@ -114,6 +122,14 @@ class ReminderStore:
             ).fetchone()
         return dict(row) if row is not None else None
 
+    def purge_pending(self) -> int:
+        """Delete pending contents after explicit consent, without cancelling history."""
+        with closing(self._connect()) as conn, conn:
+            count = conn.execute("DELETE FROM reminders WHERE status='pending'").rowcount
+            conn.commit()
+            checkpoint_erasure(conn)
+            return count
+
     def cancel(self, row_id: int) -> bool:
         with closing(self._connect()) as conn, conn:
             cursor = conn.execute(
@@ -139,7 +155,7 @@ class ReminderStore:
             if not path.exists():
                 path.touch(mode=0o600)
             os.chmod(path, 0o600)
-        conn = sqlite3.connect(path, timeout=5)
+        conn = private_deletes(sqlite3.connect(path, timeout=5))
         conn.row_factory = sqlite3.Row
         if not initialized:
             conn.executescript(_SCHEMA)
@@ -157,26 +173,45 @@ def deliver_reminders(
     store: ReminderStore,
     *,
     now: float | None = None,
-    notifier: Callable[[str], None] | None = None,
+    notifier: Callable[[str], bool | None] | None = None,
 ) -> list[int]:
-    """Fire a notification for each due reminder and mark it done."""
-    import time as _time
+    """Deliver with serialized settlement and retry on notification failure.
 
-    moment = _time.time() if now is None else float(now)
+    SQLite cannot transact with macOS notifications: a process crash after
+    notification acceptance but before commit can still cause a retry. This is
+    at-least-once recovery, not a guarantee of exactly-once presentation.
+    """
+    if notifier is None:
+        return []
+    moment = store._clock() if now is None else float(now)
     fired: list[int] = []
-    for row in store.due(now):
-        if notifier is not None:
+    for candidate in store.due(moment):
+        with closing(store._connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM reminders WHERE id=? AND status='pending' AND due_at<=?",
+                (candidate['id'], moment),
+            ).fetchone()
+            if row is None:
+                continue
+            # Stage all database writes before the external effect. A failure
+            # to create the next occurrence must not consume this reminder.
+            conn.execute("UPDATE reminders SET status='done', done_at=? WHERE id=?",
+                         (moment, row['id']))
+            period = RECURRENCES.get(row['recurrence'])
+            if period:
+                nxt = row['due_at'] + (math.floor((moment-row['due_at']) / period) + 1) * period
+                conn.execute(
+                    "INSERT INTO reminders(text,due_at,status,created_at,recurrence) VALUES (?,?,'pending',?,?)",
+                    (row['text'], nxt, store._clock(), row['recurrence']),
+                )
             try:
-                notifier(f"Rappel : {row['text']}")
+                accepted = notifier(f"Rappel : {row['text']}")
             except Exception:
-                pass
-        store.mark_done(row["id"])
-        fired.append(row["id"])
-        # Re-arm the next occurrence of a recurring reminder (catch up).
-        period = RECURRENCES.get((row.get("recurrence") or "none"))
-        if period:
-            nxt = row["due_at"] + period
-            while nxt <= moment:
-                nxt += period
-            store.add(row["text"], nxt, row["recurrence"])
+                conn.rollback()
+                continue
+            if accepted is False:
+                conn.rollback()
+                continue
+        fired.append(row['id'])
     return fired

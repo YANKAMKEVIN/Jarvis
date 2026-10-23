@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from jarvis.planner.models import ModelTurn, PlannerModel, PlannerModelError, ToolCall
+from jarvis.planner.model_wait import ModelWaitStopped, complete_bounded
 
 
 # Allowlist, not denylist: a new tool is never exposed to the planner by
@@ -200,16 +201,20 @@ class PlannerEngine:
                 return stop
 
             try:
-                turn: ModelTurn = await asyncio.to_thread(
-                    self.model.complete, messages, self.schemas,
+                turn: ModelTurn = await complete_bounded(
+                    self.model, messages, self.schemas, cancel,
+                    self.max_seconds - (self.clock() - started),
                 )
+            except ModelWaitStopped as error:
+                return TaskOutcome(error.status, "Tache annulee a la demande." if error.status == "cancelled" else "Budget de temps depasse.", steps)
             except PlannerModelError as error:
                 return TaskOutcome("failed", error.message, steps)
             except Exception as error:
                 return TaskOutcome("failed", f"Erreur du modele : {error}", steps)
 
-            if cancel.is_set():
-                return TaskOutcome("cancelled", "Tache annulee a la demande.", steps)
+            stop = self._check_limits(cancel, started, steps)
+            if stop is not None:
+                return stop
             if not turn.tool_calls:
                 summary = turn.text or "Tache terminee, sans resume du modele."
                 return TaskOutcome("completed", summary, steps)

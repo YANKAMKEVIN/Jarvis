@@ -12,7 +12,9 @@ module only stores and transitions rows.
 from __future__ import annotations
 
 import os
+import math
 import sqlite3
+from jarvis.storage_privacy import private_deletes, checkpoint_erasure
 import time
 from contextlib import closing
 from datetime import datetime
@@ -20,7 +22,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 
-STATUSES = ("pending", "sent", "failed", "cancelled")
+STATUSES = ("pending", "sending", "sent", "failed", "cancelled")
 
 # Recurrence period in seconds, by keyword. "none" = one-shot.
 RECURRENCES = {"daily": 86400.0, "weekly": 7 * 86400.0}
@@ -120,9 +122,15 @@ class ScheduledMessageStore:
         )
         text = self._require(text, "text", MAX_TEXT_LENGTH, "invalid_text")
         try:
+            if isinstance(due_at, bool):
+                raise ValueError
             due = float(due_at)
-        except (TypeError, ValueError):
+            if not math.isfinite(due):
+                raise ValueError
+        except (TypeError, ValueError, OverflowError):
             raise ScheduleError("La date d'envoi est invalide.", "invalid_due_at")
+        if recurrence is not None and not isinstance(recurrence, str):
+            raise ScheduleError("Recurrence inconnue.", "invalid_recurrence")
         recurrence = (recurrence or "none").strip().lower()
         if recurrence != "none" and recurrence not in RECURRENCES:
             raise ScheduleError("Recurrence inconnue.", "invalid_recurrence")
@@ -169,6 +177,14 @@ class ScheduledMessageStore:
             ).fetchone()
         return dict(row) if row is not None else None
 
+    def purge_pending(self) -> int:
+        """Delete pending contents after explicit consent, without cancelling history."""
+        with closing(self._connect()) as conn, conn:
+            count = conn.execute("DELETE FROM scheduled WHERE status='pending'").rowcount
+            conn.commit()
+            checkpoint_erasure(conn)
+            return count
+
     def cancel(self, row_id: int) -> bool:
         """Cancel a still-pending message. Returns whether a row changed."""
         with closing(self._connect()) as conn, conn:
@@ -178,6 +194,31 @@ class ScheduledMessageStore:
                 (int(row_id),),
             )
             return cursor.rowcount > 0
+
+    def claim_delivery(self, row_id: int) -> bool:
+        """Durable intent: a crash in flight must not cause an automatic resend."""
+        with closing(self._connect()) as conn, conn:
+            cursor = conn.execute(
+                "UPDATE scheduled SET status='sending' WHERE id=? AND status='pending'",
+                (row_id,),
+            )
+            return cursor.rowcount == 1
+
+    def complete_delivery(self, row_id: int, now: float) -> None:
+        """Settle a confirmed send and its recurrence in one commit."""
+        with closing(self._connect()) as conn, conn:
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute("SELECT * FROM scheduled WHERE id=? AND status='sending'", (row_id,)).fetchone()
+            if row is None:
+                raise ScheduleError('Envoi non reclame.', 'delivery_not_claimed')
+            conn.execute("UPDATE scheduled SET status='sent',sent_at=?,last_error=NULL WHERE id=?", (self._clock(),row_id))
+            period = RECURRENCES.get(row['recurrence'])
+            if period:
+                nxt = row['due_at'] + (math.floor((now-row['due_at'])/period)+1)*period
+                conn.execute(
+                    "INSERT INTO scheduled(app,recipient,text,due_at,status,attempts,created_at,recurrence) VALUES (?,?,?,?,'pending',0,?,?)",
+                    (row['app'],row['recipient'],row['text'],nxt,self._clock(),row['recurrence']),
+                )
 
     def mark_sent(self, row_id: int) -> None:
         with closing(self._connect()) as conn, conn:
@@ -200,8 +241,8 @@ class ScheduledMessageStore:
         pending, bump the attempt count and note why."""
         with closing(self._connect()) as conn, conn:
             conn.execute(
-                "UPDATE scheduled SET attempts = attempts + 1, last_error = ? "
-                "WHERE id = ? AND status = 'pending'",
+                "UPDATE scheduled SET status = 'pending', attempts = attempts + 1, last_error = ? "
+                "WHERE id = ? AND status IN ('pending', 'sending')",
                 (self._trim(error), int(row_id)),
             )
 
@@ -233,7 +274,7 @@ class ScheduledMessageStore:
                 path.touch(mode=0o600)
             os.chmod(path, 0o600)
 
-        conn = sqlite3.connect(path, timeout=5)
+        conn = private_deletes(sqlite3.connect(path, timeout=5))
         conn.row_factory = sqlite3.Row
 
         if not initialized:

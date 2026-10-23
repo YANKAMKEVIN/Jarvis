@@ -50,6 +50,14 @@ class NotesCapability:
 
         if title is not None and (not isinstance(title, str) or len(title) > MAX_TITLE_LENGTH or any(c in title for c in '\r\n')):
             return ToolResult.failure('save_note', 'Titre de note invalide.', 'invalid_title')
+        try:
+            text.encode('utf-8')
+        except UnicodeError:
+            return ToolResult.failure('save_note', 'Texte de note invalide.', 'invalid_text')
+        try:
+            (title or '').encode('utf-8')
+        except UnicodeError:
+            return ToolResult.failure('save_note', 'Titre de note invalide.', 'invalid_title')
         now = self._clock()
         stamp = now.strftime("%Y-%m-%d %H:%M")
         slug = _slug(title) if title else ""
@@ -58,14 +66,22 @@ class NotesCapability:
         heading = title.strip() if isinstance(title, str) and title.strip() else "Note"
         body = f"# {heading}\n\n_{stamp}_\n\n{text.strip()}\n"
 
+        created = False
+        path = None
         try:
             directory = self.notes_dir
             directory.mkdir(parents=True, exist_ok=True)
             path = directory / filename
             descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            created = True
             with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
                 stream.write(body)
         except OSError as error:
+            if created:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass  # Keep the original failure; never claim successful save.
             return ToolResult.failure(
                 action="save_note", message=f"Ecriture de la note impossible : {error}",
                 error_code="write_failed",
@@ -133,15 +149,33 @@ class NotesCapability:
     def append_note(self, note_id, text):
         if not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT_LENGTH:
             return ToolResult.failure('append_note', 'Ajout de note invalide.', 'invalid_text')
-        addition = ('\n\n' + text.strip() + '\n').encode('utf-8')
+        try:
+            addition = ('\n\n' + text.strip() + '\n').encode('utf-8')
+        except UnicodeError:
+            return ToolResult.failure('append_note', 'Texte de note invalide.', 'invalid_text')
         try:
             with self._lock:
                 path = self._resolve_note(note_id)
-                if path.stat().st_size + len(addition) > 100000:
-                    raise ValueError('note_too_large')
+                import fcntl
                 descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | getattr(os, 'O_NOFOLLOW', 0))
-                with os.fdopen(descriptor, 'ab') as stream:
-                    stream.write(addition)
+                try:
+                    # All Jarvis instances serialize appends on the same inode.
+                    fcntl.flock(descriptor, fcntl.LOCK_EX)
+                    original_size = os.fstat(descriptor).st_size
+                    if original_size + len(addition) > 100000:
+                        raise ValueError('note_too_large')
+                    try:
+                        offset = 0
+                        while offset < len(addition):
+                            written = os.write(descriptor, addition[offset:])
+                            if written <= 0:
+                                raise OSError('incomplete note write')
+                            offset += written
+                    except OSError:
+                        os.ftruncate(descriptor, original_size)
+                        raise
+                finally:
+                    os.close(descriptor)
             return ToolResult.success('append_note', 'Texte ajoute a la note, contenu precedent conserve.',
                                       note_id=note_id, char_count=len(text.strip()), state_confirmed=True)
         except (ValueError, OSError):

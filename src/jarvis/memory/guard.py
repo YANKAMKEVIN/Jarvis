@@ -75,7 +75,7 @@ def _luhn_ok(digits: str) -> bool:
     return total % 10 == 0
 
 
-def contains_secret(*values: str | None) -> bool:
+def contains_secret(*values: str | None, high_entropy: bool = True) -> bool:
     for value in values:
         if not value:
             continue
@@ -88,7 +88,7 @@ def contains_secret(*values: str | None) -> bool:
         if _IBAN_PATTERN.search(text):
             return True
 
-        if _KEY_PREFIX_PATTERN.search(text) or _HIGH_ENTROPY_PATTERN.search(text):
+        if _KEY_PREFIX_PATTERN.search(text) or (high_entropy and _HIGH_ENTROPY_PATTERN.search(text)):
             return True
 
         for match in _DIGIT_RUN_PATTERN.finditer(text):

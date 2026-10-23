@@ -9,7 +9,7 @@ from collections import deque
 from pathlib import Path
 from threading import Event
 from time import monotonic
-from queue import Empty, SimpleQueue
+from queue import Empty, Full, Queue
 from types import SimpleNamespace
 import uuid
 
@@ -142,7 +142,7 @@ class LiveRuntime:
         from jarvis.desktop.experience_core import TurnProgress, UndoLedger
         self.turn_progress = TurnProgress()
         self.undo_ledger = UndoLedger()
-        self.desktop_requests = SimpleQueue()
+        self.desktop_requests = Queue(maxsize=10)
         self.desktop_task = None
         self.profile = {}
         self.profile_dirty = True
@@ -163,7 +163,7 @@ class LiveRuntime:
         self.seen_items = deque(maxlen=512)
         self.sounds_requested = Event()
         self.cancel_task_requested = Event()
-        self.task_cancellations = SimpleQueue()
+        self.task_cancellations = Queue(maxsize=32)
         self.observed_tools = set()
         self.activity_serial=0
         # Mission results have no other spoken channel: they never expire.
@@ -171,17 +171,24 @@ class LiveRuntime:
         self.last_task_snapshot = None
         self.input_choice = self.output_choice = None
         self.closing = False
-        self.announcements = SimpleQueue()
-        self.routine_requests=SimpleQueue()
+        self.announcements = Queue(maxsize=32)
+        self.routine_requests=Queue(maxsize=10)
+
+    def _admit(self, queue, value):
+        if self.stop_requested.is_set() or self.closing:
+            return False
+        try:
+            queue.put_nowait(value)
+        except Full:
+            return False
+        return True
 
     def set_profile(self, profile):
         self.profile = dict(profile)
         self.profile_dirty = True
 
     def request_action(self, name, arguments):
-        if self.desktop_requests.qsize() >= 10: return False
-        self.desktop_requests.put((name, dict(arguments)))
-        return True
+        return self._admit(self.desktop_requests, (name, dict(arguments)))
 
     async def _apply_profile(self):
         from jarvis.desktop.experience_core import profile_instructions
@@ -252,8 +259,10 @@ class LiveRuntime:
         self.sounds_requested.set() if enabled else self.sounds_requested.clear()
 
     def cancel_task(self, task_id=None):
-        self.task_cancellations.put(task_id)
-        self.cancel_task_requested.set()
+        accepted = self._admit(self.task_cancellations, task_id)
+        if accepted:
+            self.cancel_task_requested.set()
+        return accepted
 
     def stop(self):
         self.stop_requested.set()
@@ -272,7 +281,7 @@ class LiveRuntime:
         self.interrupt_requested.set()
 
     def run_routine(self,name):
-        if isinstance(name,str) and 0<len(name)<=80:self.routine_requests.put(name)
+        return isinstance(name,str) and 0<len(name)<=80 and self._admit(self.routine_requests, name)
 
     async def _launch_routine(self,name):
         # Invoke the exact tool already registered with the agent, including its
@@ -288,11 +297,18 @@ class LiveRuntime:
         self._task_progress()
 
     async def _announce_task(self,instructions):
+        while len(self.task_announcements) >= 10:
+            if self.stop_requested.is_set() or self.closing:
+                return False
+            await asyncio.sleep(.02)
+        if self.stop_requested.is_set() or self.closing:
+            return False
         self.task_announcements.append((monotonic(),instructions))
+        return True
 
     def announce(self, message):
         """Queue a proactive alert; spoken only once Jarvis is idle, never over a reply."""
-        self.announcements.put((monotonic(), message))
+        return self._admit(self.announcements, (monotonic(), message))
 
     def state(self, state):
         audio = self.components.audio if self.components else None
@@ -491,7 +507,9 @@ class LiveRuntime:
                 if self.cancel_task_requested.is_set():
                     self.cancel_task_requested.clear()
                     tasks = getattr(c.assistant.registry, 'tasks', None)
-                    while True:
+                    # Yield back to audio controls even if a producer keeps
+                    # replenishing the queue while cancellations are processed.
+                    for _ in range(32):
                         try:
                             task_id = self.task_cancellations.get_nowait()
                         except Empty:
@@ -559,10 +577,6 @@ class LiveRuntime:
                 "session": "La session vocale a rencontré un problème. Vérifiez la connexion et les périphériques audio.",
             }[phase]
         finally:
-            if self.desktop_task is not None:
-                self.desktop_task.cancel()
-                await asyncio.gather(self.desktop_task, return_exceptions=True)
-            if self.result_recorder is not None:await asyncio.to_thread(self.result_recorder.close)
             self.closing = True
             self.ready = False
             self.emit({"type": "audio_level", "input": 0.0, "output": 0.0})
@@ -574,6 +588,12 @@ class LiveRuntime:
                 except Exception:
                     error_message = "La fermeture audio a rencontré un problème. Vérifiez les périphériques avant de relancer."
                 self.state("stopping")
+            if self.desktop_task is not None:
+                self.desktop_task.cancel()
+                await asyncio.gather(self.desktop_task, return_exceptions=True)
+            if self.result_recorder is not None:
+                await asyncio.to_thread(self.result_recorder.close)
+            if c is not None:
                 if self.interruption_task is not None:
                     self.interruption_task.cancel()
                     await asyncio.gather(self.interruption_task, return_exceptions=True)

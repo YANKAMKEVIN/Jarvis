@@ -52,12 +52,15 @@ def cmd_deliver() -> int:
 
 def cmd_list() -> int:
     store = ScheduledMessageStore()
-    rows = store.list("pending")
+    uncertain = [row for row in store.list("failed") if (row.get("last_error") or "").startswith("envoi incertain")]
+    rows = sorted(store.list("pending") + store.list("sending") + uncertain, key=lambda row: row["due_at"])
     if not rows:
         print("Aucun message planifie en attente.")
         return 0
     for row in rows:
         when = datetime.fromtimestamp(row["due_at"]).isoformat(timespec="minutes")
+        if row["status"] != "pending":
+            print("A verifier : envoi interrompu ou en cours ; aucune relance automatique.")
         print(f"[{row['id']}] {when}  ->  {row['recipient']} ({row['app']})")
     return 0
 
