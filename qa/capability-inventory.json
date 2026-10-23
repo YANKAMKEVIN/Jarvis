@@ -1,0 +1,2271 @@
+{
+  "base_commit": "f6c0681816ae170f7ac275a9af7b80209378fc95",
+  "scope": "Committed declarations; no tool is executed. Test references do not establish functional coverage.",
+  "declared_tools": 140,
+  "family_counts": {
+    "apps": 3,
+    "audio": 2,
+    "browser": 5,
+    "calendar": 2,
+    "claude_sessions": 2,
+    "clipboard": 3,
+    "compute": 2,
+    "context_store": 2,
+    "diagnostics": 1,
+    "document": 1,
+    "files": 9,
+    "insights": 1,
+    "interaction": 6,
+    "keyboard": 3,
+    "knowledge": 1,
+    "macro_store": 4,
+    "mail": 3,
+    "media": 4,
+    "memory": 12,
+    "messaging": 2,
+    "mouse": 7,
+    "notes": 2,
+    "orchestration": 24,
+    "pending_actions": 9,
+    "reminder_store": 4,
+    "schedule_store": 4,
+    "screenshot": 3,
+    "shortcuts": 2,
+    "system": 6,
+    "system_metrics": 3,
+    "ui_accessibility": 5,
+    "usage": 6,
+    "vision": 3,
+    "webread": 1,
+    "windows": 7
+  },
+  "tools": [
+    {
+      "tool": "activate_ui_element",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2048,
+      "families": [
+        "ui_accessibility"
+      ],
+      "static_test_references": [
+        "tests/test_click_element.py",
+        "tests/test_live_poc.py",
+        "tests/test_messaging_capability.py",
+        "tests/test_ui_accessibility_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "append_note",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 56,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "arrange_windows",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1532,
+      "families": [
+        "windows"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "ask_about_document",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1598,
+      "families": [
+        "document"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_experience_twenty.py",
+        "tests/test_experience_archive.py",
+        "tests/test_experience_runtime.py",
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py",
+        "tests/test_voice_resilience_contracts.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "ask_about_screen",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2985,
+      "families": [
+        "vision"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_activity_bridge.py",
+        "tests/test_desktop_presentation.py",
+        "tests/test_desktop_ui.py",
+        "tests/test_live_poc.py",
+        "tests/test_read_whatsapp.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "browse_activate_tab",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2818,
+      "families": [
+        "browser"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "browse_get_active_tab",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2770,
+      "families": [
+        "browser"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "browse_list_tabs",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2790,
+      "families": [
+        "browser"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "browse_open_url",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2704,
+      "families": [
+        "browser"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_planner_tasks.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "browse_search_web",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2738,
+      "families": [
+        "browser"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "calculate",
+      "source": "src/jarvis/live/registry.py",
+      "line": 972,
+      "families": [
+        "compute"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "calendar_conflicts",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 71,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "cancel_action",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2668,
+      "families": [
+        "pending_actions"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_planner.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "cancel_reminder",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3618,
+      "families": [
+        "reminder_store"
+      ],
+      "static_test_references": [
+        "tests/test_experience_runtime.py",
+        "tests/test_live_poc.py",
+        "tests/test_reminders.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "cancel_scheduled_message",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3530,
+      "families": [
+        "schedule_store"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_schedule.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "cancel_task",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3209,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_planner_tasks.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "cancel_timer",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 41,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "capture_region",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2884,
+      "families": [
+        "screenshot"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_screenshot_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "capture_screen",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2856,
+      "families": [
+        "screenshot"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_presentation.py",
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_screenshot_capability.py",
+        "tests/test_vision_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "capture_window",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2923,
+      "families": [
+        "screenshot"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_ui.py",
+        "tests/test_live_poc.py",
+        "tests/test_vision_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "check_anomalies",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1287,
+      "families": [
+        "insights"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "clear_clipboard",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1770,
+      "families": [
+        "clipboard"
+      ],
+      "static_test_references": [
+        "tests/test_clipboard_capability.py",
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "clear_personal_data",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3691,
+      "families": [
+        "pending_actions"
+      ],
+      "static_test_references": [
+        "tests/test_clear_personal_data.py",
+        "tests/test_live_poc.py",
+        "tests/test_mission_history.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "click",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1900,
+      "families": [
+        "mouse"
+      ],
+      "static_test_references": [
+        "tests/test_click_element.py",
+        "tests/test_live_poc.py",
+        "tests/test_mouse_capability.py",
+        "tests/test_planner.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "click_element",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2081,
+      "families": [
+        "mouse",
+        "ui_accessibility"
+      ],
+      "static_test_references": [
+        "tests/test_click_element.py",
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "close_app",
+      "source": "src/jarvis/live/registry.py",
+      "line": 731,
+      "families": [
+        "apps"
+      ],
+      "static_test_references": [
+        "tests/test_app_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_memory_store.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "compare_documents",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 76,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "compare_token_usage",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1207,
+      "families": [
+        "usage"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "configure_companion",
+      "source": "src/jarvis/desktop/presentation_tools.py",
+      "line": 12,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "confirm_action",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2636,
+      "families": [
+        "pending_actions"
+      ],
+      "static_test_references": [
+        "tests/test_clear_personal_data.py",
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_mission_history.py",
+        "tests/test_planner.py",
+        "tests/test_planner_tasks.py",
+        "tests/test_read_only_mode.py",
+        "tests/test_schedule.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "convert_units",
+      "source": "src/jarvis/live/registry.py",
+      "line": 988,
+      "families": [
+        "compute"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "create_calendar_event",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1056,
+      "families": [
+        "calendar",
+        "pending_actions"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "create_folder",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1661,
+      "families": [
+        "files"
+      ],
+      "static_test_references": [
+        "tests/test_files_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "dance_avatar",
+      "source": "src/jarvis/live/registry.py",
+      "line": 627,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_dance.py",
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "delete_macro",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3338,
+      "families": [
+        "macro_store"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_macros.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "describe_screen",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2953,
+      "families": [
+        "vision"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_activity_bridge.py",
+        "tests/test_desktop_presentation.py",
+        "tests/test_desktop_ui.py",
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "disable_safe_mode",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3758,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "double_click",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1916,
+      "families": [
+        "mouse"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_mouse_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "draft_email",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1380,
+      "families": [
+        "mail"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "enable_safe_mode",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3732,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "extract_document_actions",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 81,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_presentation.py",
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "find_files",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1562,
+      "families": [
+        "files"
+      ],
+      "static_test_references": [
+        "tests/test_files_capability.py",
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "find_free_slots",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 66,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "find_ui_elements",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1998,
+      "families": [
+        "ui_accessibility"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_ui_accessibility_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "focus_app_ui_and_type",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2172,
+      "families": [
+        "interaction"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_planner_tasks.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "focus_ui_element",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2023,
+      "families": [
+        "ui_accessibility"
+      ],
+      "static_test_references": [
+        "tests/test_interaction_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_messaging_capability.py",
+        "tests/test_ui_accessibility_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "focus_window",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1456,
+      "families": [
+        "windows"
+      ],
+      "static_test_references": [
+        "tests/test_interaction_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_messaging_capability.py",
+        "tests/test_read_whatsapp.py",
+        "tests/test_screenshot_capability.py",
+        "tests/test_window_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "forget",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2576,
+      "families": [
+        "memory"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_planner.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "get_active_window",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1440,
+      "families": [
+        "windows"
+      ],
+      "static_test_references": [
+        "tests/test_interaction_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_messaging_capability.py",
+        "tests/test_planner.py",
+        "tests/test_screenshot_capability.py",
+        "tests/test_window_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "get_battery_status",
+      "source": "src/jarvis/live/registry.py",
+      "line": 878,
+      "families": [
+        "system"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_system_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "get_brightness",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1394,
+      "families": [
+        "system"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_macos_tools.py",
+        "tests/test_system_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "get_clipboard_text",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1729,
+      "families": [
+        "clipboard"
+      ],
+      "static_test_references": [
+        "tests/test_clipboard_capability.py",
+        "tests/test_interaction_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_text_workshop.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "get_file_info",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1612,
+      "families": [
+        "files"
+      ],
+      "static_test_references": [
+        "tests/test_files_capability.py",
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "get_media_state",
+      "source": "src/jarvis/live/registry.py",
+      "line": 863,
+      "families": [
+        "media"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_media_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "get_mouse_position",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1868,
+      "families": [
+        "mouse"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_mouse_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "get_storage_status",
+      "source": "src/jarvis/live/registry.py",
+      "line": 907,
+      "families": [
+        "system"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "get_system_info",
+      "source": "src/jarvis/live/registry.py",
+      "line": 892,
+      "families": [
+        "system"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "get_volume",
+      "source": "src/jarvis/live/registry.py",
+      "line": 670,
+      "families": [
+        "audio"
+      ],
+      "static_test_references": [
+        "tests/test_audio_capability.py",
+        "tests/test_desktop_ui.py",
+        "tests/test_live_poc.py",
+        "tests/test_planner.py",
+        "tests/test_planner_tasks.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "hotkey",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1852,
+      "families": [
+        "keyboard"
+      ],
+      "static_test_references": [
+        "tests/test_interaction_capability.py",
+        "tests/test_keyboard_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_planner.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "inspect_ui",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1973,
+      "families": [
+        "ui_accessibility"
+      ],
+      "static_test_references": [
+        "tests/test_interaction_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_messaging_capability.py",
+        "tests/test_ui_accessibility_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "is_app_running",
+      "source": "src/jarvis/live/registry.py",
+      "line": 759,
+      "families": [
+        "apps"
+      ],
+      "static_test_references": [
+        "tests/test_app_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_planner_tasks.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "list_calendar_events",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1037,
+      "families": [
+        "calendar"
+      ],
+      "static_test_references": [
+        "tests/test_briefing.py",
+        "tests/test_desktop_presentation.py",
+        "tests/test_desktop_ui.py",
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "list_files",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1548,
+      "families": [
+        "files"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_ui.py",
+        "tests/test_files_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "list_macros",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3323,
+      "families": [
+        "macro_store"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_macros.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "list_memories",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2558,
+      "families": [
+        "memory"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "list_notes",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1022,
+      "families": [
+        "notes"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "list_reminders",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3596,
+      "families": [
+        "reminder_store"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_presentation.py",
+        "tests/test_live_poc.py",
+        "tests/test_reminders.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "list_scheduled_messages",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3500,
+      "families": [
+        "schedule_store"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_schedule.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "list_shortcuts",
+      "source": "src/jarvis/live/registry.py",
+      "line": 956,
+      "families": [
+        "shortcuts"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "list_timers",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 36,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_presentation.py",
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "list_unread_emails",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1109,
+      "families": [
+        "mail"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "lock_screen",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1425,
+      "families": [
+        "system"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_planner.py",
+        "tests/test_read_only_mode.py",
+        "tests/test_system_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "manage_checklist",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 61,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_presentation.py",
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "maximize_window",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1489,
+      "families": [
+        "windows"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_messaging_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "minimize_window",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1472,
+      "families": [
+        "windows"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "morning_briefing",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3121,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_briefing.py",
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "move_file",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1704,
+      "families": [
+        "files"
+      ],
+      "static_test_references": [
+        "tests/test_experience_archive.py",
+        "tests/test_experience_core.py",
+        "tests/test_experience_runtime.py",
+        "tests/test_files_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_protection_contracts.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "move_mouse",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1884,
+      "families": [
+        "mouse"
+      ],
+      "static_test_references": [
+        "tests/test_click_element.py",
+        "tests/test_live_poc.py",
+        "tests/test_mouse_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "move_window",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1506,
+      "families": [
+        "windows"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "next_track",
+      "source": "src/jarvis/live/registry.py",
+      "line": 817,
+      "families": [
+        "media"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_media_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "open_app",
+      "source": "src/jarvis/live/registry.py",
+      "line": 701,
+      "families": [
+        "apps"
+      ],
+      "static_test_references": [
+        "tests/test_app_capability.py",
+        "tests/test_desktop_activity_bridge.py",
+        "tests/test_desktop_live_runtime.py",
+        "tests/test_desktop_presentation.py",
+        "tests/test_desktop_session.py",
+        "tests/test_desktop_ui.py",
+        "tests/test_interaction_capability.py",
+        "tests/test_knowledge.py",
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_memory_store.py",
+        "tests/test_messaging_capability.py",
+        "tests/test_multi_missions.py",
+        "tests/test_planner.py",
+        "tests/test_planner_tasks.py",
+        "tests/test_read_only_mode.py",
+        "tests/test_request_routing.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "open_app_and_focus_ui",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2211,
+      "families": [
+        "interaction"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "open_claude_session",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1347,
+      "families": [
+        "claude_sessions",
+        "pending_actions"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "open_file",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1629,
+      "families": [
+        "files"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_live_runtime.py",
+        "tests/test_files_capability.py",
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "open_folder",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1645,
+      "families": [
+        "files"
+      ],
+      "static_test_references": [
+        "tests/test_files_capability.py",
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "pause_task",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 86,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "play_pause",
+      "source": "src/jarvis/live/registry.py",
+      "line": 793,
+      "families": [
+        "media"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_media_capability.py",
+        "tests/test_memory_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "prepare_send_message",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2338,
+      "families": [
+        "interaction",
+        "memory",
+        "messaging",
+        "pending_actions"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_ui.py",
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_planner.py",
+        "tests/test_planner_tasks.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "press_key",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1832,
+      "families": [
+        "keyboard"
+      ],
+      "static_test_references": [
+        "tests/test_interaction_capability.py",
+        "tests/test_keyboard_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_messaging_capability.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "previous_track",
+      "source": "src/jarvis/live/registry.py",
+      "line": 841,
+      "families": [
+        "media"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_media_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "privacy_overview",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3645,
+      "families": [
+        "memory",
+        "reminder_store",
+        "schedule_store"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_mission_history.py",
+        "tests/test_privacy_overview.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "propose_memory",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2506,
+      "families": [
+        "memory",
+        "pending_actions"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_planner.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "read_note",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 51,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "read_whatsapp_conversation",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3026,
+      "families": [
+        "messaging",
+        "vision",
+        "windows"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_whatsapp.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "recall",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2542,
+      "families": [
+        "memory"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "recall_context",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3383,
+      "families": [
+        "context_store"
+      ],
+      "static_test_references": [
+        "tests/test_context_store.py",
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "recent_activity",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2595,
+      "families": [
+        "memory"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "recent_claude_sessions",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1223,
+      "families": [
+        "usage"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "recent_missions",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2615,
+      "families": [
+        "memory"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_mission_history.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "remember",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2484,
+      "families": [
+        "memory"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_planner.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "remember_context",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3362,
+      "families": [
+        "context_store"
+      ],
+      "static_test_references": [
+        "tests/test_context_store.py",
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "rename_file",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1677,
+      "families": [
+        "files"
+      ],
+      "static_test_references": [
+        "tests/test_experience_core.py",
+        "tests/test_files_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "resume_task",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 91,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "rewrite_clipboard",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1793,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "right_click",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1932,
+      "families": [
+        "mouse"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_mouse_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "run_claude_task",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1308,
+      "families": [
+        "claude_sessions",
+        "pending_actions"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "run_macro",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3307,
+      "families": [
+        "macro_store"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_experience_twenty.py",
+        "tests/test_desktop_live_runtime.py",
+        "tests/test_live_poc.py",
+        "tests/test_macros.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "run_procedure",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3256,
+      "families": [
+        "memory"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_planner_tasks.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "run_shortcut",
+      "source": "src/jarvis/live/registry.py",
+      "line": 941,
+      "families": [
+        "shortcuts"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "run_task",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3178,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_experience_twenty.py",
+        "tests/test_desktop_presentation.py",
+        "tests/test_experience_runtime.py",
+        "tests/test_live_poc.py",
+        "tests/test_planner_tasks.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "save_macro",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3284,
+      "families": [
+        "macro_store"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_macros.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "save_note",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1007,
+      "families": [
+        "notes"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "save_task_procedure",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3226,
+      "families": [
+        "memory"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_planner_tasks.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "schedule_message",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3414,
+      "families": [
+        "memory",
+        "pending_actions",
+        "schedule_store"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py",
+        "tests/test_schedule.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "scroll",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1948,
+      "families": [
+        "mouse"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_mouse_capability.py",
+        "tests/test_mouse_tools.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "search_files_by_content",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1579,
+      "families": [
+        "files"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "search_notes",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 46,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "search_the_web",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3061,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_presentation.py",
+        "tests/test_knowledge_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py",
+        "tests/test_search_resilience.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "select_all_and_copy",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2144,
+      "families": [
+        "interaction"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "select_all_and_delete",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2248,
+      "families": [
+        "interaction"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "self_check",
+      "source": "src/jarvis/live/registry.py",
+      "line": 923,
+      "families": [
+        "diagnostics"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "send_last_web_result",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2446,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_knowledge_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "send_prompt_to_app",
+      "source": "src/jarvis/live/registry.py",
+      "line": 2276,
+      "families": [
+        "interaction"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "set_brightness",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1409,
+      "families": [
+        "system"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py",
+        "tests/test_system_capability.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "set_clipboard_text",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1747,
+      "families": [
+        "clipboard"
+      ],
+      "static_test_references": [
+        "tests/test_clipboard_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py",
+        "tests/test_text_workshop.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "set_reminder",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3560,
+      "families": [
+        "reminder_store"
+      ],
+      "static_test_references": [
+        "tests/test_desktop_live_runtime.py",
+        "tests/test_experience_runtime.py",
+        "tests/test_live_poc.py",
+        "tests/test_read_only_mode.py",
+        "tests/test_reminders.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "set_volume",
+      "source": "src/jarvis/live/registry.py",
+      "line": 643,
+      "families": [
+        "audio"
+      ],
+      "static_test_references": [
+        "tests/test_audio_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_memory_store.py",
+        "tests/test_read_only_mode.py",
+        "tests/test_request_routing.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "start_timer",
+      "source": "src/jarvis/live/productivity.py",
+      "line": 32,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_productivity.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "summarize_unread_emails",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1128,
+      "families": [
+        "mail"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "summarize_url",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3103,
+      "families": [
+        "webread"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "system_snapshot",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1238,
+      "families": [
+        "system_metrics"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "system_usage_history",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1270,
+      "families": [
+        "system_metrics"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "task_status",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3195,
+      "families": [
+        "orchestration"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py",
+        "tests/test_planner_tasks.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "token_usage",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1145,
+      "families": [
+        "usage"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "token_usage_by_model",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1161,
+      "families": [
+        "usage"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "token_usage_by_project",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1177,
+      "families": [
+        "usage"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "token_usage_trend",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1192,
+      "families": [
+        "usage"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "top_processes",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1253,
+      "families": [
+        "system_metrics"
+      ],
+      "static_test_references": [
+        "tests/test_live_poc.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "type_text",
+      "source": "src/jarvis/live/registry.py",
+      "line": 1811,
+      "families": [
+        "keyboard"
+      ],
+      "static_test_references": [
+        "tests/test_interaction_capability.py",
+        "tests/test_keyboard_capability.py",
+        "tests/test_live_poc.py",
+        "tests/test_memory_capability.py",
+        "tests/test_messaging_capability.py",
+        "tests/test_planner.py",
+        "tests/test_read_only_mode.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    },
+    {
+      "tool": "web_answer",
+      "source": "src/jarvis/live/registry.py",
+      "line": 3153,
+      "families": [
+        "knowledge"
+      ],
+      "static_test_references": [
+        "tests/test_briefing.py",
+        "tests/test_desktop_activity_bridge.py",
+        "tests/test_desktop_presentation.py",
+        "tests/test_desktop_ui.py",
+        "tests/test_knowledge_capability.py",
+        "tests/test_multi_missions.py",
+        "tests/test_planner.py",
+        "tests/test_productivity.py"
+      ],
+      "real_world_qualification": "pending",
+      "latency_p95_ms": null,
+      "scenario_success_rate": null
+    }
+  ]
+}
