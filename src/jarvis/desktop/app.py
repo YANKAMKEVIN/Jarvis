@@ -278,9 +278,13 @@ class Controller(QObject):
         if len(candidates) != 1 or not self.voice_worker or self.voice_state in {'starting', 'stopping', 'error'}:
             return
         if self.missions:
-            self.voice_worker.cancel_task(candidates[0]['id'])
+            accepted = self.voice_worker.cancel_task(candidates[0]['id'])
         else:
-            self.voice_worker.cancel_task()
+            accepted = self.voice_worker.cancel_task()
+        if accepted is False:
+            self.tool_notice = "Annulation non transmise : file pleine ou session arrêtée. Réessayez."
+            self.changed.emit()
+        return accepted
 
     def clear_tool_notice(self):
         self.tool_notice = ""
@@ -529,8 +533,12 @@ class Controller(QObject):
         self.changed.emit()
 
     def run_routine(self,name):
-        if self.demo or not self.voice_worker or self.voice_state in {'starting','stopping','error'}:return
-        self.voice_worker.run_routine(name)
+        if self.demo or not self.voice_worker or self.voice_state in {'starting','stopping','error'}:return False
+        accepted = self.voice_worker.run_routine(name)
+        if accepted is False:
+            self.tool_notice = "File de routines pleine ou session arrêtée. Réessayez après les demandes en cours."
+            self.changed.emit()
+        return accepted
 
     def mission_notice(self,mission,previous):
         status=mission.get('status')
@@ -590,8 +598,7 @@ class Controller(QObject):
         """Speak a proactive alert in the open voice session; False when none is open."""
         if self.demo or not self.voice_worker or self.voice_state in {"off", "starting", "stopping", "error"}:
             return False
-        self.voice_worker.announce(message)
-        return True
+        return self.voice_worker.announce(message) is not False
 
 
 class VoicePanel(QWidget):

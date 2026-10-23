@@ -31,3 +31,34 @@ _MEMORY_PATH = _TEST_ROOT / "memory.db"
 
 memory_store.real_default_memory_path = memory_store.default_memory_path
 memory_store.default_memory_path = lambda: _MEMORY_PATH
+
+
+# GUI fixtures used to leave hidden top-level windows and deferred deletions
+# alive across cases. Global stylesheet changes then repolished every old
+# window, making the suite order-dependent and progressively slower.
+import sys
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def dispose_test_windows():
+    widgets = sys.modules.get('PySide6.QtWidgets')
+    app = widgets.QApplication.instance() if widgets else None
+    existing_windows = tuple(app.topLevelWidgets()) if app else ()
+    existing = {id(window) for window in existing_windows}
+    previous_experience = getattr(app, '_jarvis_experience', None) if app else None
+    yield
+    widgets = sys.modules.get('PySide6.QtWidgets')
+    app = widgets.QApplication.instance() if widgets else None
+    if app is None:
+        return
+    from PySide6.QtCore import QCoreApplication, QEvent
+    experience = getattr(app, '_jarvis_experience', None)
+    if experience is not None and experience is not previous_experience:
+        experience.close()
+        app._jarvis_experience = None
+    for window in app.topLevelWidgets():
+        if id(window) not in existing:
+            window.hide()
+            window.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

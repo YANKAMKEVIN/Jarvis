@@ -191,3 +191,25 @@ def test_duplicate_wake_does_not_replace_a_healthy_live_session(ui):
     shell.recovery.after_wake()
     c.voice_worker.stop.assert_not_called()
     assert not shell.recovery.timer.isActive()
+
+
+def test_rejected_routine_does_not_claim_transmission_or_stay_pending(ui, tmp_path):
+    from jarvis.desktop.routines import RoutineDialog
+    from jarvis.macros import MacroStore
+    app, c, shell = ui
+    dialog = RoutineDialog(c, store=MacroStore(tmp_path/'routine.db'))
+    try:
+        dialog.template('Ma journée')
+        dialog.save()
+        c.demo = False
+        c.voice_state = 'listening'
+        c.voice_worker = Mock()
+        c.voice_worker.run_routine.return_value = False
+        dialog.launch()
+        assert dialog.pending_name is None
+        assert 'refusée' in dialog.notice.text()
+        assert 'transmise' not in dialog.notice.text()
+        assert dialog.run.isEnabled()
+    finally:
+        dialog.close()
+        dialog.deleteLater()

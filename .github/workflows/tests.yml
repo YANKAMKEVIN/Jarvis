@@ -32,6 +32,11 @@ jobs:
         run: python -m coverage report --include='src/jarvis/knowledge/service.py,src/jarvis/knowledge/keyless.py,src/jarvis/capabilities/knowledge.py' --fail-under=90
       - name: Check tests detect deliberately broken protections
         run: python scripts/check_regression_sensitivity.py --json mutations.json
+      - name: Resilience qualification probes
+        run: python scripts/qa_resilience_probe.py --output resilience.json
+      - name: Family regression ledger
+        if: always()
+        run: python scripts/report_qa.py --junit tests.xml --output qa-families.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -41,4 +46,6 @@ jobs:
             coverage.json
             tests.xml
             mutations.json
+            resilience.json
+            qa-families.json
           retention-days: 14

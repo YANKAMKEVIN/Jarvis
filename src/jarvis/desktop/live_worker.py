@@ -34,16 +34,16 @@ class LiveWorker(QThread):
         self.runtime.interrupt()
 
     def run_routine(self,name):
-        self.runtime.run_routine(name)
+        return self.runtime.run_routine(name)
 
     def announce(self, message):
-        self.runtime.announce(message)
+        return self.runtime.announce(message)
 
     def set_sounds(self, enabled):
         self.runtime.set_sounds(enabled)
 
     def cancel_task(self, task_id=None):
-        self.runtime.cancel_task(task_id)
+        return self.runtime.cancel_task(task_id)
 
     def set_profile(self, profile):
         self.runtime.set_profile(profile)

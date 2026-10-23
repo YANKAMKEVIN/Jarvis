@@ -525,3 +525,56 @@ def test_announcements_wait_for_the_user_to_finish_and_task_results_never_expire
         runtime.stop()
         await asyncio.wait_for(task, 1)
     asyncio.run(scenario())
+
+
+def test_shutdown_closes_microphone_before_waiting_for_desktop_cleanup():
+    async def scenario():
+        c = components()
+        runtime = LiveRuntime(lambda _: None, factory=lambda: c, prepare=lambda: None)
+        cleanup_started, release = asyncio.Event(), asyncio.Event()
+
+        async def slow_action():
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cleanup_started.set()
+                await release.wait()
+
+        session = asyncio.create_task(runtime.run())
+        try:
+            await until(lambda: runtime.ready)
+            runtime.desktop_task = asyncio.create_task(slow_action())
+            await asyncio.sleep(.01)
+            runtime.stop()
+            await asyncio.wait_for(cleanup_started.wait(), .5)
+            assert c.audio.closed
+            assert not c.audio.mic_open
+            assert runtime.closing
+        finally:
+            release.set()
+            runtime.stop()
+            await asyncio.wait_for(session, 1)
+    asyncio.run(scenario())
+
+
+def test_continuous_cancellation_producer_cannot_starve_mute():
+    async def scenario():
+        c = components()
+        runtime = LiveRuntime(lambda _: None, factory=lambda: c, prepare=lambda: None)
+        processed = []
+        def cancel(*_):
+            processed.append(1)
+            if len(processed) < 100:
+                runtime.cancel_task('again')
+        c.assistant.registry.tasks = NS(cancel=cancel, all=lambda: [])
+        task = asyncio.create_task(runtime.run())
+        try:
+            await until(lambda: runtime.ready)
+            runtime.cancel_task('first')
+            runtime.set_muted(True)
+            await until(lambda: not c.audio.mic_open)
+            assert len(processed) == 32
+        finally:
+            runtime.stop()
+            await asyncio.wait_for(task, 1)
+    asyncio.run(scenario())

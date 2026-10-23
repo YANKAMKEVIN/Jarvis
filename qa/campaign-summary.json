@@ -1,0 +1,163 @@
+{
+  "evidence": "Executed offline pytest assertions; native and service backends may be mocked. Times include setup, not user latency.",
+  "global_product_qualified": false,
+  "real_world_pending": [
+    "microphone and speakers",
+    "two-hour endurance",
+    "private test accounts",
+    "native target/focus races",
+    "screen and device changes"
+  ],
+  "families": {
+    "desktop_control": {
+      "passed": 169,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.039
+    },
+    "system_media": {
+      "passed": 47,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.023
+    },
+    "calendar": {
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.079
+    },
+    "browser": {
+      "passed": 46,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.0
+    },
+    "camera_wip": {
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.009
+    },
+    "claude": {
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.0
+    },
+    "privacy": {
+      "passed": 206,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.95
+    },
+    "clipboard_text": {
+      "passed": 32,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.0
+    },
+    "compute": {
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.0
+    },
+    "messaging": {
+      "passed": 67,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.842
+    },
+    "personal_data": {
+      "passed": 90,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.853
+    },
+    "voice_interface": {
+      "passed": 313,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 50.885
+    },
+    "transverse": {
+      "passed": 269,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 2.953
+    },
+    "documents": {
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.106
+    },
+    "files": {
+      "passed": 39,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.04
+    },
+    "metrics": {
+      "passed": 34,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.111
+    },
+    "web": {
+      "passed": 208,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.074
+    },
+    "missions": {
+      "passed": 94,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.859
+    },
+    "scheduling": {
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.26
+    },
+    "vision": {
+      "passed": 40,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 0.001
+    }
+  },
+  "campaign_date": "2026-10-23",
+  "source": "Local working tree on codex/qa-audit, including nine uncommitted camera tests; camera changes excluded from QA commit.",
+  "pytest_summary": {
+    "passed": 1762,
+    "subtests_passed": 149,
+    "live_deselected": 9,
+    "duration_seconds": 61.13
+  },
+  "junit_note": "JUnit may include separate subtest cases; family case counts must not be equated to the pytest item count.",
+  "service_quality": {
+    "passed": 9,
+    "failed": 0,
+    "backend": "Real local model and public web search"
+  },
+  "smoke_tests": {
+    "local": {
+      "pass": 51,
+      "fail": 0,
+      "skip": 0
+    },
+    "services": {
+      "pass": 7,
+      "fail": 0,
+      "skip": 0
+    }
+  },
+  "sensitivity": {
+    "mutants_detected": 5,
+    "mutants_total": 5
+  }
+}

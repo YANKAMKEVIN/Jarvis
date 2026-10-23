@@ -83,6 +83,11 @@ class RoutineDialog(QDialog):
         if not row or self.name.text().strip()!=row['name'] or self.goal.toPlainText().strip()!=row['goal']:
             self.notice.setText('Enregistrez vos modifications avant de lancer la routine.');return
         self.pending_name=item.text()
-        self.controller.run_routine(item.text());self.run.setEnabled(False)
+        if self.controller.run_routine(item.text()) is False:
+            self.pending_name=None
+            self.notice.setText('Demande refusée : session indisponible ou file pleine. Réessayez après les demandes en cours.')
+            self.refresh_enabled()
+            return
+        self.run.setEnabled(False)
         QTimer.singleShot(1000,self.refresh_enabled)
         self.notice.setText('Demande transmise · suivez sa mission dans Jarvis.')

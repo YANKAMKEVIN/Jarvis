@@ -86,3 +86,73 @@ Objectifs de qualification **proposés**, à traiter comme des critères et non 
 5. N’annoncer une capacité « qualifiée » qu’après ces preuves. La CI reste nécessaire, mais elle ne remplace pas ce bilan produit.
 
 Aucun envoi réel, accès à des comptes privés, changement de réglage utilisateur ou test matériel n’a été effectué dans cet état initial. Les contrôles manquants ne sont pas comptés comme réussis.
+
+
+## Corrections et campagne de suivi
+
+L’état initial ci-dessus est conservé comme preuve des défauts reproduits. Le
+rapport `qa/resilience-after-fixes.json` consigne les quatre sondes après correction.
+
+- Le budget est revérifié après l’inférence, avant tout succès ou action.
+- L’attente d’inférence devient annulable, avec un maximum global de deux appels
+  physiques. Un fournisseur bloqué conserve sa place jusqu’à son retour ; ses
+  résultats tardifs sont ignorés. Les requêtes sont copiées avant transmission.
+  Les threads sont isolés de l’exécuteur asyncio et ne retiennent pas sa fermeture.
+  Cela ne termine pas une requête HTTP déjà partie : la capacité peut rester
+  indisponible jusqu’au timeout du fournisseur. Aucune action native n’est
+  abandonnée par ce mécanisme : ses verrous restent nécessaires jusqu’à sa fin.
+- Admission atomique : dix commandes desktop, dix routines, 32 alertes et
+  32 demandes d’annulation maximum en attente. Une session arrêtée refuse les
+  nouvelles demandes. Les refus de routine et d’annulation sont affichés ; une
+  alerte refusée retourne `False` pour laisser son appelant utiliser son autre
+  canal de notification.
+- Les annonces essentielles de missions attendent une place au-delà de dix,
+  sans expiration ni suppression. La fermeture interrompt cette attente ; les
+  résultats restent dans l’historique des missions.
+- La fermeture coupe les périphériques audio avant le nettoyage potentiellement
+  lent des commandes desktop et de l’enregistreur. Un test bloque explicitement
+  ce nettoyage pour vérifier que le micro est déjà fermé.
+
+La CI exécute désormais les sondes et produit `qa-families.json` à partir du
+JUnit réellement exécuté, avec chaque cas et son résultat. `scripts/report_qa.py`
+regroupe ces assertions par famille et conserve un groupe transversal pour les
+cas sans correspondance. Ce classement n’attribue aucune qualification native
+ou sémantique automatique. Les temps pytest ne sont pas des latences utilisateur.
+Les modifications caméra en cours restent distinguées dans leur propre famille.
+
+```bash
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -m 'not live' --junitxml=/tmp/jarvis-qa-tests.xml
+.venv/bin/python scripts/report_qa.py --junit /tmp/jarvis-qa-tests.xml --output /tmp/jarvis-qa-families.json
+.venv/bin/python scripts/qa_resilience_probe.py --output /tmp/jarvis-qa-resilience.json
+```
+
+Les validations micro/haut-parleurs, comptes de test privés, courses de focus et
+endurance de deux heures restent requises avant de qualifier globalement le
+produit. Une campagne automatisée hors ligne ne les remplace pas.
+
+
+La campagne a aussi révélé une faiblesse d’isolation des tests Qt : des fenêtres
+masquées survivaient entre les scénarios, et les changements de thème
+réappliquaient le style à ces anciennes fenêtres. Le nettoyage automatique
+supprime les fenêtres créées par chaque test et traite les suppressions Qt
+différées après les autres fixtures. Cette correction concerne le banc de
+régression ; elle ne constitue pas une mesure de performance de l’application.
+Le traitement des annulations est limité à 32 par passage de boucle pour qu’un
+producteur continu ne puisse pas empêcher la prise en compte de la coupure micro.
+
+
+### Résultats du suivi local
+
+`qa/campaign-summary.json` conserve le bilan par famille : **1 762 tests,
+149 sous-tests**, aucun échec ; neuf tests de services réels exécutés séparément
+et réussis ; 51 smoke tests locaux et sept smoke tests de services réussis ;
+les cinq mutations volontaires détectées. Les quatre sondes de résilience sont
+vertes après correction. Le résumé local comprend neuf tests caméra non
+commités ; le commit et sa CI les excluent. Les cas JUnit peuvent inclure des
+sous-tests séparés : leurs sommes ne représentent pas le nombre d’items pytest.
+
+La suite entière a terminé en 61,13 secondes après le premier nettoyage Qt.
+Le nettoyage complémentaire ferme aussi le gestionnaire d’expérience créé par
+le test afin de retirer ses filtres d’événements avant suppression des fenêtres.
+Les scénarios Qt sont revérifiés avec ce complément. Cette durée reste celle du
+banc de tests, pas une promesse de réactivité en utilisation réelle.
