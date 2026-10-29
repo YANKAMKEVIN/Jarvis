@@ -12,6 +12,7 @@ build-backend = "setuptools.build_meta"
 test = ["pytest>=8,<10", "pytest-cov>=6,<8", "hypothesis>=6,<7"]
 desktop = ["PySide6>=6.8,<7", "pypdf>=6,<7", "pyobjc-framework-Cocoa>=11,<13; sys_platform == 'darwin'"]
 live = ["livekit-agents[google]>=1.8.8,<1.9", "google-genai>=2.30.1,<3", "sounddevice>=0.5,<1", "python-dotenv>=1,<2"]
+mcp = ["mcp>=1.10,<2", "PyYAML>=6,<7"]
 
 [project.scripts]
 jarvis-desktop = "jarvis.desktop.__main__:main"

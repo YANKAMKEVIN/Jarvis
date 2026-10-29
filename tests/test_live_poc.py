@@ -35,6 +35,7 @@ EXPECTED_LIVE_TOOL_NAMES = sorted([
     "arrange_windows",
     "disable_safe_mode",
     "enable_safe_mode",
+    "list_mcp_tools", "call_mcp_tool", "list_skills", "use_skill",
     "summarize_unread_emails",
     "ask_about_document",
     "ask_about_screen",
