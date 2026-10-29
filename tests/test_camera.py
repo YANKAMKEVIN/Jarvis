@@ -99,3 +99,59 @@ def test_camera_errors_skip_the_analysis(tmp_path):
     camera = FakeCamera(tmp_path, CameraError("Accès refusé.", "camera_permission_denied"))
     r = CameraCapability(camera, vision).describe()
     assert not r.ok and r.error_code == "camera_permission_denied" and vision.prompts == []
+
+
+class FakeAVF:
+    """Stand-in for pyobjc's AVFoundation module."""
+
+    AVMediaTypeVideo = "vide"
+
+    def __init__(self, status, grant=None):
+        self.requests = []
+        outer = self
+
+        class Device:
+            @staticmethod
+            def authorizationStatusForMediaType_(media):
+                return status
+
+            @staticmethod
+            def requestAccessForMediaType_completionHandler_(media, handler):
+                outer.requests.append(media)
+                if grant is not None:
+                    handler(grant)
+
+        self.AVCaptureDevice = Device
+
+
+@pytest.mark.parametrize("status, expected", [(3, True), (2, False), (1, False)])
+def test_native_access_uses_the_existing_decision_without_prompting(status, expected):
+    from jarvis.tools.camera import native_camera_access
+
+    avf = FakeAVF(status)
+    assert native_camera_access(avf=avf, pump=lambda s: None) is expected
+    assert avf.requests == []
+
+
+@pytest.mark.parametrize("grant", [True, False])
+def test_native_access_prompts_once_when_undetermined(grant):
+    from jarvis.tools.camera import native_camera_access
+
+    avf = FakeAVF(0, grant=grant)
+    assert native_camera_access(avf=avf, pump=lambda s: None) is grant
+    assert avf.requests == ["vide"]
+
+
+def test_unanswered_prompt_times_out_as_refused():
+    from jarvis.tools.camera import native_camera_access
+
+    pumped = []
+    avf = FakeAVF(0, grant=None)  # the user never answers
+    assert native_camera_access(timeout=0.05, avf=avf, pump=pumped.append) is False
+    assert pumped  # the run loop was serviced while waiting
+
+
+def test_capture_timeout_leaves_room_for_the_first_permission_prompt():
+    from jarvis.tools.camera import CAPTURE_TIMEOUT_SECONDS, PERMISSION_TIMEOUT_SECONDS
+
+    assert CAPTURE_TIMEOUT_SECONDS > PERMISSION_TIMEOUT_SECONDS

@@ -14,10 +14,15 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 from typing import Callable
 
-CAPTURE_TIMEOUT_SECONDS = 15.0
+# The very first capture waits for the user to answer the macOS camera prompt.
+PERMISSION_TIMEOUT_SECONDS = 30.0
+# Prompt + camera warm-up + one frame; later captures finish in about a second.
+CAPTURE_TIMEOUT_SECONDS = PERMISSION_TIMEOUT_SECONDS + 15.0
 # Auto-exposure needs a moment after the camera starts; the first frames are dark.
 WARMUP_MS = 900
 
@@ -67,6 +72,59 @@ class CameraCapture:
         return path
 
 
+# AVAuthorizationStatus
+_AV_NOT_DETERMINED, _AV_RESTRICTED, _AV_DENIED, _AV_AUTHORIZED = 0, 1, 2, 3
+
+
+def native_camera_access(timeout: float = PERMISSION_TIMEOUT_SECONDS, avf=None,
+                         pump: Callable[[float], None] | None = None) -> bool | None:
+    """Ask macOS for camera access directly through AVFoundation.
+
+    Qt refuses to request the permission when the *interpreter* has no
+    NSCameraUsageDescription, which is always the case for the Python that the
+    Jarvis.app launcher execs. AVFoundation has no such client-side check: TCC
+    attributes the request to the responsible app (Jarvis.app, which declares
+    the camera) and shows the system prompt. Returns True/False, or None when
+    pyobjc's AVFoundation is unavailable (callers then fall back to Qt).
+    """
+    if avf is None:
+        try:
+            import AVFoundation as avf  # noqa: N813
+        except ImportError:
+            return None
+    media = avf.AVMediaTypeVideo
+    device = avf.AVCaptureDevice
+    status = device.authorizationStatusForMediaType_(media)
+    if status == _AV_AUTHORIZED:
+        return True
+    if status in (_AV_RESTRICTED, _AV_DENIED):
+        return False
+
+    done = threading.Event()
+    answer = {}
+
+    def handler(granted):
+        answer["granted"] = bool(granted)
+        done.set()
+
+    device.requestAccessForMediaType_completionHandler_(media, handler)
+    if pump is None:
+        pump = _run_loop_for
+    deadline = time.monotonic() + timeout
+    while not done.is_set() and time.monotonic() < deadline:
+        pump(0.1)
+    return answer.get("granted", False)
+
+
+def _run_loop_for(seconds: float) -> None:
+    # The completion handler may be delivered through the main run loop.
+    try:
+        from Foundation import NSDate, NSRunLoop
+        NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(seconds))
+    except ImportError:
+        time.sleep(seconds)
+
+
 def _helper(out_path: str) -> int:
     """Runs in the helper process: open the default camera, save one JPEG, exit."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -79,7 +137,10 @@ def _helper(out_path: str) -> int:
     device = QMediaDevices.defaultVideoInput()
     if device.isNull():
         return 3
-    if hasattr(app, "checkPermission"):
+    native = native_camera_access()
+    if native is False:
+        return 4
+    if native is None and hasattr(app, "checkPermission"):
         from PySide6.QtCore import QCameraPermission
         status = app.checkPermission(QCameraPermission())
         if status == Qt.PermissionStatus.Denied:
@@ -112,7 +173,8 @@ def _helper(out_path: str) -> int:
     camera.errorOccurred.connect(failed)
     camera.start()
     QTimer.singleShot(WARMUP_MS, lambda: still.captureToFile(out_path))
-    QTimer.singleShot(int(CAPTURE_TIMEOUT_SECONDS * 1000) - 2000, app.quit)
+    # Permission is settled by now: the camera itself only needs a few seconds.
+    QTimer.singleShot(10_000, app.quit)
     app.exec()
     camera.stop()
     return outcome["code"]
