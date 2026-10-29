@@ -109,6 +109,25 @@ def desktop_turn_detection_config():
     ))
 
 
+def introduced_marker_path():
+    return Path(os.environ.get("JARVIS_INTRODUCED_PATH")
+                or Path.home() / "Library/Application Support/Jarvis/introduced")
+
+
+def session_greeting():
+    """Introduce Jarvis once ever; afterwards only a short welcome back."""
+    from jarvis.live.prompts import LIVE_SESSION_GREETING, LIVE_SESSION_WELCOME_BACK
+    marker = introduced_marker_path()
+    if marker.exists():
+        return LIVE_SESSION_WELCOME_BACK
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    except OSError:
+        pass  # Worst case Jarvis introduces itself again next launch.
+    return LIVE_SESSION_GREETING
+
+
 def create_components(voice=None):
     try:
         from livekit.agents import Agent, AgentSession
@@ -485,9 +504,9 @@ class LiveRuntime:
                 c.audio.play_cue("ready")
             self.state("muted" if self.mute_requested.is_set() else "listening")
             phase = "session"
-            from jarvis.live.prompts import INSIGHT_ANNOUNCEMENT, LIVE_SESSION_GREETING
+            from jarvis.live.prompts import INSIGHT_ANNOUNCEMENT
             if not self.ptt_mode_requested.is_set():
-                c.session.generate_reply(instructions=LIVE_SESSION_GREETING)
+                c.session.generate_reply(instructions=session_greeting())
             suppressed = False
             next_meter = 0.0
             next_task_poll = 0.0

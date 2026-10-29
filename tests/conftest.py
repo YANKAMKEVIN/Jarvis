@@ -25,6 +25,7 @@ for variable, name in {
     "JARVIS_USAGE_DB_PATH": "usage.db",
     "JARVIS_CLAUDE_PROJECTS_DIR": "claude-projects",
     "JARVIS_NOTES_DIR": "notes",
+    "JARVIS_INTRODUCED_PATH": "introduced",
 }.items():
     os.environ[variable] = str(_TEST_ROOT / name)
 _MEMORY_PATH = _TEST_ROOT / "memory.db"

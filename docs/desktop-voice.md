@@ -56,6 +56,10 @@ open ~/Applications/Jarvis.app
    microphone après le démarrage de la session, jamais au lancement de l’app.
 2. Accorder l’accès Microphone si macOS le demande. Si l’accès est refusé,
    vérifier Réglages Système → Confidentialité et sécurité → Microphone.
+   Au tout premier démarrage, Jarvis se présente ; ensuite il dit seulement un
+   court mot d’accueil (« Re-bonjour, je t’écoute »). Le repère est le fichier
+   `~/Library/Application Support/Jarvis/introduced` (supprimez-le pour revoir la
+   présentation, ou `JARVIS_INTRODUCED_PATH` pour le déplacer).
 3. Parler lorsque l’interface indique **Micro ouvert · voix envoyée à Gemini**.
 4. **Couper le micro** arrête la capture et vide le tampon d’entrée local ; le
    bouton permet ensuite de réactiver le micro. L’audio déjà envoyé reste envoyé.

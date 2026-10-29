@@ -623,7 +623,7 @@ class ToolRegistry:
             if observer is None:
                 return {"ok": False, "error": "desktop_unavailable"}
             observer({"type": "avatar_dance", "action": "stop" if stop else "start"})
-            return {"ok": True, "status": "request_delivered", "message": "Demande transmise au compagnon; animation selon apparence et réglages."}
+            return {"ok": True, "status": "request_delivered", "message": "Demande transmise au compagnon; animation selon apparence et réglages. Accompagne-la d'une courte phrase joueuse."}
 
         @function_tool(
             name="set_volume",

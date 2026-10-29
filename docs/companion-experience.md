@@ -176,7 +176,8 @@ Dans les commandes du compagnon (`•••` ou clic droit), **Faire danser** la
 chorégraphie de huit secondes, y compris dans `jarvis-desktop --demo --compact`.
 En session vocale, demander « Danse », « Tu sais danser ? » ou « Montre-moi une
 danse » utilise la commande de présentation dédiée. « Arrête de danser » arrête
-la danse sans fermer le vocal ni les missions. La reconnaissance réelle par
+la danse sans fermer le vocal ni les missions. Jarvis lance la danse avec une courte
+phrase joueuse, différente à chaque fois, sans décrire l'animation qu'il ne voit pas. La reconnaissance réelle par
 Gemini reste à essayer avec un micro.
 
 NovaBot, Neo Guide, Kitsune, Digital Avatar, Synth Companion et Holo Face
