@@ -85,15 +85,27 @@ def preload_live_plugins():
         raise setup_failure("sdk_import", error) from None
 
 
+DEFAULT_TURN_SILENCE_MS = 1100
+
+
+def turn_silence_ms():
+    """Silence that ends a turn; JARVIS_TURN_SILENCE_MS tunes it in the field."""
+    try:
+        value = int(os.environ.get("JARVIS_TURN_SILENCE_MS", DEFAULT_TURN_SILENCE_MS))
+    except ValueError:
+        return DEFAULT_TURN_SILENCE_MS
+    return min(max(value, 400), 3000)
+
+
 def desktop_turn_detection_config():
-    """Keep natural pauses while ending short spoken turns predictably."""
+    """Let the user pause to think mid-sentence without Jarvis taking the turn."""
     from google.genai import types
     return types.RealtimeInputConfig(automatic_activity_detection=types.AutomaticActivityDetection(
         disabled=False,
         start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
-        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
         prefix_padding_ms=300,
-        silence_duration_ms=700,
+        silence_duration_ms=turn_silence_ms(),
     ))
 
 

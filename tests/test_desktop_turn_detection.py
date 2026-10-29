@@ -5,24 +5,31 @@ from unittest.mock import Mock
 import pytest
 from jarvis.desktop.devices import AudioDeviceError
 from jarvis.desktop.live_audio import LocalAudio, CALLBACK_TIMEOUT_SECONDS
-from jarvis.desktop.live_runtime import desktop_turn_detection_config
+from jarvis.desktop.live_runtime import desktop_turn_detection_config, turn_silence_ms
 from jarvis.live.config import LiveConfig
 from jarvis.live.factory import create_realtime_model
 from test_desktop_live_audio import FakeStream, frame
 
 
-def test_explicit_turn_detection_keeps_700ms_pauses_and_pre_speech_context():
+def test_explicit_turn_detection_tolerates_thinking_pauses_and_keeps_pre_speech_context(monkeypatch):
+    monkeypatch.delenv('JARVIS_TURN_SILENCE_MS', raising=False)
     config = desktop_turn_detection_config()
     vad = config.automatic_activity_detection
     assert vad.disabled is False
-    assert vad.silence_duration_ms == 700
+    assert vad.silence_duration_ms == 1100
     assert vad.prefix_padding_ms == 300
     assert vad.start_of_speech_sensitivity.value == 'START_SENSITIVITY_HIGH'
-    assert vad.end_of_speech_sensitivity.value == 'END_SENSITIVITY_HIGH'
+    assert vad.end_of_speech_sensitivity.value == 'END_SENSITIVITY_LOW'
     factory = Mock()
     create_realtime_model(NS(realtime=NS(RealtimeModel=factory)), LiveConfig('test','Puck',.8,'test'), realtime_input_config=config)
     assert factory.call_args.kwargs['realtime_input_config'] is config
 
+
+
+@pytest.mark.parametrize('raw, expected', [('800', 800), ('50', 400), ('9000', 3000), ('abc', 1100)])
+def test_turn_silence_env_override_is_clamped(monkeypatch, raw, expected):
+    monkeypatch.setenv('JARVIS_TURN_SILENCE_MS', raw)
+    assert turn_silence_ms() == expected
 
 def test_echo_pause_sends_zeros_then_resumes_real_pcm_and_muting_stops_all_frames():
     async def scenario():
