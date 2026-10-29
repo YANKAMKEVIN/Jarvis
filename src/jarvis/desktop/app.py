@@ -125,6 +125,8 @@ class Controller(QObject):
         self.ptt_hotkey_message="Maintenez ⌘⌥Espace, ou Espace lorsque le compagnon a le focus."
         self.ptt_enabled=False
         self.ptt_held=False
+        self.wake_enabled = False
+        self.wake_standby = False
         self.ptt_timer=QTimer(self);self.ptt_timer.setSingleShot(True);self.ptt_timer.setInterval(45000)
         self.ptt_timer.timeout.connect(self.end_push_to_talk)
         self.avatar_feedback = None
@@ -341,6 +343,7 @@ class Controller(QObject):
         if hasattr(self, "experience") and hasattr(worker,"set_profile"):
             worker.set_profile(self.experience.options.profile())
         if self.ptt_enabled:worker.set_push_to_talk(True)
+        elif self.wake_enabled and hasattr(worker, "set_wake_word"):worker.set_wake_word(True)
         if self.input_choice is not None or self.output_choice is not None:
             worker.set_devices(self.input_choice, self.output_choice)
         if self.microphone_muted:
@@ -489,6 +492,7 @@ class Controller(QObject):
                 self.voice_state = state
             self.voice_mic_open = event.get("mic_open", False)
             self.input_suppressed = event.get("input_suppressed", False)
+            self.wake_standby = event.get("standby", False)
             self.voice_error = event.get("message", "")
             if state == 'error':
                 self.notice.emit({'key':'voice:error:'+self.voice_error,'text':'Connexion vocale interrompue · voir les détails','destination':'settings'})
@@ -511,6 +515,14 @@ class Controller(QObject):
         if self.voice_worker:self.voice_worker.set_push_to_talk(enabled)
         if enabled and self.voice_worker:
             self.microphone_muted=True;self.voice_worker.set_muted(True)
+        self.changed.emit()
+
+    def set_wake_word(self, enabled):
+        self.wake_enabled = bool(enabled)
+        if self.voice_worker:
+            # The local model loads before connecting: applied on the next start.
+            self.tool_notice = "Mot d’éveil " + ("activé" if enabled else "désactivé") + " au prochain démarrage du vocal."
+            self.tool_timer.start()
         self.changed.emit()
 
     def begin_push_to_talk(self):
@@ -577,6 +589,7 @@ class Controller(QObject):
             self.audio_levels.emit(0.0, 0.0)
             self.voice_mic_open = False
             self.input_suppressed = False
+            self.wake_standby = False
             if self.voice_state != "error":
                 self.voice_state = "off"
             self.changed.emit()
@@ -714,9 +727,13 @@ class VoicePanel(QWidget):
                   "speaking": "Jarvis vous répond", "muted": "Micro coupé",
                   "stopping": "À tout de suite…", "error": "Vocal indisponible"}
         self.status.setText(states.get(state, "Jarvis"))
+        if c.wake_standby and state == "muted":
+            self.status.setText("En veille")
         self.hint.setText("Cliquez sur Interrompre pour reprendre la parole." if state == "speaking" else
                           "Parlez naturellement, vos demandes restent vocales." if active else
                           "Une question, une idée, une action. Dites-le à Jarvis.")
+        if c.wake_standby and state == "muted":
+            self.hint.setText("Dites « Jarvis » pour parler.")
         if c.input_suppressed and state == "listening":
             self.status.setText("Reprise de l’écoute…")
             self.hint.setText("Un instant, le temps que la sortie audio se termine.")
@@ -760,6 +777,8 @@ class VoicePanel(QWidget):
             notice = "Démonstration visuelle · micro désactivé"
         elif c.input_suppressed:
             notice = "Écoute en pause pendant la sortie audio"
+        elif c.wake_standby:
+            notice = "Veille locale · rien n’est envoyé à Gemini avant « Jarvis »"
         elif c.voice_mic_open:
             notice = "Micro ouvert · voix envoyée à Gemini"
         elif active:
@@ -865,6 +884,14 @@ class DesktopWindow(QMainWindow):
             sounds.setChecked(controller.sounds_enabled)
             sounds.toggled.connect(self.set_sounds)
             settings_layout.addWidget(sounds)
+            self.wake_check = QCheckBox("Réveiller Jarvis en disant « Jarvis » (détection locale)")
+            self.wake_check.setToolTip("Le micro écoute sur ce Mac ; rien n’est envoyé à Gemini avant le mot d’éveil. "
+                                       "Retour en veille après un silence. Remplace le maintien pour parler.")
+            self.wake_check.setChecked(controller.wake_enabled)
+            self.wake_check.setEnabled(not controller.demo)
+            self.wake_check.toggled.connect(shell.set_wake_word)
+            controller.changed.connect(lambda: self.wake_check.setChecked(controller.wake_enabled))
+            settings_layout.addWidget(self.wake_check)
             settings_layout.addWidget(button("Jarvis au quotidien…", lambda: shell.experience.open()))
             settings_layout.addWidget(button("Palette de commandes · ⌘K", lambda: shell.experience.palette()))
             settings_layout.addWidget(button("Voix des avatars…", shell.show_voices))
@@ -946,6 +973,8 @@ class DesktopShell:
                 except (TypeError, ValueError):
                     controller.device_config_invalid = True
         controller.ptt_enabled=self.settings.value('input/push_to_talk',False) in (True,'true')
+        controller.wake_enabled = (not controller.ptt_enabled and
+                                   self.settings.value('input/wake_word', False) in (True, 'true'))
         controller.devices_changed.connect(self.save_devices)
         controller.sounds_enabled = self.settings.value("audio/sounds", False) in (True, "true")
         controller.reduced_motion = self.settings.value("appearance/reduced_motion", controller.reduced_motion) in (True, "true")
@@ -998,6 +1027,9 @@ class DesktopShell:
         app.aboutToQuit.connect(self.power.close)
         app.aboutToQuit.connect(self.recovery.close)
         self.quit_guard = QuitGuard(self, app)
+        if controller.wake_enabled and not controller.demo and app.platformName() != 'offscreen':
+            # Opt-in standby: Gemini connects, the microphone stays local-only.
+            QTimer.singleShot(0, controller.start_voice)
         app.installEventFilter(self.quit_guard)
         self.onboarding = None
         self.usage_window = None
@@ -1135,9 +1167,22 @@ class DesktopShell:
         self.recovery.set_enabled(enabled)
 
     def set_push_to_talk(self,enabled):
+        if enabled and self.controller.wake_enabled:
+            self.set_wake_word(False)
         self.controller.set_push_to_talk(enabled)
         self.settings.setValue('input/push_to_talk',enabled)
         self.hold_hotkey.set_enabled(enabled)
+
+    def set_wake_word(self, enabled):
+        if enabled == self.controller.wake_enabled:
+            return
+        if enabled and self.controller.ptt_enabled:
+            self.set_push_to_talk(False)  # Two ways to open the microphone would conflict.
+        self.controller.set_wake_word(enabled)
+        self.settings.setValue('input/wake_word', enabled)
+        c = self.controller
+        if enabled and not c.voice_worker and not c.demo and c.audio_worker is None:
+            c.start_voice()
 
     def set_global_hotkey(self, enabled):
         self.controller.hotkey_enabled = enabled
