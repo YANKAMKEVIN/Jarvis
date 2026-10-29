@@ -41,7 +41,8 @@ def test_update_keeps_resources_and_adds_microphone_permission(tmp_path):
         info = plistlib.load(stream)
     # Usage descriptions so a real .app can actually prompt for these grants.
     for key in ("NSMicrophoneUsageDescription", "NSCalendarsUsageDescription",
-                "NSRemindersUsageDescription", "NSAppleEventsUsageDescription"):
+                "NSRemindersUsageDescription", "NSAppleEventsUsageDescription",
+                "NSCameraUsageDescription"):
         assert key in info, key
     assert info["LSUIElement"] is True  # menu-bar/orb app, no Dock icon
     info_path = app / "Contents/Info.plist"

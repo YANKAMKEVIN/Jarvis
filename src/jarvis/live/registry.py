@@ -27,6 +27,7 @@ from jarvis.capabilities.memory import MemoryCapability
 from jarvis.capabilities.system_metrics import SystemMetricsCapability
 from jarvis.capabilities.usage import UsageCapability
 from jarvis.capabilities.insights import InsightsCapability
+from jarvis.capabilities.camera import CameraCapability
 from jarvis.insights.detector import InsightDetector
 from jarvis.capabilities.messaging import MessagingCapability
 from jarvis.capabilities.mouse import MouseCapability
@@ -85,7 +86,7 @@ SAFE_MODE_ALLOWED = frozenset({
     "inspect_ui", "find_ui_elements",
     # Screen observation only.
     "capture_screen", "capture_region", "capture_window",
-    "describe_screen", "ask_about_screen",
+    "describe_screen", "ask_about_screen", "describe_camera",
     # Calendar / mail / messaging reads.
     "list_calendar_events", "list_unread_emails", "summarize_unread_emails",
     "find_free_slots",
@@ -146,6 +147,7 @@ class ToolRegistry:
         usage_capability=None,
         system_metrics_capability=None,
         insights_capability=None,
+        camera_capability=None,
         claude_sessions_capability=None,
         document_capability=None,
         macro_store=None,
@@ -285,6 +287,11 @@ class ToolRegistry:
             else InsightsCapability(InsightDetector(
                 metrics=self.system_metrics.store, usage=self.usage.store,
                 probe=self.system_metrics.probe))
+        )
+        self.camera = (
+            camera_capability
+            if camera_capability is not None
+            else CameraCapability(vision_tools=getattr(self.vision, "vision_tools", None))
         )
         self.claude_sessions = (
             claude_sessions_capability
@@ -2963,6 +2970,31 @@ class ToolRegistry:
             return result.to_livekit_dict()
 
         @function_tool(
+            name="describe_camera",
+            description=(
+                "Regarde a travers la camera du Mac et decrit ce qui est visible : "
+                "'qu'est-ce que tu vois', 'regarde ce que je tiens', 'decris la "
+                "piece'. question : optionnelle, ce que l'utilisateur veut savoir "
+                "sur la scene. Prend UNE seule photo au moment de l'appel, l'analyse "
+                "puis la supprime ; aucun flux, rien n'est garde. Decrit les "
+                "personnes sans jamais les identifier. N'appelle ce tool que sur "
+                "demande explicite de regarder par la camera, jamais pour l'ecran."
+            ),
+        )
+        @self._journaled('describe_camera')
+        async def describe_camera(question: str | None = None) -> dict:
+            """Take one camera still, describe it, delete it (read-only)."""
+            guard = self._vision_guard("describe_camera")
+            if guard is not None:
+                return guard
+            debug_live("tool_call", tool="describe_camera",
+                       question_length=len(question) if isinstance(question, str) else None)
+            async with self.vision_lock:
+                result = await asyncio.to_thread(self.camera.describe, question)
+            self._debug_tool_result("describe_camera", result)
+            return result.to_livekit_dict()
+
+        @function_tool(
             name="ask_about_screen",
             description=(
                 "Regarde l'ecran et repond a une question sur ce qui est affiche "
@@ -3874,6 +3906,7 @@ class ToolRegistry:
             capture_window,
             describe_screen,
             ask_about_screen,
+            describe_camera,
             ask_about_document,
             read_whatsapp_conversation,
             search_the_web,
