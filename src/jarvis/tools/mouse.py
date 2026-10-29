@@ -5,6 +5,8 @@ from ctypes import util
 from dataclasses import dataclass
 from typing import Any
 
+from jarvis.tools.lazy import LazyBackend
+
 
 MAX_SCROLL_AMOUNT = 10
 MOUSE_POSITION_TOLERANCE_POINTS = 2
@@ -292,7 +294,7 @@ class MouseTools:
 
     def __post_init__(self) -> None:
         if self.backend is None:
-            self.backend = CoreGraphicsMouseBackend()
+            self.backend = LazyBackend(CoreGraphicsMouseBackend)
 
     def get_position(self) -> dict[str, Any]:
         x, y = self.backend.get_position()

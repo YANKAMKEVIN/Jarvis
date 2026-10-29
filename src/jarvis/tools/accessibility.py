@@ -6,6 +6,8 @@ from ctypes import util
 from dataclasses import dataclass
 from typing import Any
 
+from jarvis.tools.lazy import LazyBackend
+
 
 DEFAULT_UI_MAX_DEPTH = 4
 DEFAULT_UI_MAX_ELEMENTS = 80
@@ -744,7 +746,7 @@ class AccessibilityTools:
 
     def __post_init__(self) -> None:
         if self.backend is None:
-            self.backend = ApplicationServicesAccessibilityBackend()
+            self.backend = LazyBackend(ApplicationServicesAccessibilityBackend)
 
     def inspect_ui(
         self,
