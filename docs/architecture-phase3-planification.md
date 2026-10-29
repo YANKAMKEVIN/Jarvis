@@ -145,6 +145,20 @@ du modèle temps réel ont des délais limites). Donc :
   11 s et a dépassé le délai de Jarvis). Un modèle local de 3 milliards de
   paramètres convient aux tâches de 2 ou 3 étapes, pas au-delà.
 
+## État de la phase 3c
+
+- Groupe `tasks` du smoke test (`--group tasks`, sur demande) : 7 vraies
+  tâches, dont deux en plusieurs étapes, une action sortante préparée puis
+  annulée, et le chemin vocal `run_task` → `task_status`. Chaque résultat est
+  vérifié sur la machine (volume système, `pbpaste`, disque), jamais d'après
+  le résumé du modèle.
+- Cerveau retenu pour les essais : Gemini (gratuit, ne charge pas le Mac).
+  Pas de backend payant pour l'instant.
+- `python -m jarvis.planner` respecte maintenant `JARVIS_PLANNER_BACKEND`
+  (`--backend` pour forcer).
+- À faire : lancer le groupe sur le Mac, noter le taux de réussite, puis
+  ajuster les consignes selon les échecs observés.
+
 ## Décisions qui te reviennent
 
 **1. Quel modèle pour le cerveau ?** *(tranché pour l'instant : local et

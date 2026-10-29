@@ -12,6 +12,9 @@ Usage:
     PYTHONPATH=src .venv/bin/python scripts/smoke_test.py
     PYTHONPATH=src .venv/bin/python scripts/smoke_test.py --group volume --group files
     PYTHONPATH=src .venv/bin/python scripts/smoke_test.py --list
+    JARVIS_PLANNER_BACKEND=gemini PYTHONPATH=src .venv/bin/python scripts/smoke_test.py --group tasks
+
+The tasks group (real goals given to the planner) only runs when named.
 """
 
 import argparse
@@ -535,6 +538,141 @@ def group_memory(ctx: Context, step) -> None:
     step("forget", forget)
 
 
+# --- planner tasks (phase 3c) ------------------------------------------------
+
+PLANNER_TEXT = "Jarvis tache 42"
+
+
+def planner_unavailable(model) -> str | None:
+    """Why the configured planner brain cannot run, or None if it can."""
+    if hasattr(model, "api_key"):
+        return None if model.api_key else "GOOGLE_API_KEY absente"
+    url = getattr(model, "url", "")
+    tags = url.rsplit("/api/", 1)[0] + "/api/tags"
+    try:
+        import urllib.request
+        with urllib.request.urlopen(tags, timeout=3):
+            return None
+    except Exception:
+        return f"Ollama injoignable ({tags})"
+
+
+def group_tasks(ctx: Context, step) -> None:
+    """Real multi-step goals given to the planner, outcome checked independently.
+
+    Uses the configured brain (JARVIS_PLANNER_BACKEND), so the pass rate is a
+    measure of that model on real tasks, not only of the plumbing.
+    """
+    from jarvis.planner.engine import PlannerEngine
+    from jarvis.planner.models import build_planner_model
+
+    model = build_planner_model()
+    reason = planner_unavailable(model)
+    if reason:
+        raise Skipped(f"planificateur indisponible : {reason}")
+    print(f"  planificateur : {model.name}", flush=True)
+
+    engine = PlannerEngine(model, list(ctx.tools.values()))
+    tasks_dir = ctx.workdir / "tasks"
+    tasks_dir.mkdir()
+
+    def run(goal: str):
+        started = time.monotonic()
+        outcome = asyncio.run(engine.run(goal))
+        trace = " > ".join(f"{s.tool}{'' if s.ok else '!'}" for s in outcome.steps)
+        print(f"         {outcome.status} en {time.monotonic() - started:.0f} s : "
+              f"{trace or '(aucun tool)'}", flush=True)
+        return outcome
+
+    def expect_completed(outcome) -> None:
+        expect(outcome.status == "completed", f"statut {outcome.status} : {outcome.summary}")
+
+    def read_volume():
+        outcome = run("Quel est le volume sonore actuel du Mac ?")
+        expect_completed(outcome)
+        actual = str(system_volume())
+        expect(actual in outcome.summary, f"le resume ne donne pas {actual} : {outcome.summary}")
+
+    original_volume = system_volume()
+    target_volume = original_volume - 9 if original_volume >= 50 else original_volume + 9
+
+    def set_volume():
+        expect_completed(run(f"Regle le volume du Mac a {target_volume} %."))
+        actual = system_volume()
+        expect(abs(actual - target_volume) <= 1, f"volume {actual}, attendu {target_volume}")
+
+    original_clipboard = pbpaste()
+
+    def clipboard():
+        expect_completed(run(
+            f"Copie exactement ce texte dans le presse-papiers : {PLANNER_TEXT}"))
+        expect(pbpaste() == PLANNER_TEXT, f"pbpaste={pbpaste()!r}")
+
+    def folder_and_move():
+        (tasks_dir / "rapport.txt").write_text("rapport")
+        expect_completed(run(
+            f"Dans le dossier {tasks_dir}, cree un sous-dossier nomme archives, "
+            "puis deplace le fichier rapport.txt dedans."))
+        expect((tasks_dir / "archives" / "rapport.txt").exists()
+               and not (tasks_dir / "rapport.txt").exists(),
+               "rapport.txt n'est pas dans archives")
+
+    def find_and_rename():
+        (tasks_dir / "facture-smoke-0423.pdf").write_bytes(b"%PDF-1.4\n")
+        expect_completed(run(
+            f"Dans le dossier {tasks_dir}, trouve le fichier dont le nom contient "
+            "facture-smoke et renomme-le facture-classee.pdf."))
+        expect((tasks_dir / "facture-classee.pdf").exists()
+               and not (tasks_dir / "facture-smoke-0423.pdf").exists(),
+               "fichier non renomme")
+
+    def prepared_never_sent():
+        outcome = run("Prepare le message « test smoke » dans l'application SmokeTestApp, "
+                      "sans destinataire. Ne l'envoie pas.")
+        try:
+            expect(outcome.status == "needs_confirmation",
+                   f"statut {outcome.status} : {outcome.summary}")
+            expect(outcome.pending.get("tool") == "prepare_send_message",
+                   f"action en attente : {outcome.pending}")
+        finally:
+            if outcome.pending:
+                call(ctx, "cancel_action", outcome.pending["token"])
+
+    def through_voice_tools():
+        # The voice path: run_task answers at once, the task runs in the
+        # background and is polled with task_status, as Gemini Live would.
+        async def scenario():
+            started = await ctx.tools["run_task"]("Quel est le volume sonore actuel du Mac ?")
+            expect(started.get("task_started") is True, f"run_task : {started}")
+            deadline = time.monotonic() + engine.max_seconds + 30
+            while time.monotonic() < deadline:
+                status = await ctx.tools["task_status"]()
+                if not status.get("running"):
+                    return status
+                await asyncio.sleep(1)
+            await ctx.tools["cancel_task"]()
+            raise CheckFailed("la tache n'a pas fini a temps")
+
+        status = asyncio.run(scenario())
+        last = status.get("last_task") or {}
+        expect(last.get("status") == "completed", f"derniere tache : {last}")
+        actual = str(system_volume())
+        expect(actual in (last.get("summary") or ""),
+               f"le resume ne donne pas {actual} : {last.get('summary')}")
+
+    try:
+        step("lire le volume", read_volume)
+        step(f"regler le volume a {target_volume}", set_volume)
+        step("copier un texte", clipboard)
+        step("creer un dossier puis y deplacer un fichier", folder_and_move)
+        step("trouver puis renommer un fichier", find_and_rename)
+        step("message prepare, jamais envoye", prepared_never_sent)
+        step("run_task + task_status (chemin vocal)", through_voice_tools)
+    finally:
+        osascript(f"set volume output volume {original_volume}", check=False)
+        pbcopy(original_clipboard)
+
+
 GROUPS = {
     "system": group_system,
     "volume": group_volume,
@@ -547,7 +685,11 @@ GROUPS = {
     "safari": group_safari,
     "messaging": group_messaging,
     "memory": group_memory,
+    "tasks": group_tasks,
 }
+
+# Slow (about a minute per task) and driven by a model: run only when named.
+ON_DEMAND = {"tasks"}
 
 
 # --- runner -----------------------------------------------------------------
@@ -606,10 +748,10 @@ def main() -> int:
 
     if args.list:
         for name in GROUPS:
-            print(name)
+            print(name + (" (sur demande : --group " + name + ")" if name in ON_DEMAND else ""))
         return 0
 
-    groups = args.group or list(GROUPS)
+    groups = args.group or [name for name in GROUPS if name not in ON_DEMAND]
 
     # Must be inside $HOME (FilesCapability refuses anything outside).
     workdir = Path.home() / f"jarvis-smoke-{time.strftime('%Y%m%d-%H%M%S')}"
