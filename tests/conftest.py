@@ -37,6 +37,12 @@ os.environ["JARVIS_ACTIVITY_DISABLED"] = "1"
 memory_store.real_default_memory_path = memory_store.default_memory_path
 memory_store.default_memory_path = lambda: _MEMORY_PATH
 
+# Same for the activity journal: tests that clear os.environ also drop
+# JARVIS_ACTIVITY_DISABLED, and must still never reach the real file.
+from jarvis import activity as activity_journal
+
+activity_journal.default_activity_db_path = lambda: _TEST_ROOT / "activity.db"
+
 
 # GUI fixtures used to leave hidden top-level windows and deferred deletions
 # alive across cases. Global stylesheet changes then repolished every old
