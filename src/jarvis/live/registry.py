@@ -1,5 +1,6 @@
 import asyncio
 from jarvis.planner.resources import DesktopGate
+from jarvis.activity import default_store as default_activity_store, log_event
 from jarvis.live.productivity import productivity_tools, checklist_store
 import functools
 import inspect
@@ -431,15 +432,18 @@ class ToolRegistry:
         gets a refusal result if it calls a blocked tool in safe mode. The flag
         is read live, so entering safe mode also stops a mission's outward
         sub-actions already in flight (they share these guarded tools).
+
+        Every call is also logged by name (never its arguments) to the local
+        activity journal behind the dashboard's Jarvis tab.
         """
         name = tool.info.name
-        if name in SAFE_MODE_ALLOWED:
-            return tool
+        allowed = name in SAFE_MODE_ALLOWED
         inner = tool._func
 
         @functools.wraps(inner)
         async def wrapper(*args, **kwargs):
-            if getattr(self, "read_only_mode", False):
+            log_event("tool", name)
+            if not allowed and getattr(self, "read_only_mode", False):
                 return ToolResult.failure(
                     action=name,
                     message=(
@@ -466,6 +470,8 @@ class ToolRegistry:
             counts["checklists"] = checklist_store(self).clear()
         if scope in ("missions", "all"):
             counts["missions"] = self.memory.clear_missions()
+        if scope in ("activity", "all"):
+            counts["activity"] = default_activity_store().clear()
         total = sum(counts.values())
         return ToolResult.success(
             action="clear_personal_data",
@@ -3668,17 +3674,24 @@ class ToolRegistry:
             memory_count = mem.data.get("count", 0) if mem.ok else 0
             activity_count = len(act.data.get("episodes", [])) if act.ok else 0
             mission_count = missions.data.get("count", 0) if missions.ok else 0
+            try:
+                journal = default_activity_store()
+                tool_calls = await asyncio.to_thread(journal.count, "tool")
+            except Exception:
+                tool_calls = 0
             return ToolResult.success(
                 action="privacy_overview",
                 message=(
                     f"Je garde {memory_count} souvenir(s), {len(scheduled)} message(s) "
                     f"planifie(s) et {len(reminders)} rappel(s) en attente ; "
                     f"{activity_count} action(s) recente(s) au journal ; "
-                    f"{mission_count} mission(s) dans l'historique ; {checklists_count} checklist(s) locale(s)."
+                    f"{mission_count} mission(s) dans l'historique ; {checklists_count} checklist(s) locale(s) ; "
+                    f"{tool_calls} appel(s) d'outil au journal d'activite (noms seulement)."
                 ),
                 memory_count=memory_count,
                 activity_count=activity_count,
                 mission_count=mission_count,
+                tool_call_count=tool_calls,
                 scheduled_count=len(scheduled),
                 reminder_count=len(reminders),
                 checklists_count=checklists_count,
@@ -3690,7 +3703,8 @@ class ToolRegistry:
                 "EFFACE des donnees que Jarvis garde, apres confirmation. scope : "
                 "'context' (notes de contexte de conversation), 'reminders' (rappels "
                 "en attente), 'scheduled' (messages planifies en attente), 'missions' "
-                "(historique des missions), ou 'all' (ces donnees et les checklists). "
+                "(historique des missions), 'activity' (journal des outils, reveils et alertes "
+                "du tableau de bord), ou 'all' (ces donnees et les checklists). "
                 "scope checklists efface uniquement les checklists. Renvoie un token et requires_confirmation : annonce ce "
                 "qui sera efface, puis confirm_action seulement sur un oui clair. Pour "
                 "effacer un souvenir precis, utilise plutot forget."
@@ -3701,10 +3715,10 @@ class ToolRegistry:
             """Prepare a confirmed purge of the data Jarvis stores."""
             debug_live("tool_call", tool="clear_personal_data", scope=scope)
             choice = (scope or "all").strip().lower()
-            if choice not in ("context", "reminders", "scheduled", "checklists", "missions", "all"):
+            if choice not in ("context", "reminders", "scheduled", "checklists", "missions", "activity", "all"):
                 return ToolResult.failure(
                     action="clear_personal_data",
-                    message="scope doit etre context, reminders, scheduled, checklists, missions ou all.",
+                    message="scope doit etre context, reminders, scheduled, checklists, missions, activity ou all.",
                     error_code="invalid_scope",
                 ).to_livekit_dict()
 

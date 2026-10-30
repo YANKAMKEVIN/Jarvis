@@ -489,34 +489,28 @@ def _metrics_cards(snapshot: dict[str, Any]) -> QWidget:
     return _cards_row(cards)
 
 
-def _apps_list(apps: Sequence[dict[str, Any]]) -> QWidget:
-    """One gauge per app, its length relative to the heaviest app."""
+def _gauges(rows: Sequence[tuple[str, float, str]]) -> QWidget:
+    """One gauge per (name, weight, amount text) row, its length relative to
+    the heaviest row."""
     body = QWidget()
     grid = QGridLayout(body)
     grid.setContentsMargins(0, 4, 4, 2)
     grid.setHorizontalSpacing(12)
     grid.setVerticalSpacing(8)
     grid.setColumnStretch(1, 1)
-    rows = list(apps[:6])
-    weight = lambda r: r.get("bytes") or r.get("value") or 0
-    top = max((weight(r) for r in rows), default=0) or 1
-    for i, row in enumerate(rows):
-        name = QLabel(plain_label(row.get("name"), 26))
+    top = max((weight for _, weight, _ in rows), default=0) or 1
+    for i, (label, weight, amount) in enumerate(rows):
+        name = QLabel(plain_label(label, 26))
         name.setStyleSheet(f"color: {_TEXT}; font-size: 13px;")
         gauge = QProgressBar()
         gauge.setObjectName("appGauge")
         gauge.setRange(0, 1000)
-        gauge.setValue(int(weight(row) / top * 1000))
+        gauge.setValue(int(weight / top * 1000))
         gauge.setTextVisible(False)
         gauge.setFixedHeight(8)
         gauge.setStyleSheet(
             "#appGauge { background: #1b2a3d; border: none; border-radius: 4px; }"
             f"#appGauge::chunk {{ background: {_ACCENTS[i % 3]}; border-radius: 4px; }}")
-        if row.get("bytes"):
-            count = row.get("processes", 0)
-            amount = _mem(row["bytes"]) + (f" · {count} processus" if count > 1 else "")
-        else:  # plain per-process rows (value = % of memory)
-            amount = f"{row.get('value')} %"
         value = QLabel(amount)
         value.setStyleSheet(f"color: {_MUTED}; font-size: 12px;")
         value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -524,6 +518,19 @@ def _apps_list(apps: Sequence[dict[str, Any]]) -> QWidget:
         grid.addWidget(gauge, i, 1)
         grid.addWidget(value, i, 2)
     return body
+
+
+def _apps_list(apps: Sequence[dict[str, Any]]) -> QWidget:
+    """One gauge per app, its length relative to the heaviest app."""
+    rows = []
+    for row in apps[:6]:
+        if row.get("bytes"):
+            count = row.get("processes", 0)
+            amount = _mem(row["bytes"]) + (f" · {count} processus" if count > 1 else "")
+        else:  # plain per-process rows (value = % of memory)
+            amount = f"{row.get('value')} %"
+        rows.append((row.get("name"), row.get("bytes") or row.get("value") or 0, amount))
+    return _gauges(rows)
 
 
 def _dashboard_root(name: str, heading: str) -> tuple[QWidget, QVBoxLayout]:

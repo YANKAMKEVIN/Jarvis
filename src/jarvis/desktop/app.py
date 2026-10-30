@@ -1034,8 +1034,7 @@ class DesktopShell:
             QTimer.singleShot(0, controller.start_voice)
         app.installEventFilter(self.quit_guard)
         self.onboarding = None
-        self.usage_window = None
-        self.metrics_window = None
+        self.dashboard_window = None
         self.insights_enabled = self.settings.value('insights/enabled', True) in (True, 'true')
         self.insights_spoken = self.settings.value('insights/voice', True) in (True, 'true')
         self._start_metrics_sampler()
@@ -1119,29 +1118,25 @@ class DesktopShell:
             from jarvis.schedule.runner import macos_notifier
             macos_notifier(f'{insight.title} : {insight.message}')
 
-    def show_usage(self):
-        """Open the token-usage dashboard (its data loads asynchronously)."""
-        from jarvis.desktop.charts import UsageWindow
+    def show_dashboard(self, tab: str = "jarvis"):
+        """Open the tabbed dashboard on `tab` (jarvis, usage, metrics, alerts);
+        each tab loads its data asynchronously the first time it is shown."""
+        from jarvis.desktop.dashboard import DashboardWindow
 
-        if self.usage_window is None:
-            self.usage_window = UsageWindow()
+        if self.dashboard_window is None:
+            self.dashboard_window = DashboardWindow(tab=tab)
         else:
-            self.usage_window.reload()
-        self.usage_window.show()
-        self.usage_window.raise_()
-        self.usage_window.activateWindow()
+            self.dashboard_window.show_tab(tab)
+            self.dashboard_window.reload()
+        self.dashboard_window.show()
+        self.dashboard_window.raise_()
+        self.dashboard_window.activateWindow()
+
+    def show_usage(self):
+        self.show_dashboard("usage")
 
     def show_metrics(self):
-        """Open the machine-activity dashboard (data loads asynchronously)."""
-        from jarvis.desktop.charts import MetricsWindow
-
-        if self.metrics_window is None:
-            self.metrics_window = MetricsWindow()
-        else:
-            self.metrics_window.reload()
-        self.metrics_window.show()
-        self.metrics_window.raise_()
-        self.metrics_window.activateWindow()
+        self.show_dashboard("metrics")
 
     def maybe_show_onboarding(self):
         """Show the first-run permission screen once, on a real desktop only."""
