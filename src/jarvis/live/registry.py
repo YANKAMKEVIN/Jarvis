@@ -2,6 +2,7 @@ import asyncio
 from jarvis.planner.resources import DesktopGate
 from jarvis.activity import default_store as default_activity_store, log_event
 from jarvis.live.productivity import productivity_tools, checklist_store
+from jarvis.live.extensions import extension_tools
 import functools
 import inspect
 import uuid
@@ -110,6 +111,9 @@ SAFE_MODE_ALLOWED = frozenset({
     "system_snapshot", "top_processes", "system_usage_history", "check_anomalies",
     # Activity / privacy introspection and safe stops.
     "recent_activity", "recent_missions", "privacy_overview", "task_status",
+    # Extensions: listing MCP tools and reading installed skills. Calling an
+    # MCP tool (call_mcp_tool) stays blocked: its effect is unknown to Jarvis.
+    "list_mcp_tools", "list_skills", "use_skill",
     "list_scheduled_messages", "cancel_scheduled_message",
     "cancel_action", "cancel_task", "pause_task", "resume_task",
     # Missions may still be launched: their own outward sub-actions run through
@@ -360,6 +364,8 @@ class ToolRegistry:
             await asyncio.gather(*pending, return_exceptions=True)
         if self.tasks is not None:
             await self.tasks.wait()
+        if hasattr(self, "mcp_hub"):
+            await self.mcp_hub.aclose()
 
     @staticmethod
     def _default_knowledge() -> KnowledgeCapability:
@@ -3924,6 +3930,7 @@ class ToolRegistry:
 
         tools.append(dance_avatar)
         tools.extend(productivity_tools(self))
+        tools.extend(extension_tools(self))
 
         # Single safe-mode enforcement point: every voice and planner tool is
         # routed through the read-only guard, so a mission cannot perform an
