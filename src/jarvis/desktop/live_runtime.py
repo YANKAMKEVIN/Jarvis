@@ -31,7 +31,7 @@ def setup_failure(stage, error):
     names = {"environment": "configuration d’environnement", "sdk_import": "import du SDK",
              "logging": "journalisation", "audio_import": "chargement audio",
              "macos_tools": "outils macOS", "gemini_model": "modèle Gemini",
-             "agent_session": "session LiveKit"}
+             "agent_session": "session LiveKit", "wake_word": "mot d’éveil local"}
     frames = tuple(f"{Path(frame.filename).name}:{frame.lineno} ({frame.name})"
                    for frame in traceback.extract_tb(error.__traceback__)[-5:])
     return VoiceSetupError(
@@ -128,7 +128,16 @@ def session_greeting():
     return LIVE_SESSION_GREETING
 
 
-def create_components(voice=None):
+def long_session_options():
+    """Wake-word sessions idle for hours: let Gemini slide its context window
+    and resume across server GoAway resets instead of hitting the 15 min cap."""
+    from google.genai import types
+    return {"context_window_compression": types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow()),
+            "session_resumption": types.SessionResumptionConfig()}
+
+
+def create_components(voice=None, long_session=False):
     try:
         from livekit.agents import Agent, AgentSession
         from livekit.plugins import google
@@ -151,7 +160,8 @@ def create_components(voice=None):
     audio = setup_step("audio_import", lambda: LocalAudio(asyncio.get_running_loop()))
     assistant = setup_step("macos_tools", lambda: create_assistant_class(Agent, desktop=True)())
     model = setup_step("gemini_model", lambda: create_realtime_model(google, config,
-        realtime_input_config=desktop_turn_detection_config()))
+        realtime_input_config=desktop_turn_detection_config(),
+        **(long_session_options() if long_session else {})))
     # Gemini handles turn detection. No inference service or LiveKit room/token.
     session = setup_step("agent_session", lambda: AgentSession(llm=model, vad=None, turn_handling={
         "turn_detection": "realtime_llm",
@@ -166,8 +176,11 @@ ANNOUNCEMENT_GAP = 5.0  # lets the agent state leave "listening" before the next
 
 
 class LiveRuntime:
-    def __init__(self, emit, factory=create_components, prepare=prepare_environment):
+    def __init__(self, emit, factory=create_components, prepare=prepare_environment, wake_factory=None):
         self.emit = emit
+        self.wake_factory = wake_factory
+        self.wake_mode_requested = Event()
+        self.wake_listener = None
         self.factory = factory
         self.voice_override = None
         from jarvis.desktop.experience_core import TurnProgress, UndoLedger
@@ -304,6 +317,18 @@ class LiveRuntime:
     def set_push_to_talk(self,enabled):
         self.ptt_mode_requested.set() if enabled else self.ptt_mode_requested.clear()
 
+    def set_wake_word(self, enabled):
+        """Applies at session start: the local model must load before connecting."""
+        self.wake_mode_requested.set() if enabled else self.wake_mode_requested.clear()
+
+    def _load_wake_listener(self):
+        from jarvis.desktop.wake_word import WakeWordUnavailable, create_wake_listener
+        try:
+            return (self.wake_factory or create_wake_listener)()
+        except WakeWordUnavailable as error:
+            # Fail closed: never fall back to an always-open Gemini microphone.
+            raise VoiceSetupError(str(error), stage="wake_word") from None
+
     def finish_push_to_talk(self):
         self.mute_requested.set()
         self.ptt_release_requested.set()
@@ -344,11 +369,17 @@ class LiveRuntime:
     def state(self, state):
         audio = self.components.audio if self.components else None
         self.emit({"type": "state", "state": state, "mic_open": bool(audio and audio.mic_open),
-                   "input_suppressed": bool(audio and getattr(audio, "input_suppressed", False))})
+                   "input_suppressed": bool(audio and getattr(audio, "input_suppressed", False)),
+                   "standby": self._standby()})
+
+    def _standby(self):
+        audio = self.components.audio if self.components else None
+        return bool(audio and audio.mic_open and getattr(audio, "asleep", False))
 
     def presentation_state(self):
         if self.agent_state in {'speaking','thinking'}:return self.agent_state
-        return 'muted' if self.mute_requested.is_set() else self.agent_state
+        # Standby looks like a muted avatar; the "standby" flag tells the UI why.
+        return 'muted' if self.mute_requested.is_set() or self._standby() else self.agent_state
 
     def _agent_changed(self, event):
         self.agent_state = event.new_state
@@ -470,7 +501,18 @@ class LiveRuntime:
             if self.stop_requested.is_set():
                 return
             setup_step("environment", self.prepare)
-            self.components = self.factory(voice=self.voice_override) if self.voice_override is not None else self.factory()
+            wake = self.wake_mode_requested.is_set() and not self.ptt_mode_requested.is_set()
+            if wake:
+                # Load locally before any Gemini connection exists.
+                self.wake_listener = await asyncio.to_thread(self._load_wake_listener)
+                if self.stop_requested.is_set():
+                    return
+            options = {}
+            if self.voice_override is not None:
+                options["voice"] = self.voice_override
+            if wake:
+                options["long_session"] = True
+            self.components = self.factory(**options)
             c = self.components
             phase = "audio"
             if self.input_choice is not None or self.output_choice is not None:
@@ -497,20 +539,27 @@ class LiveRuntime:
             if not started or self.stop_requested.is_set():
                 return
             phase = "audio"
+            if self.wake_listener is not None:
+                c.audio.attach_wake(self.wake_listener)  # Asleep before capture starts.
             c.audio.open(microphone=not self.mute_requested.is_set())  # Never briefly reopen a muted microphone.
             self.ready = True
             sounds = self.sounds_requested.is_set()
             if sounds:
                 c.audio.play_cue("ready")
-            self.state("muted" if self.mute_requested.is_set() else "listening")
+            self.state("muted" if self.mute_requested.is_set() or self._standby() else "listening")
             phase = "session"
             from jarvis.live.prompts import INSIGHT_ANNOUNCEMENT
-            if not self.ptt_mode_requested.is_set():
+            if not self.ptt_mode_requested.is_set() and self.wake_listener is None:
                 c.session.generate_reply(instructions=session_greeting())
             suppressed = False
             next_meter = 0.0
             next_task_poll = 0.0
             next_announcement = 0.0
+            idle_limit = None
+            if self.wake_listener is not None:
+                from jarvis.desktop.wake_word import wake_idle_seconds
+                idle_limit = wake_idle_seconds()
+            last_activity = monotonic()
             while not self.stop_requested.is_set():
                 if self.profile_dirty:await self._apply_profile()
                 progress = self.turn_progress.poll(self.agent_state, self.user_state, bool(getattr(c.audio, "input_suppressed", False)))
@@ -564,8 +613,25 @@ class LiveRuntime:
                         if hasattr(c.audio,'finish_push_to_talk'): c.audio.finish_push_to_talk()
                         else:c.audio.set_microphone(False)
                         self.state(self.presentation_state())
+                if idle_limit is not None:
+                    if getattr(self.wake_listener, "failed", False):
+                        raise VoiceSetupError("Le mot d’éveil local s’est arrêté. Relancez le vocal.", stage="wake_word")
+                    if c.audio.consume_wake():
+                        last_activity = monotonic()
+                        c.audio.play_cue("wake")  # Always: the only sign Jarvis heard you.
+                        self.state(self.presentation_state())
+                    elif c.audio.mic_open and not c.audio.asleep:
+                        if self.agent_state != "listening" or self.user_state == "speaking":
+                            last_activity = monotonic()
+                        elif monotonic() - last_activity >= idle_limit:
+                            c.audio.sleep()
+                            if sounds:
+                                c.audio.play_cue("muted")
+                            self.state(self.presentation_state())
                 wanted = not self.mute_requested.is_set()
                 if wanted != c.audio.mic_open:
+                    if wanted and idle_limit is not None:
+                        c.audio.sleep()  # Unmuting returns to local standby, not to Gemini.
                     c.audio.set_microphone(wanted)
                     if sounds:
                         c.audio.play_cue("ready" if wanted else "muted")
@@ -610,6 +676,8 @@ class LiveRuntime:
         finally:
             self.closing = True
             self.ready = False
+            if self.wake_listener is not None:
+                self.wake_listener.close()  # Idempotent; audio.close may also do it.
             self.emit({"type": "audio_level", "input": 0.0, "output": 0.0})
             c = self.components
             if c is not None:

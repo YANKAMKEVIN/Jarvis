@@ -10,7 +10,7 @@ from array import array
 from math import pi, sin
 from collections import deque
 from queue import Empty, Full, Queue
-from threading import Lock
+from threading import Event, Lock
 from time import monotonic
 
 from livekit import rtc
@@ -185,12 +185,17 @@ class LocalAudio:
         self.output_meter = (0.0, 0.0)
         self.cue_lock = Lock()
         self.cue = b""
+        self.cue_guarded = True
         self.input_device = None
         self.output_device = None
         self.default_snapshot=None
         self.last_default_check=0
         self.last_input_callback = None
         self.last_output_callback = None
+        # Wake-word gate: while asleep, capture feeds only the local detector.
+        self.wake = None
+        self.asleep = False
+        self.woke = Event()
 
     def configure_devices(self, input_choice, output_choice):
         self.input_device = resolve_device(self.devices, input_choice, 'input')
@@ -223,9 +228,48 @@ class LocalAudio:
         if self.mic_open and self.last_input_callback is not None and now - self.last_input_callback > CALLBACK_TIMEOUT_SECONDS:
             raise AudioDeviceError('Le microphone ne fournit plus de données. Reconnexion audio nécessaire.')
 
+    def attach_wake(self, listener):
+        """Start asleep: call before the microphone opens so no PCM leaks out."""
+        with self.capture_lock:
+            self.wake = listener
+            self.asleep = True
+        listener.on_wake = self._woke
+        listener.start()
+
+    def sleep(self):
+        if self.wake is None:
+            return
+        with self.capture_lock:
+            self.asleep = True
+            self.input.clear()
+        self.woke.clear()
+        self.wake.reset()
+
+    def _woke(self, blocks):
+        # Listener thread. Speech queued after « Jarvis » goes out first, then
+        # the very next capture callback pushes live audio: no gap, no reorder.
+        with self.capture_lock:
+            if not self.asleep or not self.mic_open:
+                return
+            self.asleep = False
+            for block in blocks:
+                self.input.push(block)
+        self.woke.set()
+
+    def consume_wake(self):
+        if not self.woke.is_set():
+            return False
+        self.woke.clear()
+        return True
+
     def play_cue(self, kind):
         """Quiet optional tones use this same output and its feedback guard."""
-        frequencies = (660, 440) if kind == "muted" else (660, 880)
+        if kind == "wake":
+            # Speech often follows « Jarvis » at once: this blip must not
+            # trigger the half-duplex guard that would drop it.
+            frequencies = (880,)
+        else:
+            frequencies = (660, 440) if kind == "muted" else (660, 880)
         samples = array("h")
         count = int(SAMPLE_RATE * 0.065)
         for frequency in frequencies:
@@ -234,6 +278,7 @@ class LocalAudio:
                 samples.append(int(1800 * envelope * sin(2 * pi * frequency * index / SAMPLE_RATE)))
         with self.cue_lock:
             self.cue = samples.tobytes()  # Replace, never accumulate notifications.
+            self.cue_guarded = kind != "wake"
 
     def clear_cue(self):
         with self.cue_lock:
@@ -243,7 +288,7 @@ class LocalAudio:
         now = self.clock()
         incoming, input_time = self.input_meter
         outgoing, output_time = self.output_meter
-        return (incoming if self.mic_open and not self.input_suppressed and now - input_time < 0.15 else 0.0,
+        return (incoming if self.mic_open and not self.asleep and not self.input_suppressed and now - input_time < 0.15 else 0.0,
                 outgoing if not self.output.closed and now - output_time < 0.15 else 0.0)
 
     @property
@@ -254,21 +299,26 @@ class LocalAudio:
         self.last_input_callback = self.clock()
         with self.capture_lock:
             if self.mic_open and not self.input_suppressed:
-                self.input.push(data)
-                self.input_meter = (pcm_level(data), self.clock())
+                if self.asleep:
+                    self.wake.feed(data)  # Local only; Gemini receives nothing.
+                else:
+                    self.input.push(data)
+                    self.input_meter = (pcm_level(data), self.clock())
 
     def _output_callback(self, data, frames, timing, status):
         self.last_output_callback = self.clock()
         latency = max(0, timing.outputBufferDacTime - timing.currentTime) + frames / SAMPLE_RATE
         pcm = self.output.read(len(data), latency)
+        guarded = True
         if not any(pcm):
             with self.cue_lock:
                 cue, self.cue = self.cue[:len(data)], self.cue[len(data):]
+                guarded = self.cue_guarded
             if cue:
                 pcm = cue + bytes(len(data) - len(cue))
         if self.quiet:pcm = bytes(len(data))
         self.output_meter = (pcm_level(pcm), self.clock())
-        if any(pcm) and not self.allow_barge_in:
+        if any(pcm) and guarded and not self.allow_barge_in:
             # Half duplex, not acoustic echo cancellation: don't feed Jarvis's
             # own speaker audio back to Gemini. Include hardware latency and
             # a short room echo tail; explicit mute still owns the device.
@@ -324,6 +374,8 @@ class LocalAudio:
 
     def close(self):
         self.mic_open = False
+        if self.wake is not None:
+            self.wake.close()
         self.clear_cue()
         self.input.closed = True
         self.input.clear()
