@@ -20,6 +20,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -77,6 +78,9 @@ _COLUMNS = (
 
 _TOKEN_FIELDS = ("input", "output", "cache_create", "cache_read")
 
+# Bumped whenever project_label changes, so stored labels get recomputed.
+_LABEL_VERSION = 1
+
 
 def default_usage_db_path() -> Path:
     override = os.environ.get("JARVIS_USAGE_DB_PATH")
@@ -116,9 +120,49 @@ def decode_project(folder: str) -> str:
     return folder.replace("-", "/") if folder.startswith("-") else folder
 
 
-def project_label(folder: str) -> str:
+def _resolve_folder(folder: str, root: Path) -> tuple[Path, bool]:
+    """Walk the real filesystem to undo Claude's lossy folder encoding, where
+    '/', '.', ' ' and '-' all became '-'. Returns the deepest existing
+    directory and whether the whole name resolved."""
+    tokens = folder[1:].split("-")
+    current, i = root, 0
+    while i < len(tokens):
+        for j in range(len(tokens), i, -1):
+            parts = tokens[i:j]
+            dot = parts[0] == "" and len(parts) > 1
+            words = parts[1:] if dot else parts
+            names = sorted({("." if dot else "") + sep.join(words) for sep in ("-", " ")})
+            match = next((current / n for n in names if (current / n).is_dir()), None)
+            if match is not None:
+                current, i = match, j
+                break
+        else:
+            return current, False
+    return current, True
+
+
+@lru_cache(maxsize=512)
+def project_label(folder: str, root: str = "/", home: str | None = None) -> str:
+    """`-Users-me-dev-kanto-2026` -> `kanto-2026`. Worktrees and sibling
+    checkouts (`kanto-2026--claude-worktrees-x`, `kanto-2026-wt-s2a`) fold into
+    their project, as long as the project folder still exists on disk."""
     decoded = decode_project(folder).rstrip("/")
-    return decoded.rsplit("/", 1)[-1] or decoded or folder
+    naive = decoded.rsplit("/", 1)[-1] or decoded or folder
+    if not folder.startswith("-"):
+        return naive
+    base = Path(root)
+    resolved, complete = _resolve_folder(folder, base)
+    text = str(resolved)
+    if "/.claude/worktrees" in text:
+        resolved = Path(text.split("/.claude/worktrees", 1)[0])
+        complete = True
+    # A partial match that stops at the home folder or one of its direct
+    # children ("dev", "Documents") says nothing about the project: the folder
+    # was deleted, so keep the old last-segment guess.
+    home_path = Path(home) if home is not None else base / Path.home().relative_to("/")
+    if resolved == base or (not complete and len(resolved.parts) <= len(home_path.parts) + 1):
+        return naive
+    return resolved.name or naive
 
 
 def _parse_ts(iso: str | None) -> float | None:
@@ -451,5 +495,12 @@ class UsageStore:
         conn.row_factory = sqlite3.Row
         if not initialized:
             conn.executescript(_SCHEMA)
+            if conn.execute("PRAGMA user_version").fetchone()[0] < _LABEL_VERSION:
+                # Project labels are computed at ingest; a better labeller
+                # means re-reading the transcripts once.
+                conn.execute("DELETE FROM usage_events")
+                conn.execute("DELETE FROM ingested")
+                conn.execute(f"PRAGMA user_version = {_LABEL_VERSION}")
+                conn.commit()
             self._initialized_path = path
         return conn
