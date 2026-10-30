@@ -17,6 +17,7 @@ from collections import deque
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
+from jarvis.activity import log_event
 from jarvis.metrics.store import MetricsStore
 
 
@@ -193,6 +194,7 @@ class InsightMonitor:
                 self._last_fired[key] = now
                 self._recent.append(insight)
                 fresh.append(insight)
+                log_event("alert", insight.title, insight.message, insight.severity)
             for insight in fresh:
                 if self.notifier is not None:
                     try:

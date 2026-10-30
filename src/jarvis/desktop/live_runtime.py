@@ -13,6 +13,7 @@ from queue import Empty, Full, Queue
 from types import SimpleNamespace
 import uuid
 
+from jarvis.activity import log_event
 from jarvis.desktop.presentation import project_activity, project_task
 from jarvis.desktop.devices import AudioDeviceError
 
@@ -634,6 +635,7 @@ class LiveRuntime:
                         raise VoiceSetupError("Le mot d’éveil local s’est arrêté. Relancez le vocal.", stage="wake_word")
                     if c.audio.consume_wake():
                         last_activity = monotonic()
+                        log_event("wake", "hey_jarvis")
                         c.audio.play_cue("wake")  # Always: the only sign Jarvis heard you.
                         self.state(self.presentation_state())
                     elif c.audio.mic_open and not c.audio.asleep:
