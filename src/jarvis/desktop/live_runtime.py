@@ -85,16 +85,47 @@ def preload_live_plugins():
         raise setup_failure("sdk_import", error) from None
 
 
+DEFAULT_TURN_SILENCE_MS = 1100
+
+
+def turn_silence_ms():
+    """Silence that ends a turn; JARVIS_TURN_SILENCE_MS tunes it in the field."""
+    try:
+        value = int(os.environ.get("JARVIS_TURN_SILENCE_MS", DEFAULT_TURN_SILENCE_MS))
+    except ValueError:
+        return DEFAULT_TURN_SILENCE_MS
+    return min(max(value, 400), 3000)
+
+
 def desktop_turn_detection_config():
-    """Keep natural pauses while ending short spoken turns predictably."""
+    """Let the user pause to think mid-sentence without Jarvis taking the turn."""
     from google.genai import types
     return types.RealtimeInputConfig(automatic_activity_detection=types.AutomaticActivityDetection(
         disabled=False,
         start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
-        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
         prefix_padding_ms=300,
-        silence_duration_ms=700,
+        silence_duration_ms=turn_silence_ms(),
     ))
+
+
+def introduced_marker_path():
+    return Path(os.environ.get("JARVIS_INTRODUCED_PATH")
+                or Path.home() / "Library/Application Support/Jarvis/introduced")
+
+
+def session_greeting():
+    """Introduce Jarvis once ever; afterwards only a short welcome back."""
+    from jarvis.live.prompts import LIVE_SESSION_GREETING, LIVE_SESSION_WELCOME_BACK
+    marker = introduced_marker_path()
+    if marker.exists():
+        return LIVE_SESSION_WELCOME_BACK
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    except OSError:
+        pass  # Worst case Jarvis introduces itself again next launch.
+    return LIVE_SESSION_GREETING
 
 
 def create_components(voice=None):
@@ -473,9 +504,9 @@ class LiveRuntime:
                 c.audio.play_cue("ready")
             self.state("muted" if self.mute_requested.is_set() else "listening")
             phase = "session"
-            from jarvis.live.prompts import INSIGHT_ANNOUNCEMENT, LIVE_SESSION_GREETING
+            from jarvis.live.prompts import INSIGHT_ANNOUNCEMENT
             if not self.ptt_mode_requested.is_set():
-                c.session.generate_reply(instructions=LIVE_SESSION_GREETING)
+                c.session.generate_reply(instructions=session_greeting())
             suppressed = False
             next_meter = 0.0
             next_task_poll = 0.0
