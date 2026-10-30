@@ -536,8 +536,11 @@ Deux fenêtres accessibles depuis le menu de la barre (tray) :
   - Le graphe par jour suit la période choisie. Les jours sans activité
     apparaissent comme des trous. Au-delà d'un mois, il passe en semaines.
   - L'unité s'adapte aux valeurs (k, M ou Md), avec des graduations rondes.
-  - Les répartitions par modèle et par projet sont en barres horizontales, pour
-    que les noms restent lisibles.
+  - Les répartitions par modèle et par projet sont en barres horizontales, avec
+    la valeur écrite au bout de chaque barre et les modèles nommés en clair
+    (« Opus 5.5 »).
+  - Le jour (ou la semaine) en cours est en blanc et le pic en ambre ; la
+    légende du panneau donne la date et le volume du pic.
   - Le nom d'un projet est retrouvé sur le disque. `kanto-2026` reste
     `kanto-2026`, et ses worktrees y sont rattachés. Ce changement réindexe une
     fois les transcripts (`PRAGMA user_version`).
@@ -547,8 +550,13 @@ Deux fenêtres accessibles depuis le menu de la barre (tray) :
     d'alerte en pointillés.
   - Les applications qui prennent le plus de mémoire sont listées, avec leurs
     processus d'aide regroupés (onglets Chrome, Claude Code…).
+  - Les applications ont chacune une jauge proportionnelle à la plus lourde,
+    en Mo ou en Go.
   - La fenêtre se met à jour toute seule toutes les 30 s tant qu'elle est
-    affichée.
+    affichée, et indique depuis quand (« mis à jour il y a 12 s »).
+- Dans les deux fenêtres, le survol d'une barre ou d'une courbe affiche la
+  valeur exacte. Les titres sont à gauche avec l'unité, la grille ne garde que
+  les lignes horizontales, et les courbes sont remplies d'un dégradé.
 
 Les données se chargent sur un **thread de fond**, de sorte qu'une passe
 d'indexation à froid ne fige jamais l'interface. Les réponses vocales
