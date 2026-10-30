@@ -23,6 +23,16 @@ ECHO_TAIL_SECONDS = 0.25
 CALLBACK_TIMEOUT_SECONDS = 3.0
 
 
+def mix(pcm, music, gain):
+    """Add `music` (scaled by `gain`) onto `pcm`, both PCM16, clipping safely.
+    `music` may be shorter than `pcm` at the end of the loop."""
+    out = array("h", pcm)
+    extra = array("h", music)
+    for index in range(min(len(out), len(extra))):
+        out[index] = max(-32768, min(32767, out[index] + int(extra[index] * gain)))
+    return out.tobytes()
+
+
 class MicrophoneInput(AudioInput):
     def __init__(self, suppressed=lambda: False):
         super().__init__(label="Jarvis microphone")
@@ -186,6 +196,7 @@ class LocalAudio:
         self.cue_lock = Lock()
         self.cue = b""
         self.cue_guarded = True
+        self.music = b""  # Dance loop, mixed under speech; guarded like a cue.
         self.input_device = None
         self.output_device = None
         self.default_snapshot=None
@@ -284,6 +295,15 @@ class LocalAudio:
         with self.cue_lock:
             self.cue = b""
 
+    def play_music(self, pcm):
+        """Background loop for the avatar dance (replaces any loop playing)."""
+        with self.cue_lock:
+            self.music = bytes(pcm)
+
+    def stop_music(self):
+        with self.cue_lock:
+            self.music = b""
+
     def levels(self):
         now = self.clock()
         incoming, input_time = self.input_meter
@@ -316,6 +336,12 @@ class LocalAudio:
                 guarded = self.cue_guarded
             if cue:
                 pcm = cue + bytes(len(data) - len(cue))
+        with self.cue_lock:
+            music, self.music = self.music[:len(data)], self.music[len(data):]
+        if music:
+            # Under speech the loop drops further so the words stay clear.
+            pcm = mix(pcm, music, 0.35 if any(pcm) else 1.0)
+            guarded = True  # Never let the microphone hand the loop to Gemini.
         if self.quiet:pcm = bytes(len(data))
         self.output_meter = (pcm_level(pcm), self.clock())
         if any(pcm) and guarded and not self.allow_barge_in:
@@ -377,6 +403,7 @@ class LocalAudio:
         if self.wake is not None:
             self.wake.close()
         self.clear_cue()
+        self.stop_music()
         self.input.closed = True
         self.input.clear()
         self.output.closed = True

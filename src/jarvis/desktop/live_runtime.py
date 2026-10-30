@@ -302,6 +302,22 @@ class LiveRuntime:
     def set_sounds(self, enabled):
         self.sounds_requested.set() if enabled else self.sounds_requested.clear()
 
+    def play_dance_music(self, seconds):
+        """Loop under the avatar dance, through the voice output and its
+        feedback guard. Without an open session there is nothing to play on."""
+        audio = self.components.audio if self.components else None
+        if audio is None or not hasattr(audio, "play_music"):
+            return False
+        from jarvis.desktop.dance_music import dance_track
+        from jarvis.desktop.live_audio import SAMPLE_RATE
+        audio.play_music(dance_track(seconds, SAMPLE_RATE))
+        return True
+
+    def stop_dance_music(self):
+        audio = self.components.audio if self.components else None
+        if audio is not None and hasattr(audio, "stop_music"):
+            audio.stop_music()
+
     def cancel_task(self, task_id=None):
         accepted = self._admit(self.task_cancellations, task_id)
         if accepted:
