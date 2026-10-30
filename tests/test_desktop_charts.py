@@ -152,8 +152,8 @@ def test_usage_dashboard_all_period_groups_by_week(app):
     trend = [{"day": "2026-10-20", "total_tokens": 1_000_000}]
     widget = make_usage_dashboard({"period": "depuis le début"}, trend, [], period="all",
                                   today=dt.date(2026, 10, 20))
-    (view,) = widget.findChildren(QChartView)
-    assert view.chart().title() == "Tokens par semaine"
+    titles = [l.text() for l in widget.findChildren(QLabel, "panelTitle")]
+    assert titles == ["Tokens par semaine · M"]
 
 
 def test_metrics_dashboard_groups_apps_and_flags_threshold(app):
@@ -162,10 +162,56 @@ def test_metrics_dashboard_groups_apps_and_flags_threshold(app):
     apps = [{"name": "Google Chrome", "bytes": 3_200_000_000, "processes": 43, "value": 20.0}]
     widget = make_metrics_dashboard(snapshot, cpu, [], apps, period="24h")
     texts = [l.text() for l in widget.findChildren(QLabel)]
-    assert any("Google Chrome  ·  3,0 Go  ·  43 processus" == t for t in texts)
+    assert "Google Chrome" in texts and "3,0 Go · 43 processus" in texts
+    from jarvis.desktop.charts import _mem
+    assert _mem(45 * 2**20) == "45 Mo"
+    from PySide6.QtWidgets import QProgressBar
+    (gauge,) = widget.findChildren(QProgressBar)
+    assert gauge.value() == 1000  # the heaviest app fills its gauge
     assert "13,9 Go sur 14,9 Go" in texts
     (view,) = widget.findChildren(QChartView)
     assert len(view.chart().series()) == 2  # the curve and its dashed threshold
+
+
+def test_pretty_model_and_updated_text():
+    from jarvis.desktop.charts import pretty_model, updated_text
+
+    assert pretty_model("claude-opus-5-5") == "Opus 5.5"
+    assert pretty_model("claude-sonnet-5") == "Sonnet 5"
+    assert pretty_model("claude-haiku-4-5-20251001") == "Haiku 4.5"
+    assert updated_text(2) == "mis à jour à l'instant"
+    assert updated_text(42) == "mis à jour il y a 42 s"
+    assert updated_text(130) == "mis à jour il y a 2 min"
+
+
+def test_usage_dashboard_marks_today_and_peak(app):
+    import datetime as dt
+
+    trend = [{"day": "2026-10-18", "total_tokens": 9_000_000},
+             {"day": "2026-10-20", "total_tokens": 2_000_000}]
+    models = [{"model": "claude-opus-5-5", "total_tokens": 9_000_000}]
+    widget = make_usage_dashboard({"period": "x"}, trend, models, period="7d",
+                                  today=dt.date(2026, 10, 20))
+    (legend,) = widget.findChildren(QLabel, "panelLegend")
+    assert "aujourd'hui" in legend.text() and "pic 18/10 · 9,0 M" in legend.text()
+    daily, ranking = widget.findChildren(QChartView)
+    (stacked,) = daily.chart().series()
+    sets = stacked.barSets()
+    assert [s.at(4) for s in sets] == [0, 9.0, 0]   # the peak (18/10) sits in its own layer
+    assert [s.at(6) for s in sets] == [0, 0, 2.0]   # today too
+    texts = [i.text() for i in ranking.chart().childItems() if hasattr(i, "text")]
+    assert "9,0 M" in texts  # value written at the end of the bar, in the cards format
+    assert ranking.chart().axes()[0].categories() == ["Opus 5.5"]
+
+
+def test_metrics_dashboard_shows_update_time(app):
+    import time as _time
+
+    cpu = [{"ts": 1.0, "value": 20.0}, {"ts": 2.0, "value": 40.0}]
+    widget = make_metrics_dashboard({"cpu": 1.0}, cpu, [], period="1h",
+                                    on_period_change=lambda k: None,
+                                    updated_at=_time.time() - 70)
+    assert widget.findChild(QLabel, "updated").text() == "mis à jour il y a 1 min"
 
 
 if __name__ == "__main__":
