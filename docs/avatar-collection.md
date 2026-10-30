@@ -8,8 +8,10 @@ thinking, speaking and success in reading order. Abstract assets are single
 images; Event Horizon is 1774 × 887 and retains its aspect ratio.
 
 NovaBot is the default. The Appearance button opens a native icon grid with all
-16 names and previews. Click, Space or Return applies the focused choice
-immediately; arrows navigate and Escape closes. The floating companion offers
+16 names and previews. A click or Space previews the choice live; Valider,
+a double-click or Return keeps it and closes the grid. Annuler, Escape or the
+window's close button restores the appearance Jarvis had when the grid opened.
+Arrows navigate. The floating companion offers
 Appearance in its context menu. QSettings stores `appearance/avatar`; missing or
 invalid preferences fall back to NovaBot.
 
