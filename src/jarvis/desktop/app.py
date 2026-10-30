@@ -122,6 +122,7 @@ class Controller(QObject):
         self.undo_tickets = []
         from jarvis.desktop.avatar_dance import AvatarDance
         self.dance = AvatarDance(self)
+        self.dance_music = True
         self.ptt_hotkey_message="Maintenez ⌘⌥Espace, ou Espace lorsque le compagnon a le focus."
         self.ptt_enabled=False
         self.ptt_held=False
@@ -977,6 +978,7 @@ class DesktopShell:
                                    self.settings.value('input/wake_word', False) in (True, 'true'))
         controller.devices_changed.connect(self.save_devices)
         controller.sounds_enabled = self.settings.value("audio/sounds", False) in (True, "true")
+        controller.dance_music = self.settings.value("dance/music", True) in (True, "true")
         controller.reduced_motion = self.settings.value("appearance/reduced_motion", controller.reduced_motion) in (True, "true")
         from jarvis.desktop.appearances import AppearancePreference
         self.appearance_preference = AppearancePreference(self.settings)
@@ -1172,6 +1174,12 @@ class DesktopShell:
         self.controller.set_push_to_talk(enabled)
         self.settings.setValue('input/push_to_talk',enabled)
         self.hold_hotkey.set_enabled(enabled)
+
+    def set_dance_music(self, enabled):
+        self.controller.dance_music = bool(enabled)
+        self.settings.setValue('dance/music', bool(enabled))
+        if not enabled and self.controller.voice_worker:
+            self.controller.voice_worker.stop_dance_music()
 
     def set_wake_word(self, enabled):
         if enabled == self.controller.wake_enabled:

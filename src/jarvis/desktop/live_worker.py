@@ -45,6 +45,12 @@ class LiveWorker(QThread):
     def set_sounds(self, enabled):
         self.runtime.set_sounds(enabled)
 
+    def play_dance_music(self, seconds):
+        return self.runtime.play_dance_music(seconds)
+
+    def stop_dance_music(self):
+        self.runtime.stop_dance_music()
+
     def cancel_task(self, task_id=None):
         return self.runtime.cancel_task(task_id)
 
