@@ -54,6 +54,39 @@ def test_top_processes_by_memory_sorted():
     assert [r["name"] for r in rows] == ["Chrome", "Xcode"]
 
 
+def test_app_name_folds_helpers_and_claude_code():
+    from jarvis.tools.system_metrics import app_name
+
+    chrome = ("/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework"
+              ".framework/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/x")
+    assert app_name("Google Chrome Helper (Renderer)", chrome) == "Google Chrome"
+    assert app_name("2.1.303", "/Users/me/.local/bin/claude") == "Claude Code"
+    assert app_name("claude", "/Users/me/Library/Application Support/Claude/claude-code/"
+                              "2.1.309/abc/claude.app/Contents/MacOS/claude") == "Claude Code"
+    assert app_name("Python", None) == "Python"
+
+
+def test_top_apps_sums_memory_per_app():
+    class AppsPsutil(FakePsutil):
+        def process_iter(self, attrs=None):
+            mem = lambda n: types.SimpleNamespace(rss=n)
+            data = [
+                {"pid": 1, "name": "Google Chrome", "memory_info": mem(1_000_000_000),
+                 "exe": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"},
+                {"pid": 2, "name": "Google Chrome Helper (Renderer)", "memory_info": mem(600_000_000),
+                 "exe": "/Applications/Google Chrome.app/Contents/Frameworks/H.app/Contents/MacOS/H"},
+                {"pid": 3, "name": "Xcode", "memory_info": mem(1_200_000_000),
+                 "exe": "/Applications/Xcode.app/Contents/MacOS/Xcode"},
+                {"pid": 4, "name": "kernel_task", "memory_info": None, "exe": None},
+            ]
+            return [types.SimpleNamespace(info=d) for d in data]
+
+    rows = SystemMetricsProbe(psutil_module=AppsPsutil()).top_apps(limit=5)
+    assert [(r["name"], r["bytes"], r["processes"]) for r in rows] == [
+        ("Google Chrome", 1_600_000_000, 2), ("Xcode", 1_200_000_000, 1)]
+    assert rows[0]["value"] == 10.0  # 1.6 GB of the fake 16 GB
+
+
 def test_probe_without_psutil_reports_unavailable():
     probe = SystemMetricsProbe()
     probe.ps = None  # simulate an environment without psutil

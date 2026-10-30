@@ -96,6 +96,21 @@ class SystemMetricsCapability:
                                   f"Processus les plus gourmands en {kind} : {names}.",
                                   by=by, processes=rows)
 
+    def top_apps(self, limit: int = 6) -> ToolResult:
+        if not self.probe.available():
+            return ToolResult.failure("top_apps",
+                                      "Les métriques machine sont indisponibles (psutil absent).",
+                                      error_code="metrics_unavailable")
+        try:
+            rows = self.probe.top_apps(limit=limit)
+        except Exception as error:
+            return ToolResult.failure("top_apps", f"Lecture impossible : {error}",
+                                      error_code="metrics_unavailable")
+        names = ", ".join(f"{r['name']} {_gb(r['bytes'])}" for r in rows[:4])
+        return ToolResult.success("top_apps",
+                                  f"Applications les plus gourmandes en mémoire : {names}.",
+                                  apps=rows)
+
     def history(self, metric: str = "cpu", period: str = "24h") -> ToolResult:
         name = self._metric(metric)
         since, until, label = self._window(period)

@@ -54,6 +54,7 @@ class AvatarDance(QObject):
         if not self.active:
             self.started = self.clock()
             self.timer.start()
+            self._music(True)
             c.changed.emit()
         return True
 
@@ -61,7 +62,19 @@ class AvatarDance(QObject):
         if self.active:
             self.started = None
             self.timer.stop()
+            self._music(False)
             self.controller.changed.emit()
+
+    def _music(self, on):
+        # Plays through the voice session's speaker, so only while one is open.
+        c = self.controller
+        worker = getattr(c, 'voice_worker', None)
+        if worker is None or not getattr(c, 'dance_music', True):
+            return
+        try:
+            worker.play_dance_music(DURATION) if on else worker.stop_dance_music()
+        except Exception:
+            pass  # The dance never depends on its soundtrack.
 
     def tick(self):
         c = self.controller

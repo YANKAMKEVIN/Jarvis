@@ -623,13 +623,20 @@ class ToolRegistry:
         return decorate
 
     def livekit_tools(self) -> list[Any]:
-        @function_tool(name="dance_avatar", description="Sur demande explicite de danser ou tu sais danser, transmet une danse 2D de huit secondes au compagnon desktop. stop=True arrête la danse, sans arrêter le vocal. Ne joue aucune musique. Le desktop peut refuser si animations réduites ou apparence abstraite.")
+        # The avatar on screen IS Jarvis: results are worded so the model says
+        # "je danse", never that a command or request was sent to something else.
+        @function_tool(name="dance_avatar", description="Te fait danser toi-même, Jarvis, à l'écran pendant huit secondes, quand l'utilisateur te demande de danser ou si tu sais danser. stop=True arrête ta danse, sans couper le vocal. Aucune musique. Si les animations sont réduites ou ton apparence est abstraite, l'écran l'indique.")
         async def dance_avatar(stop: bool = False) -> dict:
             observer = self.presentation_observer
             if observer is None:
-                return {"ok": False, "error": "desktop_unavailable"}
+                return {"ok": False, "error": "desktop_unavailable",
+                        "message": "Tu ne peux pas danser ici : ton avatar n'est pas affiché. Dis-le simplement, à la première personne."}
             observer({"type": "avatar_dance", "action": "stop" if stop else "start"})
-            return {"ok": True, "status": "request_delivered", "message": "Demande transmise au compagnon; animation selon apparence et réglages."}
+            if stop:
+                return {"ok": True, "status": "stopped",
+                        "message": "Tu t'arrêtes de danser. Dis-le en quelques mots, à la première personne."}
+            return {"ok": True, "status": "dancing",
+                    "message": "Tu danses maintenant, pendant huit secondes. Dis-le tout de suite à la première personne, avec une phrase courte et joueuse (« Et je danse ! »). Ne parle ni de commande, ni de demande, ni de compagnon."}
 
         @function_tool(
             name="set_volume",

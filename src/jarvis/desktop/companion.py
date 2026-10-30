@@ -313,11 +313,15 @@ class CompanionWindow(OrbWindow):
         action('voices', 'Voix des avatars…', self.shell.show_voices)
         action('routines','Routines vocales…',self.shell.show_routines)
         action('dance', 'Faire danser', lambda: self.controller.dance.stop() if self.controller.dance.active else self.controller.dance.start())
+        music=action('dance_music','Musique pendant la danse');music.setCheckable(True);music.setChecked(self.controller.dance_music)
+        music.triggered.connect(self.shell.set_dance_music)
         action('settings', 'Réglages', self.shell.show_settings)
         recovery=action('recovery','Reconnecter automatiquement après coupure');recovery.setCheckable(True);recovery.setChecked(self.shell.recovery.enabled)
         recovery.triggered.connect(self.shell.set_auto_reconnect)
         hold=action('ptt','Maintenir pour parler · ⌘⌥Espace');hold.setCheckable(True);hold.setChecked(self.controller.ptt_enabled)
         hold.triggered.connect(self.shell.set_push_to_talk)
+        wake=action('wake','Réveil par « Jarvis »');wake.setCheckable(True);wake.setChecked(self.controller.wake_enabled)
+        wake.triggered.connect(self.shell.set_wake_word)
         presentation=menu.addMenu('Personnaliser le compagnon')
         from PySide6.QtGui import QActionGroup
         def options(title,key,values):
@@ -355,6 +359,8 @@ class CompanionWindow(OrbWindow):
         actions['cancel_recovery'].setVisible(self.shell.recovery.timer.isActive() or c.reconnecting)
         actions['recovery'].setChecked(self.shell.recovery.enabled)
         actions['ptt'].setChecked(c.ptt_enabled)
+        actions['wake'].setChecked(c.wake_enabled)
+        actions['dance_music'].setChecked(c.dance_music)
         actions['microphone'].setText('Couper le micro' if c.voice_mic_open else 'Réactiver le micro')
         for key in ('microphone','interrupt'):
             actions[key].setVisible(active and not (key=='microphone' and c.ptt_enabled))

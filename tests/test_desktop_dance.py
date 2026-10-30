@@ -96,12 +96,19 @@ def test_voice_tool_delivers_only_explicit_requests_and_excludes_planner():
     registry = create_live_registry()
     tools = {tool.info.name: tool for tool in registry.livekit_tools()}
     tool = tools['dance_avatar']
-    assert asyncio.run(tool()) == {'ok':False, 'error':'desktop_unavailable'}
+    assert asyncio.run(tool())['error'] == 'desktop_unavailable'
     events = []
     registry.set_presentation_observer(events.append)
     registry.read_only_mode = True
-    assert asyncio.run(tool())['status'] == 'request_delivered'
-    assert asyncio.run(tool(stop=True))['ok']
+    started = asyncio.run(tool())
+    assert started['status'] == 'dancing'
+    stopped = asyncio.run(tool(stop=True))
+    assert stopped['ok'] and stopped['status'] == 'stopped'
+    # Jarvis is the dancer: nothing tells the model a command went elsewhere.
+    for result in (started, stopped):
+        text = result['message'].lower()
+        assert 'première personne' in text
+        assert 'transmis' not in text and 'envoy' not in text
     assert events == [{'type':'avatar_dance','action':'start'}, {'type':'avatar_dance','action':'stop'}]
     assert 'dance_avatar' not in {tool.info.name for tool in registry.planner_tools}
     registry.set_presentation_observer(None)
@@ -129,3 +136,35 @@ def test_edges_escape_and_duplicate_requests_keep_dance_bounded(companion):
     c.dance.tick()
     assert not c.dance.active and w.pos() == origin
     assert not w.make_menu().actions_by_id['dance'].isEnabled()
+
+
+def test_prompt_makes_jarvis_dance_himself_and_speak():
+    from jarvis.live.prompts import LIVE_SYSTEM_PROMPT
+
+    rule = next(line for line in LIVE_SYSTEM_PROMPT.splitlines() if line.startswith('Danse :'))
+    assert "l'avatar a l'ecran, c'est toi" in rule
+    assert 'sais danser, reponds oui' in rule
+    assert 'premiere personne' in rule and 'jamais se faire en silence' in rule
+    assert "Ne dis jamais qu'une commande" in rule
+
+
+def test_dance_plays_and_stops_music_only_with_a_voice_session(companion):
+    _, c, _ = companion
+    calls = []
+    class Worker:
+        def play_dance_music(self, seconds): calls.append(('play', seconds))
+        def stop_dance_music(self): calls.append(('stop',))
+    c.dance.stop()
+    c.voice_worker = None
+    assert c.dance.start()
+    c.dance.stop()
+    assert calls == []  # no session, no speaker to play on
+    c.voice_worker = Worker()
+    assert c.dance.start()
+    c.dance.stop()
+    assert calls == [('play', DURATION), ('stop',)]
+    c.dance_music = False
+    assert c.dance.start()
+    c.dance.stop()
+    assert calls == [('play', DURATION), ('stop',)]
+    c.voice_worker = None

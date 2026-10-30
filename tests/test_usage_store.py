@@ -46,6 +46,35 @@ def test_decode_and_label():
     assert project_label("-Users-kevinyankam-dev-Jarvis") == "Jarvis"
 
 
+def test_project_label_resolves_dashes_and_worktrees(tmp_path):
+    home = tmp_path / "Users" / "me"
+    (home / "dev" / "kanto-2026" / ".claude" / "worktrees" / "brave-x").mkdir(parents=True)
+    (home / "Library" / "Application Support" / "Claude").mkdir(parents=True)
+    label = lambda folder: project_label(folder, str(tmp_path), str(home))
+    assert label("-Users-me-dev-kanto-2026") == "kanto-2026"
+    assert label("-Users-me-dev-kanto-2026--claude-worktrees-brave-x") == "kanto-2026"
+    assert label("-Users-me-Library-Application-Support-Claude") == "Claude"
+    # A deleted project under a container folder keeps the last-segment guess.
+    assert label("-Users-me-Documents-Astra") == "Astra"
+    assert label("-Users-me-dev-gone-project") == "project"
+
+
+def test_old_index_is_rebuilt_for_new_labels(store):
+    import sqlite3
+
+    s, projects = store
+    _write(projects, "-Users-x-Jarvis", [_line("u1")])
+    s.ingest()
+    conn = sqlite3.connect(s.path)
+    conn.execute("PRAGMA user_version = 0")
+    conn.commit()
+    conn.close()
+    fresh = UsageStore(db_path=s.path, projects_dir=projects)
+    assert fresh.totals()["events"] == 0  # cleared, re-read on next ingest
+    fresh.ingest()
+    assert fresh.totals()["events"] == 1
+
+
 def test_model_family():
     assert model_family("claude-opus-5-5") == "opus"
     assert model_family("claude-sonnet-5") == "sonnet"
