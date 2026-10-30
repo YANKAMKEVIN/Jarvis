@@ -17,7 +17,7 @@ def controls():
     c = Controller()
     shell = SimpleNamespace(controller=c, full=QWidget(), **{
         key: Mock() for key in ('show_full', 'show_compact', 'show_orb',
-                               'show_details', 'show_settings', 'show_voices', 'show_usage',
+                               'show_details', 'show_settings', 'show_voices', 'show_usage', 'show_dashboard',
                                'show_metrics', 'hide_windows', 'quit')})
     tray = Mock()
     menu = TrayControls(shell, tray)
@@ -147,7 +147,7 @@ def test_insight_alerts_toggle_and_notification():
                             set_insights_enabled=Mock(), insights_spoken=False,
                             set_insights_spoken=Mock(), tray=Mock(), **{
                                 key: Mock() for key in ('show_full', 'show_compact', 'show_orb',
-                                                       'show_details', 'show_settings', 'show_voices', 'show_usage',
+                                                       'show_details', 'show_settings', 'show_voices', 'show_usage', 'show_dashboard',
                                                        'show_metrics', 'hide_windows', 'quit')})
     menu = TrayControls(shell, Mock())
     assert menu.insights.isCheckable() and menu.insights.isChecked()

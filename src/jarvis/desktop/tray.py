@@ -74,8 +74,7 @@ class TrayControls:
         if hasattr(shell, 'settings'):
             self.action('Jarvis au quotidien…', lambda: shell.experience.open())
             self.action('Commandes · ⌘K', lambda: shell.experience.palette())
-        self.action('Consommation (tokens)…', shell.show_usage)
-        self.action('Activité machine…', shell.show_metrics)
+        self.action('Tableau de bord…', shell.show_dashboard)
         self.insights = None
         if hasattr(shell, 'set_insights_enabled'):
             self.insights = self.action('Alertes d’anomalies')
