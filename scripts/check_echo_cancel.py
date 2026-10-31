@@ -32,7 +32,8 @@ def speech_pcm(folder):
     subprocess.run(["say", "-o", str(aiff), PHRASE], check=True)
     subprocess.run(["afconvert", "-f", "WAVE", "-d", f"LEI16@{SAMPLE_RATE}", "-c", "1", str(aiff), str(wav)], check=True)
     with wave.open(str(wav)) as source:
-        return source.readframes(SAMPLE_RATE * 5)
+        pcm = np.frombuffer(source.readframes(SAMPLE_RATE * 5), dtype=np.int16).astype(float)
+    return (pcm * (29000 / max(1.0, np.abs(pcm).max()))).astype(np.int16).tobytes()  # Loudest clean level.
 
 
 def correlation(captured, reference):
