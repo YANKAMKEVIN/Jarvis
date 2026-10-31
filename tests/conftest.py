@@ -75,3 +75,51 @@ def dispose_test_windows():
             window.hide()
             window.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+# Subprocess tests used to put interpreter start-up and SDK imports under the
+# same few-second timeout as the behaviour they check. On a loaded 8 GB Mac,
+# `import livekit.plugins.google` alone takes 18 to 27 s, so they failed at
+# random. The child prints `marker` once its imports are done: start-up gets a
+# generous ceiling, and only what follows keeps the strict timeout.
+import subprocess
+import threading
+import time
+
+STARTUP_CEILING = 120
+
+
+def _run_after_ready(args, *, env, marker, timeout, startup_timeout=STARTUP_CEILING):
+    process = subprocess.Popen(args, env=env, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True)
+    stdout, stderr, ready = [], [], threading.Event()
+
+    def read_stdout():
+        for line in process.stdout:
+            stdout.append(line)
+            if line.strip() == marker:
+                ready.set()
+
+    readers = [threading.Thread(target=read_stdout, daemon=True),
+               threading.Thread(target=lambda: stderr.extend(process.stderr), daemon=True)]
+    for reader in readers:
+        reader.start()
+    try:
+        deadline = time.monotonic() + startup_timeout
+        while not ready.wait(0.05) and process.poll() is None:
+            if time.monotonic() > deadline:
+                raise subprocess.TimeoutExpired(args, startup_timeout)
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        raise
+    finally:
+        for reader in readers:
+            reader.join(5)
+    return subprocess.CompletedProcess(args, process.returncode, ''.join(stdout), ''.join(stderr))
+
+
+@pytest.fixture
+def run_after_ready():
+    return _run_after_ready
