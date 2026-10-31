@@ -7,12 +7,32 @@ probe needs no real hardware. All reads are local and read-only.
 from __future__ import annotations
 
 import os
+import re
 import time
 
 try:  # psutil is a desktop extra; the probe degrades gracefully without it.
     import psutil as _psutil
 except Exception:  # pragma: no cover - environment without psutil
     _psutil = None
+
+
+_VERSION_NAME = re.compile(r"^\d+(\.\d+)+$")
+
+
+def app_name(name: str | None, exe: str | None) -> str:
+    """Human app name for a process: the outermost `.app` bundle in its path
+    ('Google Chrome Helper (Renderer)' -> 'Google Chrome'), and Claude Code for
+    its CLI, whether named after its version ('2.1.303') or bundled by the
+    desktop app ('.../claude-code/2.1.309/.../claude.app')."""
+    name = name or "?"
+    exe = exe or ""
+    low = exe.lower()
+    if "/claude-code/" in low or (_VERSION_NAME.match(name) and "claude" in low):
+        return "Claude Code"
+    bundle = re.search(r"/([^/]+)\.app/", exe)
+    if bundle:
+        return bundle.group(1)
+    return name
 
 
 class SystemMetricsProbe:
@@ -62,6 +82,31 @@ class SystemMetricsProbe:
             "battery": float(battery.percent) if battery is not None else None,
             "power_plugged": bool(battery.power_plugged) if battery is not None else None,
         }
+
+    def top_apps(self, limit: int = 6) -> list[dict]:
+        """Resident memory summed per application, largest first. Helper
+        processes (Chrome renderers, Electron helpers) fold into their app, so
+        the list says which app is heavy rather than which tab."""
+        ps = self.ps
+        if ps is None:
+            raise RuntimeError("psutil indisponible")
+        limit = max(1, min(int(limit) if isinstance(limit, (int, float)) else 6, 20))
+        total = float(ps.virtual_memory().total) or 1.0
+        apps: dict[str, dict] = {}
+        for proc in ps.process_iter(["pid", "name", "exe", "memory_info"]):
+            info = proc.info
+            mem = info.get("memory_info")
+            rss = int(getattr(mem, "rss", 0) or 0)
+            if rss <= 0:
+                continue
+            name = app_name(info.get("name"), info.get("exe"))
+            row = apps.setdefault(name, {"name": name, "bytes": 0, "processes": 0})
+            row["bytes"] += rss
+            row["processes"] += 1
+        rows = sorted(apps.values(), key=lambda r: r["bytes"], reverse=True)[:limit]
+        for row in rows:
+            row["value"] = round(row["bytes"] / total * 100, 1)
+        return rows
 
     def top_processes(self, by: str = "memory", limit: int = 5) -> list[dict]:
         ps = self.ps

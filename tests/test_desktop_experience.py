@@ -213,3 +213,19 @@ def test_rejected_routine_does_not_claim_transmission_or_stay_pending(ui, tmp_pa
     finally:
         dialog.close()
         dialog.deleteLater()
+
+def test_wake_word_setting_persists_replaces_hold_mode_and_shows_local_standby(ui):
+    app,c,shell=ui;c.demo=False;c.start_voice=Mock()
+    shell.set_push_to_talk(True)
+    shell.set_wake_word(True)
+    assert c.wake_enabled and not c.ptt_enabled and shell.full.wake_check.isChecked()
+    assert shell.settings.value('input/wake_word') in (True,'true')
+    assert shell.settings.value('input/push_to_talk') in (False,'false')
+    c.start_voice.assert_called_once()
+    c.voice_worker=Mock()
+    c.voice_event({'type':'state','state':'muted','mic_open':True,'standby':True})
+    panel=shell.full.assistant;panel.render()
+    assert panel.status.text()=='En veille' and 'rien n’est envoyé' in panel.voice_notice.text()
+    shell.set_push_to_talk(True)
+    assert not c.wake_enabled and c.ptt_enabled
+    assert 'prochain démarrage' in c.tool_notice

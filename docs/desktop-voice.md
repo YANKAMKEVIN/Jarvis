@@ -56,6 +56,10 @@ open ~/Applications/Jarvis.app
    microphone après le démarrage de la session, jamais au lancement de l’app.
 2. Accorder l’accès Microphone si macOS le demande. Si l’accès est refusé,
    vérifier Réglages Système → Confidentialité et sécurité → Microphone.
+   Au tout premier démarrage, Jarvis se présente ; ensuite il dit seulement un
+   court mot d’accueil (« Re-bonjour, je t’écoute »). Le repère est le fichier
+   `~/Library/Application Support/Jarvis/introduced` (supprimez-le pour revoir la
+   présentation, ou `JARVIS_INTRODUCED_PATH` pour le déplacer).
 3. Parler lorsque l’interface indique **Micro ouvert · voix envoyée à Gemini**.
 4. **Couper le micro** arrête la capture et vide le tampon d’entrée local ; le
    bouton permet ensuite de réactiver le micro. L’audio déjà envoyé reste envoyé.
@@ -172,9 +176,13 @@ imports préalables des autres tests.
 ## Fin de parole et écoute qui semble bloquée
 
 Le desktop configure explicitement la détection de parole Gemini : sensibilité
-de début et de fin élevée, 300 ms de contexte avant parole et 700 ms de silence
-pour terminer un tour. Ce délai préserve les petites pauses ; la réponse ajoute
-ensuite la latence réseau et la génération. Le CLI conserve ses réglages
+de début élevée, sensibilité de fin basse, 300 ms de contexte avant parole et
+1 100 ms de silence pour terminer un tour. Ce délai laisse l'utilisateur
+reprendre son souffle ou chercher ses mots au milieu d'une longue phrase sans
+que Jarvis prenne la parole ; en contrepartie, une commande courte attend
+environ 0,4 s de plus qu'avec l'ancien réglage (700 ms, fin élevée). La variable
+`JARVIS_TURN_SILENCE_MS` ajuste ce silence sur le terrain (bornée entre 400 et
+3 000 ms). La réponse ajoute ensuite la latence réseau et la génération. Le CLI conserve ses réglages
 habituels. Les valeurs suivent les possibilités de la
 [configuration VAD Gemini](https://ai.google.dev/gemini-api/docs/live-api/capabilities#voice-activity-detection-vad).
 
@@ -205,3 +213,106 @@ un silence, puis recommencer après une réponse complète de Jarvis. Vérifier 
 une phrase avec une petite pause au milieu et le fonctionnement du micro coupé.
 Si le délai persiste, comparer casque et haut-parleurs permet de distinguer la
 protection anti-écho d'un problème de détection ou de connexion.
+
+## Mot d’éveil « Jarvis » (veille locale)
+
+Option désactivée par défaut : **Réglages → Réveiller Jarvis en disant « Jarvis »
+(détection locale)**, ou menu du compagnon → **Réveil par « Jarvis »**. Elle
+remplace le maintien pour parler (activer l’un désactive l’autre).
+
+Installation du détecteur local, une fois :
+
+```bash
+python -m pip install -e '.[desktop,live,wake]'
+```
+
+Au premier démarrage du mode, openWakeWord télécharge ses modèles (quelques Mo,
+depuis la page des versions GitHub d’openWakeWord). Ce téléchargement porte sur
+des fichiers de modèle, jamais sur de l’audio. Ensuite tout fonctionne hors ligne.
+
+### Fonctionnement
+
+1. Le mode activé, Jarvis démarre la session vocale au lancement de l’app, sans
+   salutation, **en veille** : l’orbe affiche « En veille » et l’indication
+   « Veille locale · rien n’est envoyé à Gemini avant « Jarvis » ».
+2. Le micro capte en local. Chaque bloc de 20 ms part vers le détecteur
+   (rééchantillonné de 24 à 16 kHz, file bornée à 1 s, thread dédié) et **pas**
+   vers Gemini : le flux d’entrée de la session ne reçoit aucune trame.
+3. Dire « hey Jarvis » (ou « Jarvis » seul, avec un taux de détection plus
+   faible) : un court bip aigu confirme, puis le micro s’ouvre vers Gemini dans
+   la **même** session. Jarvis ne reparle pas et ne se présente pas : on
+   enchaîne directement la demande. La parole qui suit le mot sans pause est
+   conservée : les blocs captés après la détection sont transmis en premier.
+4. Après `JARVIS_WAKE_IDLE_SECONDS` (45 s par défaut, borné entre 15 et 300 s)
+   sans parole de l’utilisateur ni réponse ou réflexion de Jarvis, retour en
+   veille locale (son « micro coupé » si les sons discrets sont activés).
+
+Règles conservées :
+
+- **Couper le micro** reste prioritaire : il ferme la capture, y compris la
+  détection locale. Une détection arrivée juste après la coupure est ignorée.
+  **Réactiver le micro** revient en veille, pas directement vers Gemini.
+- Pendant que Jarvis parle, la protection en alternance s’applique aussi au
+  détecteur : Jarvis ne peut pas se réveiller en prononçant son propre nom. Le
+  bip de réveil, lui, ne déclenche pas cette protection, pour ne pas couper la
+  phrase qui suit.
+- Si le détecteur est absent ou s’arrête, la session échoue **fermée** avec un
+  message (aucun repli vers un micro ouvert en continu).
+- Une alerte proactive peut encore être dite pendant la veille ; pour y
+  répondre, redire « Jarvis ».
+- Changer l’option pendant une session s’applique au prochain démarrage du vocal.
+
+`JARVIS_WAKE_THRESHOLD` (0,5 par défaut, borné entre 0,2 et 0,95) règle le seuil
+de score : plus haut, moins de faux réveils mais plus de « Jarvis » manqués. Un
+réveil est suivi de 2 s pendant lesquelles un second réveil est ignoré.
+
+### Session longue et contexte
+
+La session reste ouverte micro fermé plutôt que d’être recréée à chaque réveil,
+pour garder le contexte de la conversation. Comme une session Gemini Live audio
+est limitée (environ 15 min sans compression, connexions réinitialisées par le
+serveur), le mode mot d’éveil active la compression du contexte par fenêtre
+glissante et la reprise de session (`session_resumption`) du plugin LiveKit
+Google ; le plugin se reconnecte de lui-même sur un `GoAway`. Les autres modes
+ne changent pas. Une session inactive n’envoie aucun audio et ne consomme donc
+pas de jetons audio.
+
+### Choix du moteur : openWakeWord plutôt que Porcupine
+
+| Critère | openWakeWord 0.6 (retenu) | Porcupine (Picovoice) |
+|---|---|---|
+| Local | Oui, ONNX Runtime (déjà présent via LiveKit) | Oui |
+| Mot | `hey_jarvis` pré-entraîné ; « Jarvis » seul détecté moins souvent | `jarvis` intégré |
+| Compte / clé | Aucun | Clé d’accès Picovoice obligatoire, validée en ligne, offre gratuite limitée à un usage personnel |
+| Licence | Apache-2.0 (modèles pré-entraînés : CC BY-NC-SA 4.0, usage non commercial) | Propriétaire |
+| CPU (estimé, à mesurer) | Quelques % d’un cœur (spectrogramme + embedding par pas de 80 ms) | Très faible |
+| Personnalisation | Entraînement possible d’un modèle « Jarvis » seul | Console Picovoice |
+
+openWakeWord est retenu : aucune clé ni compte tiers, tout reste local sans
+dépendance à un service de licence, et le moteur s’insère derrière une petite
+interface (`score`, `reset`, `frame_samples`) dans
+`src/jarvis/desktop/wake_word.py`. Porcupine resterait l’alternative si le CPU
+ou le taux de détection de « Jarvis » seul se révélaient insuffisants : il
+suffirait d’un second adaptateur de moteur.
+
+### Tests et ce qui reste à valider sur le Mac
+
+`tests/test_desktop_wake_word.py` couvre, avec des moteurs, listeners et
+périphériques simulés (aucun modèle ni matériel) : rééchantillonnage, détection
+unique et période réfractaire, transmission de la parole qui suit le mot, file
+bornée, panne du détecteur, porte audio (rien vers Gemini en veille, mute
+prioritaire, bip sans protection en alternance), démarrage en veille sans
+salutation, réveil avec bip seul, retour en veille après inactivité, réactivation
+du micro en veille, échec fermé, priorité du maintien pour parler.
+
+À valider sur le Mac (non mesurable ici) :
+
+- Taux de faux réveils sur une heure de bruit ambiant, de vidéo et de
+  conversation ; ajuster `JARVIS_WAKE_THRESHOLD`.
+- Taux de détection de « hey Jarvis » et de « Jarvis » seul, avec l’accent de
+  l’utilisateur, à 1 m et à 3 m.
+- CPU du processus en veille (Moniteur d’activité) et effet sur la batterie.
+- Premier téléchargement du modèle, puis fonctionnement hors ligne.
+- Tenue d’une session en veille plus de 15 min, puis réveil avec contexte
+  conservé (« de quoi parlions-nous ? »).
+- Enchaînement « Jarvis, quelle heure est-il » sans pause.

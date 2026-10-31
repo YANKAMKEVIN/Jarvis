@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+import unittest.mock
 
 from jarvis.capabilities.results import ToolResult
 from jarvis.live.registry import SAFE_MODE_ALLOWED, create_live_registry
@@ -33,6 +34,14 @@ class ReadOnlyModeTests(unittest.TestCase):
         )
         tools = {t.info.name: t for t in registry.livekit_tools()}
         return registry, tools, audio
+
+    def test_every_tool_call_is_journaled_by_name_only(self):
+        _, tools, _ = self._registry()
+        with unittest.mock.patch("jarvis.live.registry.log_event") as logged:
+            asyncio.run(tools["get_volume"]())   # allowed in safe mode
+            asyncio.run(tools["set_volume"](80))  # guarded
+        self.assertEqual([c.args for c in logged.call_args_list],
+                         [("tool", "get_volume"), ("tool", "set_volume")])
 
     def test_defaults_off(self):
         registry, _, _ = self._registry()

@@ -1,6 +1,8 @@
 import asyncio
 from jarvis.planner.resources import DesktopGate
+from jarvis.activity import default_store as default_activity_store, log_event
 from jarvis.live.productivity import productivity_tools, checklist_store
+from jarvis.live.extensions import extension_tools
 import functools
 import inspect
 import uuid
@@ -109,6 +111,9 @@ SAFE_MODE_ALLOWED = frozenset({
     "system_snapshot", "top_processes", "system_usage_history", "check_anomalies",
     # Activity / privacy introspection and safe stops.
     "recent_activity", "recent_missions", "privacy_overview", "task_status",
+    # Extensions: listing MCP tools and reading installed skills. Calling an
+    # MCP tool (call_mcp_tool) stays blocked: its effect is unknown to Jarvis.
+    "list_mcp_tools", "list_skills", "use_skill",
     "list_scheduled_messages", "cancel_scheduled_message",
     "cancel_action", "cancel_task", "pause_task", "resume_task",
     # Missions may still be launched: their own outward sub-actions run through
@@ -359,6 +364,8 @@ class ToolRegistry:
             await asyncio.gather(*pending, return_exceptions=True)
         if self.tasks is not None:
             await self.tasks.wait()
+        if hasattr(self, "mcp_hub"):
+            await self.mcp_hub.aclose()
 
     @staticmethod
     def _default_knowledge() -> KnowledgeCapability:
@@ -431,15 +438,18 @@ class ToolRegistry:
         gets a refusal result if it calls a blocked tool in safe mode. The flag
         is read live, so entering safe mode also stops a mission's outward
         sub-actions already in flight (they share these guarded tools).
+
+        Every call is also logged by name (never its arguments) to the local
+        activity journal behind the dashboard's Jarvis tab.
         """
         name = tool.info.name
-        if name in SAFE_MODE_ALLOWED:
-            return tool
+        allowed = name in SAFE_MODE_ALLOWED
         inner = tool._func
 
         @functools.wraps(inner)
         async def wrapper(*args, **kwargs):
-            if getattr(self, "read_only_mode", False):
+            log_event("tool", name)
+            if not allowed and getattr(self, "read_only_mode", False):
                 return ToolResult.failure(
                     action=name,
                     message=(
@@ -466,6 +476,8 @@ class ToolRegistry:
             counts["checklists"] = checklist_store(self).clear()
         if scope in ("missions", "all"):
             counts["missions"] = self.memory.clear_missions()
+        if scope in ("activity", "all"):
+            counts["activity"] = default_activity_store().clear()
         total = sum(counts.values())
         return ToolResult.success(
             action="clear_personal_data",
@@ -617,13 +629,20 @@ class ToolRegistry:
         return decorate
 
     def livekit_tools(self) -> list[Any]:
-        @function_tool(name="dance_avatar", description="Sur demande explicite de danser ou tu sais danser, transmet une danse 2D de huit secondes au compagnon desktop. stop=True arrête la danse, sans arrêter le vocal. Ne joue aucune musique. Le desktop peut refuser si animations réduites ou apparence abstraite.")
+        # The avatar on screen IS Jarvis: results are worded so the model says
+        # "je danse", never that a command or request was sent to something else.
+        @function_tool(name="dance_avatar", description="Te fait danser toi-même, Jarvis, à l'écran pendant huit secondes, quand l'utilisateur te demande de danser ou si tu sais danser. stop=True arrête ta danse, sans couper le vocal. Aucune musique. Si les animations sont réduites ou ton apparence est abstraite, l'écran l'indique.")
         async def dance_avatar(stop: bool = False) -> dict:
             observer = self.presentation_observer
             if observer is None:
-                return {"ok": False, "error": "desktop_unavailable"}
+                return {"ok": False, "error": "desktop_unavailable",
+                        "message": "Tu ne peux pas danser ici : ton avatar n'est pas affiché. Dis-le simplement, à la première personne."}
             observer({"type": "avatar_dance", "action": "stop" if stop else "start"})
-            return {"ok": True, "status": "request_delivered", "message": "Demande transmise au compagnon; animation selon apparence et réglages."}
+            if stop:
+                return {"ok": True, "status": "stopped",
+                        "message": "Tu t'arrêtes de danser. Dis-le en quelques mots, à la première personne."}
+            return {"ok": True, "status": "dancing",
+                    "message": "Tu danses maintenant, pendant huit secondes. Dis-le tout de suite à la première personne, avec une phrase courte et joueuse (« Et je danse ! »). Ne parle ni de commande, ni de demande, ni de compagnon."}
 
         @function_tool(
             name="set_volume",
@@ -3661,17 +3680,24 @@ class ToolRegistry:
             memory_count = mem.data.get("count", 0) if mem.ok else 0
             activity_count = len(act.data.get("episodes", [])) if act.ok else 0
             mission_count = missions.data.get("count", 0) if missions.ok else 0
+            try:
+                journal = default_activity_store()
+                tool_calls = await asyncio.to_thread(journal.count, "tool")
+            except Exception:
+                tool_calls = 0
             return ToolResult.success(
                 action="privacy_overview",
                 message=(
                     f"Je garde {memory_count} souvenir(s), {len(scheduled)} message(s) "
                     f"planifie(s) et {len(reminders)} rappel(s) en attente ; "
                     f"{activity_count} action(s) recente(s) au journal ; "
-                    f"{mission_count} mission(s) dans l'historique ; {checklists_count} checklist(s) locale(s)."
+                    f"{mission_count} mission(s) dans l'historique ; {checklists_count} checklist(s) locale(s) ; "
+                    f"{tool_calls} appel(s) d'outil au journal d'activite (noms seulement)."
                 ),
                 memory_count=memory_count,
                 activity_count=activity_count,
                 mission_count=mission_count,
+                tool_call_count=tool_calls,
                 scheduled_count=len(scheduled),
                 reminder_count=len(reminders),
                 checklists_count=checklists_count,
@@ -3683,7 +3709,8 @@ class ToolRegistry:
                 "EFFACE des donnees que Jarvis garde, apres confirmation. scope : "
                 "'context' (notes de contexte de conversation), 'reminders' (rappels "
                 "en attente), 'scheduled' (messages planifies en attente), 'missions' "
-                "(historique des missions), ou 'all' (ces donnees et les checklists). "
+                "(historique des missions), 'activity' (journal des outils, reveils et alertes "
+                "du tableau de bord), ou 'all' (ces donnees et les checklists). "
                 "scope checklists efface uniquement les checklists. Renvoie un token et requires_confirmation : annonce ce "
                 "qui sera efface, puis confirm_action seulement sur un oui clair. Pour "
                 "effacer un souvenir precis, utilise plutot forget."
@@ -3694,10 +3721,10 @@ class ToolRegistry:
             """Prepare a confirmed purge of the data Jarvis stores."""
             debug_live("tool_call", tool="clear_personal_data", scope=scope)
             choice = (scope or "all").strip().lower()
-            if choice not in ("context", "reminders", "scheduled", "checklists", "missions", "all"):
+            if choice not in ("context", "reminders", "scheduled", "checklists", "missions", "activity", "all"):
                 return ToolResult.failure(
                     action="clear_personal_data",
-                    message="scope doit etre context, reminders, scheduled, checklists, missions ou all.",
+                    message="scope doit etre context, reminders, scheduled, checklists, missions, activity ou all.",
                     error_code="invalid_scope",
                 ).to_livekit_dict()
 
@@ -3903,6 +3930,7 @@ class ToolRegistry:
 
         tools.append(dance_avatar)
         tools.extend(productivity_tools(self))
+        tools.extend(extension_tools(self))
 
         # Single safe-mode enforcement point: every voice and planner tool is
         # routed through the read-only guard, so a mission cannot perform an

@@ -76,20 +76,27 @@ def test_selector_keyboard_and_live_modes_preserve_session(app, tmp_path, monkey
         dialog.grid.setCurrentRow(0)
         QTest.keyClick(dialog.grid, Qt.Key.Key_Right)
         QTest.keyClick(dialog.grid, Qt.Key.Key_Space)
-        assert c.appearance == 'neo_guide'
+        assert c.appearance == 'neo_guide' and dialog.isVisible()  # live preview
+        QTest.keyClick(dialog, Qt.Key.Key_Escape)  # cancel restores the original
+        assert not dialog.isVisible() and c.appearance == 'nova_bot'
+        shell.show_appearances()
+        dialog = shell.appearance_dialog
         dialog.grid.setCurrentRow(2)
-        QTest.keyClick(dialog.grid, Qt.Key.Key_Return)
-        assert c.appearance == 'kitsune'
+        QTest.keyClick(dialog.grid, Qt.Key.Key_Return)  # Return validates and closes
+        assert c.appearance == 'kitsune' and not dialog.isVisible()
+        shell.show_appearances()
+        dialog = shell.appearance_dialog
         dialog.grid.setCurrentRow(1)
         QTest.keyClick(dialog.grid, Qt.Key.Key_Space)
+        from PySide6.QtWidgets import QDialogButtonBox
+        dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).click()  # Valider
+        assert not dialog.isVisible()
         assert c.voice_worker is worker and c.missions is missions
         assert len(c.missions) == 2
         assert len([p for p in shell.full.assistant.mission.panels if p.isVisible()]) == 2
         for panel in (shell.full.assistant, shell.compact.assistant, shell.orb_window):
             assert panel.orb.appearance == 'neo_guide'
         assert shell.appearance_preference.load() == 'neo_guide'
-        QTest.keyClick(dialog, Qt.Key.Key_Escape)
-        assert not dialog.isVisible()
         shell.set_appearance('invalid')
         assert c.appearance == 'nova_bot'
         c.reduced_motion = True
@@ -224,3 +231,21 @@ def test_abstract_widget_moves_at_idle_and_responds_to_silent_interactions(app, 
     finally:
         orb.hide()
         orb.deleteLater()
+
+
+def test_selector_click_previews_and_window_close_cancels(app):
+    dialog = AvatarSelector('nova_bot')
+    seen = []
+    dialog.chosen.connect(seen.append)
+    dialog.show()
+    item = dialog.grid.item(2)
+    rect = dialog.grid.visualItemRect(item)
+    QTest.mouseClick(dialog.grid.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
+    assert seen == ['kitsune'] and dialog.isVisible()  # a click only previews
+    dialog.close()  # the window's close button
+    assert seen == ['kitsune', 'nova_bot'] and not dialog.isVisible()
+    dialog.show()
+    dialog.grid.itemActivated.emit(dialog.grid.item(3))  # double-click
+    assert seen[-1] == 'digital_avatar' and dialog.result() == dialog.DialogCode.Accepted
+    dialog.close()
+    assert seen[-1] == 'digital_avatar'  # closing after Valider keeps the choice

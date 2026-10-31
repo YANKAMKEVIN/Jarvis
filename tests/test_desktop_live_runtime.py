@@ -578,3 +578,22 @@ def test_continuous_cancellation_producer_cannot_starve_mute():
             runtime.stop()
             await asyncio.wait_for(task, 1)
     asyncio.run(scenario())
+
+
+def test_jarvis_introduces_itself_once_then_only_welcomes_back(tmp_path, monkeypatch):
+    from jarvis.desktop.live_runtime import session_greeting
+    from jarvis.live.prompts import LIVE_SESSION_GREETING, LIVE_SESSION_WELCOME_BACK
+    monkeypatch.setenv('JARVIS_INTRODUCED_PATH', str(tmp_path / 'state' / 'introduced'))
+    assert session_greeting() == LIVE_SESSION_GREETING
+    assert session_greeting() == LIVE_SESSION_WELCOME_BACK
+    assert session_greeting() == LIVE_SESSION_WELCOME_BACK
+    assert 'ne te présente pas' in LIVE_SESSION_WELCOME_BACK
+
+
+def test_unwritable_marker_falls_back_to_introduction(tmp_path, monkeypatch):
+    from jarvis.desktop.live_runtime import session_greeting
+    from jarvis.live.prompts import LIVE_SESSION_GREETING
+    blocker = tmp_path / 'file'
+    blocker.write_text('')
+    monkeypatch.setenv('JARVIS_INTRODUCED_PATH', str(blocker / 'introduced'))
+    assert session_greeting() == LIVE_SESSION_GREETING
