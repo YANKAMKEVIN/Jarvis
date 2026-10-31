@@ -217,3 +217,40 @@ def test_system_default_change_requests_recovery_but_explicit_devices_do_not():
         audio._output_callback(bytearray(960),480,NS(outputBufferDacTime=0,currentTime=0),None)
         audio.check_health();audio.close()
     asyncio.run(scenario())
+
+
+def test_dance_music_mixes_under_speech_and_keeps_the_microphone_shut():
+    from array import array
+    from jarvis.desktop.dance_music import PEAK, dance_track
+
+    track = dance_track(1.0, SAMPLE_RATE)
+    samples = array('h', track)
+    assert len(samples) == SAMPLE_RATE and samples[0] == 0 and samples[-1] == 0  # faded
+    assert max(map(abs, samples)) <= PEAK
+    assert dance_track(1.0, SAMPLE_RATE) is track  # generated once
+
+    async def scenario():
+        audio = LocalAudio(asyncio.get_running_loop(),
+            NS(RawOutputStream=FakeStream, RawInputStream=FakeStream))
+        audio.open()
+        try:
+            loop = array('h', [1000] * 960).tobytes()
+            audio.play_music(loop)
+            await audio.output.capture_frame(frame())  # speech samples of 1
+            audio.output.flush()
+            out = bytearray(960)
+            timing = NS(outputBufferDacTime=0, currentTime=0)
+            audio._output_callback(out, 480, timing, None)
+            assert set(array('h', bytes(out))) == {1 + 350}  # ducked under speech
+            assert audio.input_suppressed
+            audio._input_callback(out, 480, None, None)
+            assert audio.input.frames.empty()  # Gemini never hears the loop
+            audio._output_callback(out, 480, timing, None)
+            assert set(array('h', bytes(out))) == {1000}  # full level once silent
+            audio.play_music(loop)
+            audio.stop_music()
+            audio._output_callback(out, 480, timing, None)
+            assert not any(out)
+        finally:
+            audio.close()
+    asyncio.run(scenario())

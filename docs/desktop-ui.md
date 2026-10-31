@@ -530,10 +530,33 @@ revérifiés par la suite ciblée ; la validation native reste à faire sur Mac.
 
 Deux fenêtres accessibles depuis le menu de la barre (tray) :
 
-- **Consommation (tokens)…** — graphes natifs QtCharts : tokens par jour et
-  répartition par modèle, avec un résumé (générés / entrée / cache / sessions).
-- **Activité machine…** — snapshot live (CPU, mémoire, disque, batterie) et
-  courbes CPU & mémoire sur 24 h.
+- **Consommation (tokens)…** : des cartes de chiffres en haut (tokens et
+  évolution par rapport à la période d'avant, tokens générés, sessions, coût
+  équivalent API), puis les tokens par jour, par modèle et par projet.
+  - Le graphe par jour suit la période choisie. Les jours sans activité
+    apparaissent comme des trous. Au-delà d'un mois, il passe en semaines.
+  - L'unité s'adapte aux valeurs (k, M ou Md), avec des graduations rondes.
+  - Les répartitions par modèle et par projet sont en barres horizontales, avec
+    la valeur écrite au bout de chaque barre et les modèles nommés en clair
+    (« Opus 5.5 »).
+  - Le jour (ou la semaine) en cours est en blanc et le pic en ambre ; la
+    légende du panneau donne la date et le volume du pic.
+  - Le nom d'un projet est retrouvé sur le disque. `kanto-2026` reste
+    `kanto-2026`, et ses worktrees y sont rattachés. Ce changement réindexe une
+    fois les transcripts (`PRAGMA user_version`).
+- **Activité machine…** : des cartes CPU, mémoire, disque et batterie, avec la
+  mémoire en Go. La carte passe en rose au-dessus du seuil d'alerte.
+  - Les courbes processeur et mémoire ont un vrai axe horaire, et le seuil
+    d'alerte en pointillés.
+  - Les applications qui prennent le plus de mémoire sont listées, avec leurs
+    processus d'aide regroupés (onglets Chrome, Claude Code…).
+  - Les applications ont chacune une jauge proportionnelle à la plus lourde,
+    en Mo ou en Go.
+  - La fenêtre se met à jour toute seule toutes les 30 s tant qu'elle est
+    affichée, et indique depuis quand (« mis à jour il y a 12 s »).
+- Dans les deux fenêtres, le survol d'une barre ou d'une courbe affiche la
+  valeur exacte. Les titres sont à gauche avec l'unité, la grille ne garde que
+  les lignes horizontales, et les courbes sont remplies d'un dégradé.
 
 Les données se chargent sur un **thread de fond**, de sorte qu'une passe
 d'indexation à froid ne fige jamais l'interface. Les réponses vocales
@@ -541,8 +564,7 @@ correspondantes (consommation, activité machine) utilisent aussi la vue Cartes.
 Jarvis peut en outre lancer des sessions Claude depuis la voix — après
 confirmation ; voir le [guide des capacités](capabilities-v2.md).
 
-Rendus Qt réels alimentés par des données réelles (historique machine simulé
-pour l'illustration) :
+Rendus Qt réels, avec les données réelles du Mac (30 octobre 2026) :
 
 ![Tableau de bord consommation de tokens](screenshots/usage-dashboard.png)
 

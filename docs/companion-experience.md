@@ -176,8 +176,21 @@ Dans les commandes du compagnon (`•••` ou clic droit), **Faire danser** la
 chorégraphie de huit secondes, y compris dans `jarvis-desktop --demo --compact`.
 En session vocale, demander « Danse », « Tu sais danser ? » ou « Montre-moi une
 danse » utilise la commande de présentation dédiée. « Arrête de danser » arrête
-la danse sans fermer le vocal ni les missions. La reconnaissance réelle par
-Gemini reste à essayer avec un micro.
+la danse sans fermer le vocal ni les missions. Le personnage, c'est Jarvis : il
+parle de sa danse à la première personne (« Et je danse ! »), jamais d'une
+commande envoyée ou d'un compagnon. À « Tu sais danser ? », il répond oui et le
+prouve aussitôt. Il ne danse jamais en silence : une courte phrase joueuse,
+différente à chaque fois, sans décrire l'animation qu'il ne voit pas.
+
+Pendant la session vocale, une petite boucle musicale de huit secondes
+accompagne la danse (120 bpm, générée sur le Mac, aucun fichier ni
+téléchargement). Elle passe par la sortie de la voix, assez bas pour rester en
+fond, et baisse encore quand Jarvis parle. Comme les sons d'alerte, elle ferme le
+micro pendant qu'elle joue : Gemini ne l'entend pas, et la danse s'arrête
+toujours par Échap ou par le menu. La case **Musique pendant la danse** du menu
+du compagnon la coupe (réglage `dance/music`, activé par défaut). Sans session
+vocale, la danse reste muette. La reconnaissance réelle par Gemini reste à
+essayer avec un micro.
 
 NovaBot, Neo Guide, Kitsune, Digital Avatar, Synth Companion et Holo Face
 utilisent leurs poses 2D existantes : balancements, petits bonds, poses alternées

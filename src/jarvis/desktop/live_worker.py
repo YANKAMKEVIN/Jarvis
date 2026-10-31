@@ -27,6 +27,9 @@ class LiveWorker(QThread):
     def set_push_to_talk(self,enabled):
         self.runtime.set_push_to_talk(enabled)
 
+    def set_wake_word(self, enabled):
+        self.runtime.set_wake_word(enabled)
+
     def finish_push_to_talk(self):
         self.runtime.finish_push_to_talk()
 
@@ -41,6 +44,12 @@ class LiveWorker(QThread):
 
     def set_sounds(self, enabled):
         self.runtime.set_sounds(enabled)
+
+    def play_dance_music(self, seconds):
+        return self.runtime.play_dance_music(seconds)
+
+    def stop_dance_music(self):
+        self.runtime.stop_dance_music()
 
     def cancel_task(self, task_id=None):
         return self.runtime.cancel_task(task_id)

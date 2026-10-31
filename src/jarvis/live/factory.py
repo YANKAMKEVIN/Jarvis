@@ -4,7 +4,7 @@ from jarvis.live.prompts import LIVE_SYSTEM_PROMPT
 from jarvis.live.tools import create_live_registry
 
 
-def create_realtime_model(google_module, config: LiveConfig, *, realtime_input_config=None):
+def create_realtime_model(google_module, config: LiveConfig, *, realtime_input_config=None, **session_options):
     debug_live(
         "create_realtime_model",
         model=config.model,
@@ -12,6 +12,7 @@ def create_realtime_model(google_module, config: LiveConfig, *, realtime_input_c
         temperature=config.temperature,
     )
     options = {} if realtime_input_config is None else {"realtime_input_config": realtime_input_config}
+    options.update(session_options)
     return google_module.realtime.RealtimeModel(
         model=config.model,
         voice=config.voice,

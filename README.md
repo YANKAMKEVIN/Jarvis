@@ -350,3 +350,8 @@ Dix capacités vocales supplémentaires : minuteurs multiples, recherche et ajou
 checklists persistantes, disponibilités et conflits d’agenda, comparaison et extraction
 de documents, dépendances et pause des missions en attente.
 Voir [les commandes et leurs limites](docs/capabilities-v2.md).
+
+Extensions : Jarvis se branche sur des serveurs **MCP** (même format que Claude Desktop,
+dans `~/Library/Application Support/Jarvis/mcp.json`) et lit des **skills** `SKILL.md`
+(format agentskills.io). Tout appel MCP non pré-approuvé demande une confirmation orale.
+Voir [MCP et skills](docs/extensions-mcp-skills.md).
