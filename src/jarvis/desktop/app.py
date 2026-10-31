@@ -123,6 +123,7 @@ class Controller(QObject):
         from jarvis.desktop.avatar_dance import AvatarDance
         self.dance = AvatarDance(self)
         self.dance_music = True
+        self.backchannel = True
         self.ptt_hotkey_message="Maintenez ⌘⌥Espace, ou Espace lorsque le compagnon a le focus."
         self.ptt_enabled=False
         self.ptt_held=False
@@ -717,6 +718,7 @@ class VoicePanel(QWidget):
         self.orb.set_appearance(c.appearance)
         self.orb.dance = c.dance
         self.orb.state = c.avatar_state()
+        self.orb.backchannel_enabled = c.backchannel
         self.orb.update()
         self.controls.active = active
         self.controls.refresh()
@@ -979,6 +981,7 @@ class DesktopShell:
         controller.devices_changed.connect(self.save_devices)
         controller.sounds_enabled = self.settings.value("audio/sounds", False) in (True, "true")
         controller.dance_music = self.settings.value("dance/music", True) in (True, "true")
+        controller.backchannel = self.settings.value("appearance/backchannel", True) in (True, "true")
         controller.reduced_motion = self.settings.value("appearance/reduced_motion", controller.reduced_motion) in (True, "true")
         from jarvis.desktop.appearances import AppearancePreference
         self.appearance_preference = AppearancePreference(self.settings)
@@ -1175,6 +1178,11 @@ class DesktopShell:
         self.settings.setValue('dance/music', bool(enabled))
         if not enabled and self.controller.voice_worker:
             self.controller.voice_worker.stop_dance_music()
+
+    def set_backchannel(self, enabled):
+        self.controller.backchannel = bool(enabled)
+        self.settings.setValue('appearance/backchannel', bool(enabled))
+        self.controller.changed.emit()
 
     def set_wake_word(self, enabled):
         if enabled == self.controller.wake_enabled:

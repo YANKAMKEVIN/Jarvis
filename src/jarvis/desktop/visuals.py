@@ -7,6 +7,7 @@ from PySide6.QtGui import QCursor, QColor, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import QWidget
 from jarvis.desktop.avatar_motion import (ABSTRACT_IDS, interaction_weights,
     ease_interaction, blended_motion, sample_motion, paint_details)
+from jarvis.desktop.backchannel import NEUTRAL, Backchannel
 
 
 def tint(color, alpha):
@@ -57,6 +58,11 @@ class Orb(QWidget):
         self.interaction = interaction_weights('off')
         self.motion = True
         self.target = self.energy = 0.0
+        # Silent "I'm listening" cues while the user talks (see backchannel.py).
+        self.backchannel = Backchannel()
+        self.backchannel_enabled = True
+        self.mic_level = 0.0
+        self.listen = NEUTRAL
         # Eased presentation state, distinct from the raw logical state above.
         self.accent = QColor(_DEFAULT_COLOR)
         self.glow = 0.0
@@ -90,12 +96,15 @@ class Orb(QWidget):
         else:
             self.timer.stop()
             self.energy = 0.0
+            self.backchannel.reset()
+            self.listen = NEUTRAL
         self.update()
 
     def set_levels(self, incoming, outgoing):
         # Perceptual scale, independent of decorative idle breathing.
         level = outgoing if outgoing > 0 else incoming
         self.target = min(1.0, math.sqrt(max(0.0, level)) * 2.2)
+        self.mic_level = max(0.0, incoming)
 
     def greet(self):
         if self.motion:self.wave_ticks=45;self.update()
@@ -115,6 +124,9 @@ class Orb(QWidget):
         # Ease the presentation toward the current state so transitions glide.
         self.glow += (self._target_glow() - self.glow) * 0.08
         self.accent = _ease_color(self.accent, self._target_color(), 0.09)
+        dancing = bool(self.dance and self.dance.active)
+        self.listen = self.backchannel.update(self.state, self.mic_level, self.timer.interval()/1000,
+                                              self.backchannel_enabled and not dancing)
         self.update()
 
     def set_appearance(self, appearance):
@@ -157,6 +169,14 @@ class Orb(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(halo)
         p.drawEllipse(QPointF(), side*.49, side*.49)
+        listen = self.listen if self.motion and self.backchannel_enabled else NEUTRAL
+        if listen.attention > .01:
+            # A thin ring that breathes with the user's voice: "I hear you".
+            radius = side*(.43 + .025*listen.pulse - .006*listen.nod)
+            p.setPen(QPen(tint(accent, (60 + 150*listen.pulse) * listen.attention), 1.5 + 1.5*listen.pulse))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(), radius, radius)
+            p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.setPen(QPen(tint(accent, 65), .8))
         if self.pedestal:
@@ -169,8 +189,11 @@ class Orb(QWidget):
             from jarvis.desktop.avatar_dance import dance_frame
             frame = dance_frame(self.appearance, self.dance.elapsed)
         p.translate(frame.x * side + (self.gaze[0]*side*.007 if self.motion and self.tracking else 0), frame.y * side)
-        p.rotate(frame.rotation)
-        p.scale(frame.sx, frame.sy)
+        if listen.attention > .01 or listen.nod:
+            # Lean in slightly while listening; nod = a small dip with a forward tilt.
+            p.translate(0, side*(.006*listen.attention + .024*listen.nod))
+        p.rotate(frame.rotation + 2*listen.nod)
+        p.scale(frame.sx * (1 + .006*listen.pulse), frame.sy * (1 + .006*listen.pulse - .015*listen.nod))
         def draw(frame, opacity):
             size = frame.size().scaled(int(side*.86), int(side*.86), Qt.AspectRatioMode.KeepAspectRatio)
             rect = QRectF(-size.width()/2, -size.height()/2, size.width(), size.height())

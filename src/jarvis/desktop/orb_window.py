@@ -91,6 +91,7 @@ class OrbWindow(QWidget):
         self.orb.set_appearance(c.appearance)
         self.orb.dance = c.dance
         self.orb.state = c.avatar_state()
+        self.orb.backchannel_enabled = c.backchannel
         self.orb.set_motion(not c.reduced_motion)
         self.orb.update()
         states = {'off': 'Micro fermé', 'starting': 'Connexion…', 'listening': 'En écoute',
