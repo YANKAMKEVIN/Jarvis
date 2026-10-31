@@ -214,6 +214,29 @@ une phrase avec une petite pause au milieu et le fonctionnement du micro coupé.
 Si le délai persiste, comparer casque et haut-parleurs permet de distinguer la
 protection anti-écho d'un problème de détection ou de connexion.
 
+## Interrompre Jarvis à la voix (annulation d’écho, expérimental)
+
+`JARVIS_ECHO_CANCEL=1` (dans `~/Library/Application Support/Jarvis/desktop.env`
+ou le `.env` du projet) remplace PortAudio par un seul `AVAudioEngine` en mode
+Voice Processing I/O, l’annulation d’écho de FaceTime. Le haut-parleur et le
+micro passent par ce même moteur : l’annuleur connaît exactement ce que Jarvis
+joue et le retire du micro. L’alternat est alors levé pendant la parole de
+Jarvis ; la VAD de Gemini entend Kevin et Jarvis s’interrompt (comme avec
+l’option casque).
+
+- Désactivé par défaut. Il faut `pyobjc-framework-AVFoundation` (extra
+  `desktop`).
+- Seulement avec les périphériques système par défaut : un choix explicite dans
+  Réglages garde PortAudio et l’alternat.
+- Si le moteur ne démarre pas (pas d’AVFoundation, refus de Core Audio, micro
+  indisponible), Jarvis revient seul à l’alternat.
+- La musique de danse reste protégée par l’alternat, même avec l’annulation.
+- Le « ducking » de macOS (baisse du son des autres apps) est réglé au minimum.
+
+Mesure sur le Mac, pièce calme et volume habituel :
+`PYTHONPATH=src .venv/bin/python scripts/check_echo_cancel.py`. Une corrélation
+proche de 0 avec l’annulation, nettement plus haute sans, confirme l’effet.
+
 ## Mot d’éveil « Jarvis » (veille locale)
 
 Option désactivée par défaut : **Réglages → Réveiller Jarvis en disant « Jarvis »

@@ -6,6 +6,7 @@ PortAudio callbacks never touch Qt or the asyncio session directly.
 from __future__ import annotations
 
 import asyncio
+import logging
 from array import array
 from math import pi, sin
 from collections import deque
@@ -21,6 +22,8 @@ SAMPLE_RATE = 24000
 BLOCK_SAMPLES = 480  # 20 ms, mono PCM16
 ECHO_TAIL_SECONDS = 0.25
 CALLBACK_TIMEOUT_SECONDS = 3.0
+
+logger = logging.getLogger(__name__)
 
 
 def mix(pcm, music, gain):
@@ -177,10 +180,21 @@ class SpeakerOutput(AudioOutput):
 
 
 class LocalAudio:
-    def __init__(self, loop, devices=None, clock=monotonic):
+    def __init__(self, loop, devices=None, clock=monotonic, echo_cancel=None):
         if devices is None:
             import sounddevice as devices
         self.devices = devices
+        self.streams = devices  # Becomes the voice-processing engine when it opens.
+        if echo_cancel is None:
+            from jarvis.desktop.echo_cancel import echo_cancel_requested
+            echo_cancel = echo_cancel_requested()
+        if echo_cancel is True:
+            def echo_cancel():
+                from jarvis.desktop.echo_cancel import VoiceProcessingDevices
+                return VoiceProcessingDevices()
+        self.echo_cancel_factory = echo_cancel or None
+        self.echo_cancelled = False  # True only while Apple's canceller runs.
+        self.echo_cancel_error = None
         self.input = MicrophoneInput(lambda: self.mic_open and self.input_suppressed)
         self.output = SpeakerOutput(loop)
         self.microphone = None
@@ -344,7 +358,10 @@ class LocalAudio:
             guarded = True  # Never let the microphone hand the loop to Gemini.
         if self.quiet:pcm = bytes(len(data))
         self.output_meter = (pcm_level(pcm), self.clock())
-        if any(pcm) and guarded and not self.allow_barge_in:
+        # Echo cancellation removes Jarvis's voice from the microphone, so
+        # Gemini's VAD can hear Kevin interrupt; the dance loop stays guarded
+        # (loud, rhythmic, untested against the canceller).
+        if any(pcm) and guarded and not self.allow_barge_in and (not self.echo_cancelled or music):
             # Half duplex, not acoustic echo cancellation: don't feed Jarvis's
             # own speaker audio back to Gemini. Include hardware latency and
             # a short room echo tail; explicit mute still owns the device.
@@ -356,23 +373,47 @@ class LocalAudio:
 
     def open(self, microphone=True):
         self.default_snapshot=self.read_defaults()
+        # Voice processing follows the system devices only: an explicit choice
+        # in Réglages keeps PortAudio and the half-duplex guard.
+        if self.echo_cancel_factory and self.input_device is None and self.output_device is None:
+            engine = None
+            try:
+                engine = self.echo_cancel_factory()
+                self.streams = engine
+                self.echo_cancelled = True
+                self._open_streams(microphone)
+                return
+            except Exception as error:
+                self.echo_cancel_error = f"{type(error).__name__}: {error}"
+                logger.warning("Echo cancellation unavailable, half duplex kept: %s", self.echo_cancel_error)
+                self.echo_cancelled = False
+                self._close_streams()
+                if engine is not None:
+                    try:
+                        engine.shutdown()
+                    except Exception:
+                        pass
+                self.streams = self.devices
         try:
-            self.speaker = self.devices.RawOutputStream(device=self.output_device, samplerate=SAMPLE_RATE,
-                channels=1, dtype="int16", blocksize=BLOCK_SAMPLES, callback=self._output_callback)
-            self.last_output_callback = self.clock()
-            self.speaker.start()
-            if microphone:
-                self.set_microphone(True)
+            self._open_streams(microphone)
         except Exception:
             self.close()
             raise
+
+    def _open_streams(self, microphone):
+        self.speaker = self.streams.RawOutputStream(device=self.output_device, samplerate=SAMPLE_RATE,
+            channels=1, dtype="int16", blocksize=BLOCK_SAMPLES, callback=self._output_callback)
+        self.last_output_callback = self.clock()
+        self.speaker.start()
+        if microphone:
+            self.set_microphone(True)
 
     def set_microphone(self, enabled):
         if enabled:
             self.input.clear()
             try:
                 if self.microphone is None:
-                    self.microphone = self.devices.RawInputStream(device=self.input_device, samplerate=SAMPLE_RATE,
+                    self.microphone = self.streams.RawInputStream(device=self.input_device, samplerate=SAMPLE_RATE,
                         channels=1, dtype="int16", blocksize=BLOCK_SAMPLES, callback=self._input_callback)
                 self.last_input_callback = self.clock()
                 self.microphone.start()
@@ -408,6 +449,10 @@ class LocalAudio:
         self.input.clear()
         self.output.closed = True
         self.output.clear_buffer()
+        if self._close_streams():
+            raise RuntimeError("Audio device cleanup failed") from None
+
+    def _close_streams(self):
         failures = []
         for name in ("microphone", "speaker"):
             stream = getattr(self, name)
@@ -422,5 +467,4 @@ class LocalAudio:
                     failures.append(error)
                 finally:
                     setattr(self, name, None)
-        if failures:
-            raise RuntimeError("Audio device cleanup failed") from None
+        return failures

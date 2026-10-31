@@ -1,5 +1,6 @@
 # Optional desktop shell; text, voice and Live modes remain independent.
 PySide6>=6.8,<7
 pyobjc-framework-Cocoa>=11,<13; sys_platform == 'darwin'
-# Camera permission prompt for the packaged app (Qt cannot request it there).
+# AVFoundation: camera permission prompt for the packaged app (Qt cannot
+# request it there) and opt-in echo cancellation (JARVIS_ECHO_CANCEL=1).
 pyobjc-framework-AVFoundation>=11,<13; sys_platform == 'darwin'

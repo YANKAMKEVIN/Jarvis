@@ -59,7 +59,8 @@ def prepare_environment():
     allowed = {"GOOGLE_API_KEY", "JARVIS_GEMINI_LIVE_MODEL", "JARVIS_GEMINI_LIVE_VOICE",
                "JARVIS_GEMINI_LIVE_TEMPERATURE", "JARVIS_VISION_ENABLED",
                "JARVIS_PLANNER_BACKEND", "JARVIS_PLANNER_MODEL", "JARVIS_GEMINI_PLANNER_MODEL",
-               "JARVIS_PLANNER_NUM_CTX", "JARVIS_PLANNER_TIMEOUT", "JARVIS_LLM_MODEL"}
+               "JARVIS_PLANNER_NUM_CTX", "JARVIS_PLANNER_TIMEOUT", "JARVIS_LLM_MODEL",
+               "JARVIS_ECHO_CANCEL"}
     # Explicit terminal env wins, then the user's desktop config, then repo .env.
     for path in (Path.home() / "Library/Application Support/Jarvis/desktop.env",
                  Path(__file__).resolve().parents[3] / ".env"):
@@ -409,7 +410,8 @@ class LiveRuntime:
         self.user_state = event.new_state
         if previous == "speaking" and self.user_state != "speaking":
             self.emit(self.turn_progress.received())
-        if self.user_state == "speaking" and self.agent_state == "speaking" and self.profile.get("headphones"):
+        echo_free = self.profile.get("headphones") or getattr(self.components and self.components.audio, "echo_cancelled", False) is True
+        if self.user_state == "speaking" and self.agent_state == "speaking" and echo_free:
             self.interrupt_requested.set()
 
     def _can_announce(self):
