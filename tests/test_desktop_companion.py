@@ -142,3 +142,31 @@ def test_menu_stays_available_and_reflects_live_privacy_and_connection_states(co
     assert window.orb.timer.isActive()
     shell.show_full()
     assert not window.orb.timer.isActive()
+
+
+def test_backchannel_menu_toggle_persists_and_reaches_every_avatar(companion):
+    app,c,shell=companion
+    window=shell.compact
+    assert c.backchannel and window.orb.backchannel_enabled
+    assert not window.make_menu().actions_by_id['backchannel'].isEnabled()  # Reduced motion: nothing to show.
+    c.reduced_motion=False
+    entry=window.make_menu().actions_by_id['backchannel']
+    assert entry.isEnabled() and entry.isChecked()
+    entry.trigger()
+    app.processEvents()
+    assert not c.backchannel and shell.settings.value('appearance/backchannel') in (False,'false')
+    assert not window.orb.backchannel_enabled and not shell.orb_window.orb.backchannel_enabled
+    assert not shell.full.assistant.orb.backchannel_enabled
+
+
+def test_avatar_nods_silently_at_a_short_pause_while_listening(companion):
+    app,c,shell=companion
+    orb=shell.compact.orb
+    orb.set_motion(True);orb.state='listening'
+    nods=[]
+    for level in [.08]*30+[.003]*27:
+        orb.set_levels(level,0.0);orb.tick();nods.append(orb.listen.nod)
+    assert orb.listen.attention>.5 and max(nods)>.9
+    orb.grab()                                # paints the ring and the nod without error
+    orb.backchannel_enabled=False;orb.tick()
+    assert orb.listen.attention==0 and orb.listen.nod==0
