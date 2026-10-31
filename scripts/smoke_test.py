@@ -383,6 +383,15 @@ def group_textedit(ctx: Context, step) -> None:
         # Setup (not under test): open a throwaway document.
         sh("open", "-a", "TextEdit", str(doc))
         expect(wait_until(lambda: frontmost_app() == "TextEdit"), "TextEdit pas au premier plan")
+        # A freshly launched TextEdit is frontmost before its document window
+        # exists; wait for the window so the next checks are not a race.
+        expect(
+            wait_until(lambda: int(osascript(
+                'tell application "System Events" to count windows of process "TextEdit"',
+                check=False,
+            ) or 0) > 0, timeout=10),
+            "fenetre TextEdit absente",
+        )
         time.sleep(0.5)
         call_ok(ctx, "open_app", "TextEdit")
         expect(frontmost_app() == "TextEdit", f"app au premier plan : {frontmost_app()}")
@@ -443,8 +452,15 @@ def group_textedit(ctx: Context, step) -> None:
         try:
             step("close_app TextEdit", close)
         finally:
-            if app_running("TextEdit"):
+            # Under memory pressure TextEdit can finish launching after a
+            # failed setup step: give it a moment to appear, then make sure
+            # the app we started does not outlive the test.
+            wait_until(lambda: app_running("TextEdit"), timeout=3)
+            for _ in range(2):
+                if not app_running("TextEdit"):
+                    break
                 osascript('tell application "TextEdit" to quit saving no', check=False)
+                wait_until(lambda: not app_running("TextEdit"), timeout=5)
 
 
 def group_safari(ctx: Context, step) -> None:
@@ -1290,10 +1306,45 @@ def run_group(ctx: Context, name: str) -> None:
         step("(groupe)", lambda: (_ for _ in ()).throw(
             Skipped(f"prerequis manquant(s) : {', '.join(missing)}")))
         return
+    if "screen_unlocked" in REQUIRES.get(name, ()):
+        unload_local_models()
     try:
         GROUPS[name](ctx, step)
     except Exception as error:
         step("(setup)", lambda: (_ for _ in ()).throw(error))
+
+
+def unload_local_models() -> None:
+    """Free the RAM held by Ollama models loaded by earlier groups.
+
+    On an 8 GB Mac a resident ~3 GB model pushes the system into swap, and
+    System Events / osascript calls then blow past Jarvis' 10 s timeouts, so UI
+    groups failed for an environmental reason. Best effort: no Ollama, no-op.
+    """
+    import urllib.parse
+    import urllib.request
+
+    base = os.environ.get("OLLAMA_HOST", "").strip().rstrip("/") or "localhost:11434"
+    # Ollama documents OLLAMA_HOST as host[:port], usually without a scheme.
+    if "://" not in base:
+        base = f"http://{base}"
+    parts = urllib.parse.urlsplit(base)
+    if parts.scheme == "http" and not parts.port:
+        base = f"{base}:11434"
+    try:
+        with urllib.request.urlopen(f"{base}/api/ps", timeout=2) as response:
+            loaded = [m["name"] for m in json.load(response).get("models", [])]
+        for model in loaded:
+            request = urllib.request.Request(
+                f"{base}/api/generate",
+                data=json.dumps({"model": model, "keep_alive": 0}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(request, timeout=10).close()
+        if loaded:
+            time.sleep(2)  # let macOS reclaim the pages before driving the UI
+    except Exception:
+        pass
 
 
 def main() -> int:
