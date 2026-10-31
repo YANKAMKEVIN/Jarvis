@@ -1321,9 +1321,16 @@ def unload_local_models() -> None:
     System Events / osascript calls then blow past Jarvis' 10 s timeouts, so UI
     groups failed for an environmental reason. Best effort: no Ollama, no-op.
     """
+    import urllib.parse
     import urllib.request
 
-    base = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    base = os.environ.get("OLLAMA_HOST", "").strip().rstrip("/") or "localhost:11434"
+    # Ollama documents OLLAMA_HOST as host[:port], usually without a scheme.
+    if "://" not in base:
+        base = f"http://{base}"
+    parts = urllib.parse.urlsplit(base)
+    if parts.scheme == "http" and not parts.port:
+        base = f"{base}:11434"
     try:
         with urllib.request.urlopen(f"{base}/api/ps", timeout=2) as response:
             loaded = [m["name"] for m in json.load(response).get("models", [])]
