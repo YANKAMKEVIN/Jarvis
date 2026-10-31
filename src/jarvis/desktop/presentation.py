@@ -20,7 +20,7 @@ LABELS = {
     'confirm_action': 'Confirmation', 'cancel_action': 'Annulation',
     'run_task': 'Tâche', 'task_status': 'Tâche', 'cancel_task': 'Tâche',
     'remember_context': 'Mémoire', 'recall': 'Mémoire', 'recent_activity': 'Activité', 'recent_missions': 'Missions', 'capture_screen': 'Capture d’écran', 'ask_about_screen': 'Analyse d’écran',
-    'describe_screen': 'Analyse d’écran', 'capture_window': 'Capture de fenêtre', 'capture_region': 'Capture de zone',
+    'describe_screen': 'Analyse d’écran', 'describe_camera': 'Regard caméra', 'capture_window': 'Capture de fenêtre', 'capture_region': 'Capture de zone',
     'get_volume': 'Volume', 'set_volume': 'Volume', 'browse_open_url': 'Navigateur',
     'enable_safe_mode': 'Mode sécurité', 'disable_safe_mode': 'Mode sécurité',
 }
@@ -147,6 +147,12 @@ def project_card(name, result):
                 head = plain(row.get('subject'), 80) or plain(row.get('sender'), 80)
                 summary = plain(row.get('summary'), 180)
                 items.append(' · '.join(v for v in (head, summary) if v))
+    elif name == 'describe_camera':
+        analysis = plain(result.get('analysis'), 1600)
+        if not analysis:
+            return None
+        kind, title, body = 'screen', 'Ce que voit la caméra', analysis
+        items = ['Photo unique · supprimée après analyse']
     elif name in {'describe_screen', 'ask_about_screen'}:
         analysis = plain(result.get('analysis'), 1600)
         if not analysis:

@@ -39,6 +39,7 @@ EXPECTED_LIVE_TOOL_NAMES = sorted([
     "summarize_unread_emails",
     "ask_about_document",
     "ask_about_screen",
+    "describe_camera",
     "browse_activate_tab",
     "browse_get_active_tab",
     "browse_list_tabs",

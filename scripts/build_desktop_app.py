@@ -51,6 +51,9 @@ def build_app(destination: Path, python: Path, source: Path, demo=False, update=
             # real .app (a bare interpreter never gets the prompt).
             "NSCalendarsUsageDescription": "Jarvis lit et cree des evenements dans votre agenda uniquement a votre demande.",
             "NSRemindersUsageDescription": "Jarvis lit et cree des rappels uniquement a votre demande.",
+            # Without it macOS (and Qt) refuse to even ask for the camera, so
+            # describe_camera could never work in the packaged app.
+            "NSCameraUsageDescription": "Jarvis prend une seule photo, uniquement quand vous lui demandez de regarder, puis la supprime aussitot.",
             # Needed so AppleScript automations (Calendar, Mail, WhatsApp, etc.)
             # can prompt for the Automation permission instead of being denied.
             "NSAppleEventsUsageDescription": "Jarvis pilote d'autres applications (Mail, WhatsApp, Calendrier...) uniquement pour executer ce que vous demandez.",
