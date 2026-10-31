@@ -253,17 +253,25 @@ class MemoryCapability:
             return None
         return memory.content if memory is not None else None
 
-    def resolve_person(self, name: str) -> str | None:
+    def resolve_person(self, name: str, app_name: str | None = None) -> str | None:
         """Contact name stored for an alias ("ma mere" -> "Maman"), else None.
 
+        With app_name, an app-specific alias ("ma mere sur Telegram") wins over
+        the generic one, for contacts named differently in each app.
         Applied locally by messaging so the model never needs the memory.
         Failures are swallowed: memory must never block a send flow.
         """
-        try:
-            memory = self.store.find_by_subject("person", name)
-        except Exception:
-            return None
-        return memory.content if memory is not None else None
+        subjects = [name]
+        if isinstance(app_name, str) and app_name.strip() and isinstance(name, str):
+            subjects.insert(0, f"{name.strip()} sur {app_name.strip()}")
+        for subject in subjects:
+            try:
+                memory = self.store.find_by_subject("person", subject)
+            except Exception:
+                return None
+            if memory is not None:
+                return memory.content
+        return None
 
     def save_procedure(self, name: str, steps, source: str = "inferred") -> ToolResult:
         """Store a reusable procedure (a small plan) under a name.

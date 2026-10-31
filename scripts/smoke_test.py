@@ -575,6 +575,55 @@ def group_whatsapp(ctx: Context, step) -> None:
     step("annulation (rien n'est envoye)", cancel_without_sending)
 
 
+def group_telegram(ctx: Context, step) -> None:
+    # Telegram goes through the account API (Telethon), not the UI. The ONLY
+    # chat this group ever sends to is the user's own "Messages enregistres"
+    # (Saved Messages): the target is hard-coded, never configurable. Opt-in
+    # because it really sends: JARVIS_SMOKE_TELEGRAM=1, after a one-time
+    # "python -m jarvis.tools.telegram_api login".
+    from jarvis.tools.telegram_api import TelethonBackend
+
+    state = {}
+
+    def connected():
+        if os.environ.get("JARVIS_SMOKE_TELEGRAM", "").strip() != "1":
+            raise Skipped("definis JARVIS_SMOKE_TELEGRAM=1 pour activer ce test (envoi reel a toi-meme)")
+        if not TelethonBackend().configured():
+            raise Skipped("Telegram non connecte : identifiants API ou session manquants")
+        state["ready"] = True
+
+    def unknown_recipient_refused():
+        if not state.get("ready"):
+            raise Skipped("Telegram non connecte")
+        result = call(
+            ctx, "prepare_send_message", "Telegram",
+            "Test smoke Jarvis - ne doit jamais partir.", "zz Inconnu Jarvis Smoke",
+        )
+        expect(result.get("ok") is False, "un destinataire inconnu a ete accepte")
+        expect(result.get("error_code") == "recipient_not_verified",
+               f"refus inattendu : {result.get('error_code')} : {result.get('message')}")
+        expect("token" not in result, "un envoi a ete prepare malgre le refus")
+
+    def send_to_saved_messages():
+        if not state.get("ready"):
+            raise Skipped("Telegram non connecte")
+        stamp = datetime.now().isoformat(timespec="seconds")
+        prepared = call_ok(
+            ctx, "prepare_send_message", "Telegram",
+            f"Test smoke Jarvis {stamp} (envoi a moi-meme).", "Messages enregistres",
+        )
+        expect(prepared.get("recipient_verified") is True, "destinataire non verifie")
+        confirmed = call_ok(ctx, "confirm_action", prepared["token"])
+        result = confirmed.get("result", confirmed)
+        expect(result.get("state_confirmed") is True,
+               f"envoi non confirme par Telegram : {result}")
+        expect(isinstance(result.get("message_id"), int), "identifiant de message absent")
+
+    step("connexion Telegram", connected)
+    step("destinataire inconnu refuse (sans envoi)", unknown_recipient_refused, critical=True)
+    step("envoi a Messages enregistres + confirmation", send_to_saved_messages, critical=True)
+
+
 def group_memory(ctx: Context, step) -> None:
     # Runs against the throwaway DB set in main() (JARVIS_MEMORY_PATH), never
     # the user's real memory. Checked independently by reading SQLite directly.
@@ -1240,6 +1289,7 @@ GROUPS = {
     "safari": group_safari,
     "messaging": group_messaging,
     "whatsapp": group_whatsapp,
+    "telegram": group_telegram,
     "memory": group_memory,
     "missions": group_missions,
     "knowledge": group_knowledge,

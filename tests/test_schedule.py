@@ -44,7 +44,7 @@ class FakeMessaging:
             error_code=self.verify_error or "recipient_not_verified",
         )
 
-    def send_text(self, app, text):
+    def send_text(self, app, text, recipient=None):
         if self.send_ok:
             self.sent.append((app, text))
             return ToolResult.success(
@@ -250,7 +250,7 @@ class ParseDueAtTests(unittest.TestCase):
 
 
 class FakeMemory:
-    def resolve_person(self, name):
+    def resolve_person(self, name, app_name=None):
         return None
 
     def log_action(self, *args, **kwargs):
@@ -282,6 +282,25 @@ class ScheduleToolsTest(unittest.TestCase):
         self.assertEqual(len(pending), 1)
         self.assertEqual(pending[0]["recipient"], "Marie")
         self.assertEqual(pending[0]["text"], "Salut")
+
+    def test_schedule_accepts_telegram(self):
+        tools, store = self._tools()
+        when = (datetime.now() + timedelta(days=1)).isoformat(timespec="minutes")
+
+        prepared = asyncio.run(tools["schedule_message"]("Marie", "Salut", when, "Telegram"))
+        asyncio.run(tools["confirm_action"](prepared["token"]))
+
+        self.assertEqual(store.list("pending")[0]["app"], "Telegram")
+
+    def test_schedule_refuses_an_app_without_verified_send(self):
+        tools, store = self._tools()
+        when = (datetime.now() + timedelta(days=1)).isoformat(timespec="minutes")
+
+        result = asyncio.run(tools["schedule_message"]("Marie", "Salut", when, "Signal"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "messaging_app_unsupported")
+        self.assertNotIn("token", result)
 
     def test_schedule_rejects_past_time(self):
         tools, store = self._tools()

@@ -45,6 +45,12 @@ DEFAULT_SEND_BUTTON_QUERIES = {
     "whatsapp": "ChatBar_SendButton",
 }
 
+# Messaging apps reached through an account API instead of their UI. Telegram's
+# native macOS app exposes nothing of its window to Accessibility, so its
+# conversation header can never be verified on screen; the API resolves the
+# recipient against the user's own chats instead (see capabilities/telegram.py).
+API_MESSAGING_APPS = frozenset({"telegram"})
+
 # Reasons from verify_recipient that navigation can try to resolve (wrong chat
 # open, or the app not frontmost). Anything else is a hard refusal.
 _NAVIGABLE_REASONS = {
@@ -89,6 +95,7 @@ class MessagingCapability:
         retry_settle_seconds: float = DEFAULT_RETRY_SETTLE_SECONDS,
         composer_wait_attempts: int = DEFAULT_COMPOSER_WAIT_ATTEMPTS,
         sleeper=None,
+        telegram=None,
     ):
         self.windows = windows if windows is not None else WindowCapability()
         self.ui_accessibility = (
@@ -127,6 +134,33 @@ class MessagingCapability:
         self.retry_settle_seconds = max(0.0, float(retry_settle_seconds))
         self.composer_wait_attempts = max(1, int(composer_wait_attempts))
         self.sleeper = sleeper if sleeper is not None else time.sleep
+        self._telegram = telegram
+
+    @property
+    def telegram(self):
+        # Lazy: building the API backend reads credentials (env / Keychain).
+        if self._telegram is None:
+            from jarvis.capabilities.telegram import TelegramMessaging
+
+            self._telegram = TelegramMessaging()
+        return self._telegram
+
+    @staticmethod
+    def is_api_app(app_name: str) -> bool:
+        """Whether this messaging app is driven by its account API, not its UI."""
+        return isinstance(app_name, str) and app_name.strip().casefold() in API_MESSAGING_APPS
+
+    def supports_verified_send(self, app_name: str) -> bool:
+        """Whether a verified send path (UI composer or account API) exists."""
+        return self.is_api_app(app_name) or self.supports_composer_send(app_name)
+
+    def requires_recipient(self, app_name: str) -> bool:
+        """API sends always target a named recipient: there is no "open chat"."""
+        return self.is_api_app(app_name)
+
+    def requires_unlocked_screen(self, app_name: str) -> bool:
+        """UI-driven sends need an unlocked screen; API sends do not."""
+        return not self.is_api_app(app_name)
 
     def search_query(self, app_name: str) -> str | None:
         if not isinstance(app_name, str):
@@ -152,7 +186,7 @@ class MessagingCapability:
         """Whether the verified composer-send path exists for this app."""
         return bool(self.composer_query(app_name) and self.send_button_query(app_name))
 
-    def send_text(self, app_name: str, text: str) -> ToolResult:
+    def send_text(self, app_name: str, text: str, recipient: str | None = None) -> ToolResult:
         """Send a message: focus the composer, type, then press send.
 
         The WhatsApp composer ignores programmatic focus (AXFocused never
@@ -171,6 +205,15 @@ class MessagingCapability:
                 message="Le message a envoyer est vide.",
                 error_code="invalid_text",
             )
+
+        if self.is_api_app(app_name):
+            if not isinstance(recipient, str) or not recipient.strip():
+                return ToolResult.failure(
+                    action="send_text",
+                    message="Le destinataire est obligatoire pour un envoi Telegram.",
+                    error_code="invalid_recipient",
+                )
+            return self.telegram.send(recipient, text)
 
         composer = self.composer_query(app_name)
         send_button = self.send_button_query(app_name)
@@ -263,6 +306,9 @@ class MessagingCapability:
                 message="Le destinataire attendu est obligatoire.",
                 error_code="invalid_recipient",
             )
+
+        if self.is_api_app(app_name):
+            return self.telegram.resolve(expected_recipient)
 
         needle = normalize_text(expected_recipient)
 
@@ -366,7 +412,8 @@ class MessagingCapability:
         refusal — the send is only prepared when this returns ok.
         """
         last = self.verify_recipient(app_name, expected_recipient)
-        if last.ok:
+        if last.ok or self.is_api_app(app_name):
+            # API resolution is already exhaustive: no UI navigation to retry.
             return last
 
         resolvable = (

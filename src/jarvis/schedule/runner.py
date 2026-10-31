@@ -58,6 +58,9 @@ def deliver_due(
                 label = "non confirme" if uncertain else "non envoye"
                 _notify(notifier, f"Message planifie {label} pour {recipient} : {reason}.")
 
+            # API sends (Telegram) need no unlocked screen; UI sends do.
+            needs_screen = getattr(messaging, 'requires_unlocked_screen', lambda _app: True)(row['app']) is not False
+
             def settle(reason):
                 if within_grace:
                     store.record_attempt(row_id,reason)
@@ -66,7 +69,7 @@ def deliver_due(
                     fail(reason)
 
             try:
-                unlocked = screen_unlocked()
+                unlocked = screen_unlocked() if needs_screen else True
             except Exception:
                 unlocked = False
             if unlocked is not True:
@@ -81,14 +84,14 @@ def deliver_due(
                 settle(getattr(verify,'error_code',None) or 'destinataire non verifie')
                 continue
             try:
-                still_unlocked = screen_unlocked()
+                still_unlocked = screen_unlocked() if needs_screen else True
             except Exception:
                 still_unlocked = False
             if still_unlocked is not True:
                 settle('ecran verrouille')
                 continue
             try:
-                sent = messaging.send_text(row['app'],row['text'])
+                sent = messaging.send_text(row['app'],row['text'],recipient=recipient)
             except Exception:
                 fail('envoi incertain ; verifier la conversation avant toute nouvelle tentative', uncertain=True)
                 continue
@@ -102,7 +105,8 @@ def deliver_due(
                 results['sent'].append(row_id)
                 _notify(notifier, f"Message planifie envoye a {recipient}.")
             elif (not getattr(sent,'ok',False) and not data.get('command_executed')
-                  and getattr(sent,'error_code',None) in {'composer_not_filled','composer_not_visible','composer_unsupported','invalid_text'}):
+                  and getattr(sent,'error_code',None) in {'composer_not_filled','composer_not_visible','composer_unsupported','invalid_text',
+                       'recipient_not_verified','telegram_not_configured','telegram_not_authorized','telegram_connect_failed','telegram_dialogs_failed'}):
                 settle(sent.error_code)
             else:
                 fail('envoi incertain ; verifier la conversation avant toute nouvelle tentative', uncertain=True)
