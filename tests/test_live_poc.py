@@ -3616,8 +3616,18 @@ class RecordingLiveMessagingCapability:
     def supports_composer_send(self, app_name):
         return bool(self.composer_query(app_name))
 
-    def send_text(self, app_name, text):
+    def is_api_app(self, app_name):
+        return isinstance(app_name, str) and app_name.strip().casefold() == "telegram"
+
+    def supports_verified_send(self, app_name):
+        return self.is_api_app(app_name) or self.supports_composer_send(app_name)
+
+    def requires_recipient(self, app_name):
+        return self.is_api_app(app_name)
+
+    def send_text(self, app_name, text, recipient=None):
         self.calls.append(("send_text", app_name, text))
+        self.last_send_recipient = recipient
         return ToolResult.success(
             action="send_text",
             message="Message envoye.",
@@ -3743,6 +3753,45 @@ class LiveConfirmationToolTest(unittest.TestCase):
         self.assertTrue(cancelled["cancelled"])
         self.assertEqual(confirmed["error_code"], "no_pending_action")
         self.assertEqual(capability.calls, [])  # never sent
+
+    def test_telegram_prepare_requires_a_recipient(self):
+        messaging = RecordingLiveMessagingCapability()
+        tools = self.make_tools(messaging_capability=messaging)
+
+        result = asyncio.run(tools["prepare_send_message"]("Telegram", "Salut"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "invalid_recipient")
+        self.assertNotIn("token", result)
+        self.assertEqual(messaging.calls, [])
+
+    def test_telegram_send_goes_through_the_verified_api_path(self):
+        messaging = RecordingLiveMessagingCapability()
+        interaction = RecordingLiveInteractionCapability()
+        tools = self.make_tools(interaction, messaging)
+
+        prepared = asyncio.run(
+            tools["prepare_send_message"]("Telegram", "Salut", "Joel", "Champ custom")
+        )
+        confirmed = asyncio.run(tools["confirm_action"](prepared["token"]))
+
+        self.assertTrue(confirmed["ok"])
+        self.assertEqual(messaging.calls[0], ("ensure_recipient", "Telegram", "Joel"))
+        self.assertEqual(messaging.calls[-1], ("send_text", "Telegram", "Salut"))
+        # The recipient is passed to the send so it is re-resolved then, and an
+        # explicit query never sends Telegram down the blind typing path.
+        self.assertEqual(messaging.last_send_recipient, "Joel")
+        self.assertEqual(interaction.calls, [])
+
+    def test_telegram_unverified_recipient_prepares_nothing(self):
+        messaging = RecordingLiveMessagingCapability(verified=False)
+        tools = self.make_tools(messaging_capability=messaging)
+
+        result = asyncio.run(tools["prepare_send_message"]("Telegram", "Salut", "Alice"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "recipient_not_verified")
+        self.assertNotIn("token", result)
 
     def test_prepare_rejects_empty_message(self):
         capability = RecordingLiveInteractionCapability()

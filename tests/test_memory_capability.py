@@ -108,6 +108,14 @@ class MemoryCapabilityTest(TempMemoryMixin, unittest.TestCase):
         self.assertEqual(self.memory.resolve_person("Ma Mere"), "Maman ❤️")
         self.assertIsNone(self.memory.resolve_person("Kevin"))
 
+    def test_resolve_person_prefers_the_app_specific_alias(self):
+        self.memory.remember("person", "ma mère", "Maman")
+        self.memory.remember("person", "ma mère sur Telegram", "Maman Yankam")
+
+        self.assertEqual(self.memory.resolve_person("ma mère", "Telegram"), "Maman Yankam")
+        self.assertEqual(self.memory.resolve_person("ma mère", "WhatsApp"), "Maman")
+        self.assertEqual(self.memory.resolve_person("ma mère"), "Maman")
+
     def test_preferred_media_app(self):
         self.assertIsNone(self.memory.preferred_media_app())
 

@@ -78,7 +78,7 @@ class ReminderStoreTests(unittest.TestCase):
 
 
 class FakeMemory:
-    def resolve_person(self, name):
+    def resolve_person(self, name, app_name=None):
         return None
 
     def log_action(self, *args, **kwargs):

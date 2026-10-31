@@ -16,7 +16,7 @@ class Messaging:
         self.calls=[];self.confirmed=confirmed;self.raises=raises
     def ensure_recipient(self, *args):
         return ToolResult.success('verify','verified')
-    def send_text(self, app, text):
+    def send_text(self, app, text, recipient=None):
         self.calls.append((app,text))
         if self.raises:raise OSError('uncertain provider outcome')
         return ToolResult.success('send','accepted',command_executed=True,state_confirmed=self.confirmed)
@@ -126,7 +126,7 @@ def test_different_recipients_are_serialized_across_workers(tmp_path):
         def ensure_recipient(self,app,recipient):
             current[0]=recipient;time.sleep(.02)
             return ToolResult.success('verify','verified')
-        def send_text(self,app,text):
+        def send_text(self, app, text, recipient=None):
             observed.append((current[0],text))
             return ToolResult.success('send','confirmed',state_confirmed=True,command_executed=True)
     messaging=SharedDesktop();due=store.due;barrier=threading.Barrier(2)
@@ -195,7 +195,7 @@ def test_verification_failure_never_sends_and_can_retry_safely(tmp_path):
 
 def test_malformed_send_result_is_quarantined_instead_of_crashing_or_retrying(tmp_path):
     store,row=prepared(tmp_path);messaging=Messaging()
-    def broken_result(*args):
+    def broken_result(*args, **kwargs):
         messaging.calls.append(args)
         return NS(ok=True,data=None)
     messaging.send_text=broken_result
@@ -231,7 +231,7 @@ class Desktop:
         (root/'target').write_text(recipient)
         time.sleep(.02)
         return NS(ok=True)
-    def send_text(self,app,text):
+    def send_text(self, app, text, recipient=None):
         fd=os.open(root/'effects',os.O_WRONLY|os.O_APPEND|os.O_CREAT,0o600)
         try:os.write(fd,((root/'target').read_text()+'|'+text+'\\n').encode())
         finally:os.close(fd)

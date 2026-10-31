@@ -192,7 +192,7 @@ class FakeMemory:
     def log_action(self, *args, **kwargs):
         return None
 
-    def resolve_person(self, name):
+    def resolve_person(self, name, app_name=None):
         return None
 
 

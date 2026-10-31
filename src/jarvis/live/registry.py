@@ -2330,7 +2330,7 @@ class ToolRegistry:
             name="prepare_send_message",
             description=(
                 "PREPARE l'envoi d'un message a un destinataire dans une "
-                "application de messagerie (par exemple WhatsApp), SANS l'envoyer. "
+                "application de messagerie (WhatsApp ou Telegram), SANS l'envoyer. "
                 "Enregistre l'envoi et renvoie un token et requires_confirmation. "
                 "Utilise ce tool des que l'utilisateur veut envoyer un message a "
                 "une personne, un contact ou un groupe. Apres l'avoir appele, "
@@ -2341,7 +2341,11 @@ class ToolRegistry:
                 "nomme si besoin. Fournis recipient (le nom du destinataire) pour "
                 "que Jarvis verifie d'abord que la conversation ouverte correspond "
                 "bien ; si recipient_not_verified est retourne, rien n'est prepare "
-                "et il faut ouvrir la bonne conversation. N'utilise pas ce tool "
+                "et il faut ouvrir la bonne conversation (ou, pour Telegram, "
+                "donner le nom exact : un seul contact doit correspondre). "
+                "Pour Telegram, recipient est obligatoire ; 'Messages "
+                "enregistres' ou 'moi' designe la conversation de l'utilisateur "
+                "avec lui-meme. N'utilise pas ce tool "
                 "pour un simple prompt a un assistant comme Claude : utilise "
                 "send_prompt_to_app pour cela."
             ),
@@ -2369,13 +2373,24 @@ class ToolRegistry:
                     error_code="invalid_text",
                 ).to_livekit_dict()
 
+            has_recipient = isinstance(recipient, str) and bool(recipient.strip())
+            if not has_recipient and self._messaging_check("requires_recipient", app_name):
+                return ToolResult.failure(
+                    action="prepare_send_message",
+                    message=(
+                        f"Le destinataire est obligatoire pour envoyer sur {app_name}."
+                    ),
+                    error_code="invalid_recipient",
+                ).to_livekit_dict()
+
             recipient_from_memory = False
-            if isinstance(recipient, str) and recipient.strip():
-                # Apply memory locally: "ma mere" -> stored contact name. The
-                # model never needs (nor receives) the stored name.
+            if has_recipient:
+                # Apply memory locally: "ma mere" -> stored contact name (or the
+                # name stored for this app). The model never needs (nor
+                # receives) the stored name.
                 async with self.memory_lock:
                     resolved = await asyncio.to_thread(
-                        self.memory.resolve_person, recipient,
+                        self.memory.resolve_person, recipient, app_name,
                     )
                 if resolved:
                     recipient = resolved
@@ -2400,16 +2415,18 @@ class ToolRegistry:
             )
 
             def _executor():
-                # Verified composer send for messaging apps that support it
-                # (writes + reads back the composer, then presses send) -- the
+                # Verified send for messaging apps that support it: the composer
+                # path (writes, presses send, reads back the composer) -- the
                 # WhatsApp composer never confirms programmatic focus, so the
-                # focus + type path cannot reach it. Unknown apps keep the old
-                # focus + type path unchanged.
-                if (
+                # focus + type path cannot reach it -- or the account API
+                # (Telegram), which re-resolves the recipient right before
+                # sending and never falls back to typing. Unknown apps keep the
+                # old focus + type path unchanged.
+                if self._messaging_check("is_api_app", app_name) or (
                     not (isinstance(query, str) and query.strip())
-                    and self.messaging.supports_composer_send(app_name)
+                    and self._messaging_check("supports_verified_send", app_name)
                 ):
-                    return self.messaging.send_text(app_name, text)
+                    return self.messaging.send_text(app_name, text, recipient=recipient)
                 return self.interaction.focus_app_ui_and_type(
                     app_name, text, effective_query, None, True,
                 )
@@ -2450,7 +2467,7 @@ class ToolRegistry:
                 "trouve est repris tel quel (tu n'as pas a le reecrire). Comme pour "
                 "tout envoi, annonce ensuite l'application, le destinataire et le "
                 "contenu, puis attends un oui clair avant confirm_action(token). "
-                "app_name : l'application (par exemple WhatsApp) ; recipient : le nom "
+                "app_name : l'application (WhatsApp ou Telegram) ; recipient : le nom "
                 "du destinataire."
             ),
         )
@@ -2485,7 +2502,8 @@ class ToolRegistry:
                 "demande explicitement de retenir quelque chose (souviens-toi, "
                 "retiens, note que...). kind : profile (infos sur l'utilisateur), "
                 "person (subject = surnom ou relation comme 'ma mere', content = "
-                "nom exact du contact dans les apps), preference (subject = "
+                "nom exact du contact dans les apps ; si le nom differe selon "
+                "l'app, subject = 'ma mere sur Telegram'), preference (subject = "
                 "domaine comme 'musique', content = la preference, par exemple "
                 "'Spotify' ou 'Apple Music'), fact (autre "
                 "information utile). Un souvenir de meme kind et subject est mis "
@@ -3418,8 +3436,10 @@ class ToolRegistry:
                 "requires_confirmation : annonce a l'utilisateur l'application, le "
                 "destinataire, le contenu et l'heure, puis attends un oui clair avant "
                 "confirm_action(token). Le message partira tout seul a l'heure dite si "
-                "le Mac est allume, deverrouille et WhatsApp lance ; le destinataire "
-                "sera revérifie a ce moment-la. app_name par defaut WhatsApp. "
+                "le Mac est allume, deverrouille et WhatsApp lance (pour Telegram, "
+                "le Mac allume et connecte suffit) ; le destinataire "
+                "sera revérifie a ce moment-la. app_name par defaut WhatsApp, ou "
+                "Telegram. "
                 "repeat : 'none' (defaut), 'daily' ou 'weekly' pour un envoi recurrent."
             ),
         )
@@ -3466,9 +3486,21 @@ class ToolRegistry:
                     error_code="invalid_recurrence",
                 ).to_livekit_dict()
 
+            if not self._messaging_check("supports_verified_send", app_name):
+                return ToolResult.failure(
+                    action="schedule_message",
+                    message=(
+                        f"Jarvis ne sait pas envoyer de message verifie sur {app_name}. "
+                        "Applications prises en charge : WhatsApp et Telegram."
+                    ),
+                    error_code="messaging_app_unsupported",
+                ).to_livekit_dict()
+
             # Apply memory locally: "ma mere" -> stored contact name.
             async with self.memory_lock:
-                resolved = await asyncio.to_thread(self.memory.resolve_person, recipient)
+                resolved = await asyncio.to_thread(
+                    self.memory.resolve_person, recipient, app_name,
+                )
             target_recipient = resolved or recipient.strip()
 
             def _executor():
@@ -4154,6 +4186,17 @@ class ToolRegistry:
             debug_live("tool_succeeded", **fields)
         else:
             debug_live("tool_failed", tool=tool_name, error=result.error_code)
+
+    def _messaging_check(self, name: str, app_name: str) -> bool:
+        """Ask the messaging capability a per-app question (is_api_app,
+        requires_recipient, supports_verified_send). A capability without the
+        newer API-aware checks is treated as UI-only (composer send)."""
+        check = getattr(self.messaging, name, None)
+        if callable(check):
+            return bool(check(app_name))
+        if name == "supports_verified_send":
+            return bool(self.messaging.supports_composer_send(app_name))
+        return False
 
     @staticmethod
     def _vision_guard(tool_name: str) -> dict | None:
