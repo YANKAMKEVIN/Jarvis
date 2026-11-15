@@ -1641,17 +1641,36 @@ class ToolRegistry:
             description=(
                 "Ouvre un fichier local avec l'application macOS associee. "
                 "Le chemin doit etre exact, idealement un chemin absolu retourne "
-                "par un tool Files."
+                "par un tool Files. Pour un script (.py, .rb, .pl, .php, .jar), "
+                "rien n'est ouvert : renvoie un token et requires_confirmation ; "
+                "annonce le fichier puis attends un oui clair avant "
+                "confirm_action. Les executables sont refuses."
             ),
         )
         @self._journaled("open_file")
         @self._desktop_access
         async def open_file(path: str) -> dict:
-            """Open a local file with macOS."""
+            """Open a local file with macOS (scripts need a confirmation)."""
             debug_live("tool_call", tool="open_file", path=path)
             result = await asyncio.to_thread(self.files.open_file, path)
             self._debug_tool_result("open_file", result)
-            return result.to_livekit_dict()
+
+            if result.error_code != "script_needs_confirmation":
+                return result.to_livekit_dict()
+
+            def _executor():
+                return self.files.open_file(path, allow_script=True)
+
+            async with self.confirmation_lock:
+                token = self.pending_actions.register("open_file", _executor)
+            return ToolResult.success(
+                "open_file",
+                "Ce fichier est un script qui pourrait s'executer. Annonce-le a "
+                "l'utilisateur puis attends sa confirmation avant confirm_action.",
+                requires_confirmation=True,
+                token=token,
+                **(result.data or {}),
+            ).to_livekit_dict()
 
         @function_tool(
             name="open_folder",

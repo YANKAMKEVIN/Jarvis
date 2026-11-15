@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import unicodedata
@@ -33,6 +34,20 @@ SENSITIVE_SUFFIXES = frozenset({
     ".pem", ".key", ".p12", ".pfx", ".keychain", ".keychain-db", ".kdbx",
     ".ovpn", ".mobileprovision",
 })
+# Opening these with macOS `open` launches, runs or installs something rather
+# than displaying a document, so open_file/open_folder refuse them.
+EXECUTABLE_SUFFIXES = frozenset({
+    ".app", ".command", ".terminal", ".tool", ".sh", ".bash", ".zsh", ".csh",
+    ".ksh", ".fish", ".pkg", ".mpkg",
+    ".scpt", ".scptd", ".applescript", ".workflow", ".action", ".shortcut",
+    ".prefpane", ".mobileconfig", ".fileloc", ".bundle", ".plugin", ".kext",
+    ".osax", ".saver", ".qlgenerator", ".dylib", ".xpc", ".appex",
+})
+# Interpreted scripts and Java archives: depending on the default app, `open`
+# shows them in an editor or runs them (Python Launcher, Jar Launcher...).
+# open_file only opens them once the user has confirmed (allow_script=True).
+SCRIPT_SUFFIXES = frozenset({".py", ".pl", ".rb", ".php", ".jar"})
+OPEN_TIMEOUT_SECONDS = 15
 REFERENCE_WORDS = {
     "ce fichier",
     "ce dossier",
@@ -528,13 +543,20 @@ class FileSystemTools:
         )
         return path_info(resolved)
 
-    def open_file(self, path: str | Path) -> dict[str, Any]:
+    def open_file(
+        self,
+        path: str | Path,
+        allow_script: bool = False,
+    ) -> dict[str, Any]:
         resolved = self.resolver.resolve_existing(
             path,
             action="open_file",
             expected_kind="file",
             follow_symlink=True,
         )
+        self._refuse_executable(resolved)
+        if not allow_script:
+            self._require_script_confirmation(resolved)
         return self._open_path(resolved, "open_file")
 
     def open_folder(self, path: str | Path) -> dict[str, Any]:
@@ -544,6 +566,7 @@ class FileSystemTools:
             expected_kind="directory",
             follow_symlink=True,
         )
+        self._refuse_executable(resolved)
         return self._open_path(resolved, "open_folder")
 
     def create_folder(self, path: str | Path) -> dict[str, Any]:
@@ -650,6 +673,39 @@ class FileSystemTools:
             "state_confirmed": state_confirmed,
         }
 
+    @staticmethod
+    def _refuse_executable(path: Path) -> None:
+        """Refuse paths that `open` would run, launch or install."""
+        candidates = (path, path.resolve(strict=False))
+        for candidate in candidates:
+            suffix = candidate.suffix.lower()
+            # An extensionless executable file is run in Terminal by `open`.
+            runnable = (
+                not suffix
+                and candidate.is_file()
+                and os.access(candidate, os.X_OK)
+            )
+            if suffix in EXECUTABLE_SUFFIXES or runnable:
+                raise FileSystemError(
+                    "Ce type de fichier lancerait un programme ; "
+                    "ouverture refusee.",
+                    "executable_refused",
+                    {"suffix": suffix},
+                )
+
+    @staticmethod
+    def _require_script_confirmation(path: Path) -> None:
+        """Stop before opening a script until the user has confirmed it."""
+        for candidate in (path, path.resolve(strict=False)):
+            suffix = candidate.suffix.lower()
+            if suffix in SCRIPT_SUFFIXES:
+                raise FileSystemError(
+                    "Ce fichier est un script qui pourrait s'executer a "
+                    "l'ouverture ; confirmation requise.",
+                    "script_needs_confirmation",
+                    {"suffix": suffix, "path": str(path)},
+                )
+
     def _open_path(self, path: Path, action: str) -> dict[str, Any]:
         try:
             completed = subprocess.run(
@@ -657,11 +713,17 @@ class FileSystemTools:
                 check=False,
                 capture_output=True,
                 text=True,
+                timeout=OPEN_TIMEOUT_SECONDS,
             )
         except FileNotFoundError as exc:
             raise FileSystemError(
                 "La commande macOS open est indisponible.",
                 "open_command_missing",
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise FileSystemError(
+                "La commande open n'a pas repondu a temps.",
+                "open_timeout",
             ) from exc
 
         if completed.returncode != 0:

@@ -309,6 +309,103 @@ class FileSystemToolsTest(unittest.TestCase):
             self.tools.read_text("Documents/Cookies/recette.txt")["text"], "farine"
         )
         self.assertEqual(self.tools.read_text("Documents/environment.md")["text"], "notes")
+    def test_open_file_refuses_executable_types_without_running_open(self):
+        names = ["run.command", "x.terminal", "install.sh", "Setup.pkg", "s.SCPT"]
+        paths = [self.write_file(f"Downloads/{name}") for name in names]
+        bare = self.write_file("Downloads/payload")
+        bare.chmod(0o755)
+        app = self.home / "Downloads/Evil.app"
+        (app / "Contents").mkdir(parents=True)
+
+        with patch("jarvis.tools.filesystem.subprocess.run") as run:
+            for path in [*paths, bare]:
+                with self.assertRaises(FileSystemError) as context:
+                    self.tools.open_file(str(path))
+                self.assertEqual(context.exception.code, "executable_refused")
+            with self.assertRaises(FileSystemError) as context:
+                self.tools.open_folder(str(app))
+            self.assertEqual(context.exception.code, "executable_refused")
+
+        run.assert_not_called()
+
+    def test_open_file_refuses_symlink_to_executable(self):
+        target = self.write_file("Downloads/run.command")
+        link = self.home / "Documents/notes.txt"
+        link.symlink_to(target)
+
+        with patch("jarvis.tools.filesystem.subprocess.run") as run:
+            with self.assertRaises(FileSystemError) as context:
+                self.tools.open_file(str(link))
+
+        self.assertEqual(context.exception.code, "executable_refused")
+        run.assert_not_called()
+
+    def test_open_file_asks_confirmation_for_scripts_without_running_open(self):
+        names = ["tool.py", "Gem.RB", "app.jar", "x.pl", "index.php"]
+        paths = [self.write_file(f"Downloads/{name}") for name in names]
+
+        with patch("jarvis.tools.filesystem.subprocess.run") as run:
+            for path in paths:
+                with self.assertRaises(FileSystemError) as context:
+                    self.tools.open_file(str(path))
+                self.assertEqual(context.exception.code, "script_needs_confirmation")
+                self.assertEqual(context.exception.data["path"], str(path))
+
+        run.assert_not_called()
+
+    def test_open_file_opens_script_once_confirmed(self):
+        script = self.write_file("Downloads/tool.py")
+        completed = Mock(returncode=0, stderr="", stdout="")
+
+        with patch(
+            "jarvis.tools.filesystem.subprocess.run", return_value=completed
+        ) as run:
+            result = self.tools.open_file(str(script), allow_script=True)
+
+        self.assertEqual(run.call_args.args[0], ["open", str(script)])
+        self.assertGreater(run.call_args.kwargs["timeout"], 0)
+        self.assertTrue(result["command_executed"])
+
+    def test_open_file_symlink_to_script_asks_confirmation(self):
+        target = self.write_file("Downloads/tool.py")
+        link = self.home / "Documents/notes.txt"
+        link.symlink_to(target)
+
+        with patch("jarvis.tools.filesystem.subprocess.run") as run:
+            with self.assertRaises(FileSystemError) as context:
+                self.tools.open_file(str(link))
+
+        self.assertEqual(context.exception.code, "script_needs_confirmation")
+        run.assert_not_called()
+
+    def test_confirmation_never_unlocks_real_executables(self):
+        command = self.write_file("Downloads/run.command")
+        disguised = self.home / "Documents/tool.py"
+        disguised.symlink_to(command)
+        bare = self.write_file("Downloads/payload")
+        bare.chmod(0o755)
+
+        with patch("jarvis.tools.filesystem.subprocess.run") as run:
+            for path in (command, disguised, bare):
+                with self.assertRaises(FileSystemError) as context:
+                    self.tools.open_file(str(path), allow_script=True)
+                self.assertEqual(context.exception.code, "executable_refused")
+
+        run.assert_not_called()
+
+    def test_open_file_uses_a_timeout_and_reports_it(self):
+        import subprocess
+
+        file_path = self.write_file("Documents/file.txt")
+        with patch(
+            "jarvis.tools.filesystem.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["open"], 15),
+        ) as run:
+            with self.assertRaises(FileSystemError) as context:
+                self.tools.open_file(str(file_path))
+
+        self.assertEqual(context.exception.code, "open_timeout")
+        self.assertGreater(run.call_args.kwargs["timeout"], 0)
 
     def test_unresolved_reference_is_refused(self):
         with self.assertRaises(FileSystemError) as context:
