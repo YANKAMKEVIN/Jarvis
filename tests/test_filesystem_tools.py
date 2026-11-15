@@ -271,6 +271,45 @@ class FileSystemToolsTest(unittest.TestCase):
         self.assertFalse(file_result["state_confirmed"])
         self.assertFalse(folder_result["state_confirmed"])
 
+    def test_read_text_refuses_credential_files(self):
+        sensitive = [
+            ".ssh/id_ed25519",
+            ".ssh/config",
+            ".aws/credentials",
+            ".gnupg/pubring.kbx.txt",
+            ".config/gcloud/application_default_credentials.json",
+            "Library/Keychains/login.txt",
+            "Documents/projet/.env",
+            "Documents/projet/.env.local",
+            ".netrc",
+            "Documents/cert.PEM",
+        ]
+        for relative in sensitive:
+            path = self.write_file(relative, "SECRET")
+            with self.subTest(relative=relative):
+                with self.assertRaises(FileSystemError) as context:
+                    self.tools.read_text(str(path))
+                self.assertEqual(context.exception.code, "sensitive_path_refused")
+
+    def test_read_text_refuses_symlink_to_credentials(self):
+        target = self.write_file(".ssh/id_rsa", "SECRET")
+        link = self.home / "Documents/notes.txt"
+        link.symlink_to(target)
+
+        with self.assertRaises(FileSystemError) as context:
+            self.tools.read_text(str(link))
+
+        self.assertEqual(context.exception.code, "sensitive_path_refused")
+
+    def test_read_text_still_reads_ordinary_files(self):
+        self.write_file("Documents/Cookies/recette.txt", "farine")
+        self.write_file("Documents/environment.md", "notes")
+
+        self.assertEqual(
+            self.tools.read_text("Documents/Cookies/recette.txt")["text"], "farine"
+        )
+        self.assertEqual(self.tools.read_text("Documents/environment.md")["text"], "notes")
+
     def test_unresolved_reference_is_refused(self):
         with self.assertRaises(FileSystemError) as context:
             self.tools.open_file("ce fichier")

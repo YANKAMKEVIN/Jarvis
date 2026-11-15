@@ -10,6 +10,29 @@ from typing import Any, Callable
 
 
 BUNDLE_SUFFIXES = {".app", ".bundle", ".pkg"}
+# read_text never returns secrets: credential folders and files anywhere in
+# the home folder are refused, whatever the path or symlink used to reach them.
+SENSITIVE_DIRECTORIES = frozenset({
+    ".ssh", ".aws", ".gnupg", ".gpg", ".kube", ".docker", ".azure",
+    ".password-store", ".1password",
+})
+SENSITIVE_NESTED_DIRECTORIES = (
+    (".config", "gcloud"),
+    (".config", "gh"),
+    (".config", "op"),
+    ("library", "keychains"),
+    ("library", "cookies"),
+    (".local", "share", "keyrings"),
+)
+SENSITIVE_FILE_NAMES = frozenset({
+    ".env", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".pgpass",
+    ".my.cnf", ".htpasswd", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
+    "credentials", "credentials.json", "service-account.json",
+})
+SENSITIVE_SUFFIXES = frozenset({
+    ".pem", ".key", ".p12", ".pfx", ".keychain", ".keychain-db", ".kdbx",
+    ".ovpn", ".mobileprovision",
+})
 REFERENCE_WORDS = {
     "ce fichier",
     "ce dossier",
@@ -413,6 +436,7 @@ class FileSystemTools:
             expected_kind="file",
             follow_symlink=True,
         )
+        self._refuse_sensitive(resolved)
         cap = max(200, min(int(max_chars), 40000))
         pages_truncated = False
         if resolved.suffix.lower() == ".pdf":
@@ -438,6 +462,19 @@ class FileSystemTools:
             "char_count": min(len(text), cap),
             "truncated": truncated,
         }
+
+    def _refuse_sensitive(self, path: Path) -> None:
+        home = self.resolver.home
+        for candidate in (path, path.resolve(strict=False)):
+            try:
+                parts = candidate.relative_to(home).parts
+            except ValueError:
+                parts = candidate.parts
+            if is_sensitive_path(parts):
+                raise FileSystemError(
+                    "Ce fichier peut contenir des secrets ; lecture refusee.",
+                    "sensitive_path_refused",
+                )
 
     @staticmethod
     def _read_docx_text(path: Path) -> str:
@@ -755,6 +792,25 @@ def path_kind(path: Path) -> str:
         return "file"
 
     return "other"
+
+
+def is_sensitive_path(parts: tuple[str, ...]) -> bool:
+    """True for credential folders/files (parts are relative to home)."""
+    lowered = [part.casefold() for part in parts]
+    if not lowered:
+        return False
+    if any(part in SENSITIVE_DIRECTORIES for part in lowered[:-1]):
+        return True
+    folders = lowered[:-1]
+    for nested in SENSITIVE_NESTED_DIRECTORIES:
+        size = len(nested)
+        for index in range(len(folders) - size + 1):
+            if tuple(folders[index:index + size]) == nested:
+                return True
+    name = lowered[-1]
+    if name in SENSITIVE_FILE_NAMES or name.startswith(".env."):
+        return True
+    return Path(name).suffix in SENSITIVE_SUFFIXES
 
 
 def is_bundle(path: Path) -> bool:
