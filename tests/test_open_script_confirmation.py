@@ -33,7 +33,13 @@ class OpenScriptConfirmationTest(unittest.TestCase):
             clipboard_tools=MagicMock(),
             accessibility_tools=MagicMock(),
         )
+        self.registry = registry
         self.tools = {tool.info.name: tool for tool in registry.livekit_tools()}
+
+    def user_says_yes(self):
+        # Once claude/confirm-needs-user-turn is merged, confirm_action needs a
+        # user turn after the preparation; before that this is a no-op.
+        getattr(self.registry, "note_user_turn", lambda: None)()
 
     def tearDown(self):
         self.tempdir.cleanup()
@@ -59,6 +65,7 @@ class OpenScriptConfirmationTest(unittest.TestCase):
             self.assertTrue(prepared["requires_confirmation"])
             self.assertTrue(prepared["token"])
 
+            self.user_says_yes()
             confirmed = asyncio.run(self.tools["confirm_action"](prepared["token"]))
 
         self.assertTrue(confirmed["ok"])
@@ -73,6 +80,7 @@ class OpenScriptConfirmationTest(unittest.TestCase):
         with patch("jarvis.tools.filesystem.subprocess.run") as run:
             prepared = asyncio.run(self.tools["open_file"](str(script)))
             asyncio.run(self.tools["cancel_action"](prepared["token"]))
+            self.user_says_yes()
             again = asyncio.run(self.tools["confirm_action"](prepared["token"]))
 
         self.assertEqual(again["error_code"], "no_pending_action")
