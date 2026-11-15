@@ -15,6 +15,7 @@ A total failure is reported as SearXNGError so KnowledgeService's existing
 from __future__ import annotations
 
 import html
+import ipaddress
 import socket
 import urllib.error
 import urllib.parse
@@ -50,13 +51,19 @@ class KeylessWebProvider:
     def __init__(
         self,
         opener=None,
+        resolver=None,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         lang: str = "fr",
         region: str = "FR",
         max_results: int = 10,
         user_agent: str = DEFAULT_USER_AGENT,
     ):
-        self._open = opener or urllib.request.urlopen
+        self._resolve = resolver or socket.getaddrinfo
+        # The default opener re-checks every redirect target: a public page must not be
+        # able to bounce the reader to a local service.
+        self._open = opener or urllib.request.build_opener(
+            _PublicRedirectHandler(self._resolve)
+        ).open
         self.timeout = float(timeout)
         self.lang = lang
         self.region = region
@@ -156,6 +163,11 @@ class KeylessWebProvider:
         parsed = urllib.parse.urlparse(url.strip())
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise SearXNGError("URL invalide (http/https attendu).")
+        # The URL comes from the model, and the page text goes back to it: without this
+        # check, a prompt-injected "summarize http://localhost:11434/..." would read local
+        # services and the private network on the user's behalf.
+        if not _is_public_host(parsed.hostname, self._resolve):
+            raise SearXNGError("URL refusee : adresse locale ou privee.")
         body = self._fetch(url.strip())
         text = _strip_html(body.decode("utf-8", errors="replace"))
         cap = max(200, min(int(max_chars), 40000))
@@ -229,13 +241,76 @@ def _strip_html(markup: str) -> str:
     return " ".join("".join(extractor.chunks).split())
 
 
+def _is_public_host(host: str | None, resolve=socket.getaddrinfo) -> bool:
+    """False when the host is, or resolves to, a loopback, private or link-local address.
+
+    A name that does not resolve is let through: the fetch then fails on its own.
+    """
+    if not host:
+        return False
+    try:
+        addresses = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            infos = resolve(host, None)
+        except OSError:
+            return True
+        addresses = []
+        for info in infos:
+            try:
+                addresses.append(ipaddress.ip_address(str(info[4][0]).split("%", 1)[0]))
+            except ValueError:
+                return False
+    return all(address.is_global for address in addresses)
+
+
+class _PublicRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, resolve=socket.getaddrinfo) -> None:
+        self._resolve = resolve
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlparse(newurl)
+        if target.scheme not in ("http", "https") or not _is_public_host(
+            target.hostname, self._resolve
+        ):
+            raise urllib.error.URLError("redirect to a non-public address refused")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+# Their content is code or markup for the browser, never text a reader would see.
+_NON_TEXT_TAGS = frozenset({"script", "style", "noscript", "template"})
+# A boundary between these is a word boundary, even with no whitespace in the markup.
+_BLOCK_TAGS = frozenset(
+    {
+        "address", "article", "aside", "blockquote", "br", "dd", "div", "dl", "dt",
+        "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header",
+        "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "td", "th",
+        "title", "tr", "ul",
+    }
+)
+
+
 class _TextExtractor(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.chunks: list[str] = []
+        self._skipping: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag in _NON_TEXT_TAGS:
+            self._skipping.append(tag)
+        elif tag in _BLOCK_TAGS:
+            self.chunks.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._skipping and self._skipping[-1] == tag:
+            self._skipping.pop()
+        elif tag in _BLOCK_TAGS:
+            self.chunks.append(" ")
 
     def handle_data(self, data: str) -> None:
-        self.chunks.append(data)
+        if not self._skipping:
+            self.chunks.append(data)
 
 
 class _DuckDuckGoResultParser(HTMLParser):
