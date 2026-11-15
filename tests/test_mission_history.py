@@ -96,6 +96,7 @@ class MissionHistoryIntegrationTests(unittest.TestCase):
 
         prep = asyncio.run(tools["clear_personal_data"]("missions"))
         self.assertTrue(prep["requires_confirmation"])
+        registry.note_user_turn()  # the user says "oui"
         confirmed = asyncio.run(tools["confirm_action"](prep["token"]))
         self.assertTrue(confirmed["ok"])
         self.assertEqual(confirmed["cleared"].get("missions"), 1)

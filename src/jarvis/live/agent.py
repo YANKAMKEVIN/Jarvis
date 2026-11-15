@@ -1,3 +1,4 @@
+from jarvis.live.confirmation import note_user_turn_from_text
 from jarvis.live.config import (
     LiveConfig,
     debug_live,
@@ -46,8 +47,25 @@ def build_live_server(config: LiveConfig | None = None):
             llm=create_realtime_model(google, config),
         )
 
+        assistant = assistant_class()
+        # confirm_action only runs an action once the user has spoken (or
+        # typed in the room) after its preparation.
+        session.on(
+            "user_input_transcribed",
+            lambda event: note_user_turn_from_text(
+                assistant.registry, getattr(event, "transcript", "")
+            ),
+        )
+        session.on(
+            "conversation_item_added",
+            lambda event: getattr(event.item, "role", None) == "user"
+            and note_user_turn_from_text(
+                assistant.registry, getattr(event.item, "text_content", "")
+            ),
+        )
+
         await session.start(
-            agent=assistant_class(),
+            agent=assistant,
             room=ctx.room,
             record=LIVEKIT_RECORDING_OPTIONS,
         )

@@ -597,3 +597,51 @@ def test_unwritable_marker_falls_back_to_introduction(tmp_path, monkeypatch):
     blocker.write_text('')
     monkeypatch.setenv('JARVIS_INTRODUCED_PATH', str(blocker / 'introduced'))
     assert session_greeting() == LIVE_SESSION_GREETING
+
+
+class TurnRegistry(FakeCloseable):
+    def __init__(self):
+        super().__init__()
+        from jarvis.live.confirmation import PendingActionStore
+        self.pending_actions = PendingActionStore()
+
+    def note_user_turn(self):
+        self.pending_actions.note_user_turn()
+
+
+def test_user_speech_unlocks_confirmation_but_agent_turns_do_not():
+    from jarvis.live.confirmation import ConfirmationNeedsUserTurn
+
+    async def scenario():
+        c = components()
+        c.assistant.registry = registry = TurnRegistry()
+        runtime = LiveRuntime(lambda event: None, factory=lambda: c, prepare=lambda: None)
+        task = asyncio.create_task(runtime.run())
+        await until(lambda: runtime.ready)
+        store = registry.pending_actions
+        token = store.register("send_message", lambda: "sent")
+
+        # Agent-side events and empty transcripts are not a user answer.
+        c.session.handlers["conversation_item_added"](
+            NS(item=NS(id="a1", role="assistant", text_content="Je l'envoie ?", interrupted=False)))
+        c.session.handlers["user_input_transcribed"](NS(transcript="  ", is_final=False))
+        try:
+            store.confirm(token)
+        except ConfirmationNeedsUserTurn:
+            pass
+        else:
+            raise AssertionError("confirmed without the user speaking")
+
+        # A partial transcript arrives before the model answers: it counts.
+        c.session.handlers["user_input_transcribed"](NS(transcript="ou", is_final=False))
+        assert store.confirm(token).executor() == "sent"
+
+        # A user conversation item (e.g. typed text) counts as well.
+        second = store.register("send_message", lambda: "again")
+        c.session.handlers["conversation_item_added"](
+            NS(item=NS(id="u2", role="user", text_content="oui", interrupted=False)))
+        assert store.confirm(second).executor() == "again"
+
+        runtime.stop()
+        await asyncio.wait_for(task, 1)
+    asyncio.run(scenario())

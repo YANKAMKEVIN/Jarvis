@@ -264,6 +264,7 @@ class ScheduleToolsTest(unittest.TestCase):
         registry = create_live_registry(
             schedule_store=store, memory_capability=FakeMemory(),
         )
+        self.registry = registry
         tools = {tool.info.name: tool for tool in registry.livekit_tools()}
         return tools, store
 
@@ -276,6 +277,7 @@ class ScheduleToolsTest(unittest.TestCase):
         self.assertTrue(prepared["requires_confirmation"])
         self.assertEqual(store.list("pending"), [])  # not scheduled until confirmed
 
+        self.registry.note_user_turn()  # the user says "oui"
         confirmed = asyncio.run(tools["confirm_action"](prepared["token"]))
         self.assertTrue(confirmed["ok"])
         pending = store.list("pending")
@@ -288,6 +290,7 @@ class ScheduleToolsTest(unittest.TestCase):
         when = (datetime.now() + timedelta(days=1)).isoformat(timespec="minutes")
 
         prepared = asyncio.run(tools["schedule_message"]("Marie", "Salut", when, "Telegram"))
+        self.registry.note_user_turn()
         asyncio.run(tools["confirm_action"](prepared["token"]))
 
         self.assertEqual(store.list("pending")[0]["app"], "Telegram")

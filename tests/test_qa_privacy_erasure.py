@@ -48,6 +48,7 @@ def test_confirmed_pending_purge_deletes_every_row_and_its_content(tmp_path,scop
         prepared=await tools['clear_personal_data'](scope)
         assert prepared['requires_confirmation']
         assert len(target.list('pending',limit=100))==65
+        registry.note_user_turn()
         return await tools['confirm_action'](prepared['token'])
     result=asyncio.run(scenario())
     assert result['ok'] and result['total_cleared']==65

@@ -30,6 +30,7 @@ class ClearPersonalDataTests(unittest.TestCase):
             context_store=ctx, schedule_store=sched, reminder_store=rem,
             memory_capability=FakeMemory(),
         )
+        self.registry = registry
         tools = {t.info.name: t for t in registry.livekit_tools()}
         return tools, ctx, sched, rem
 
@@ -40,6 +41,7 @@ class ClearPersonalDataTests(unittest.TestCase):
         # Not purged until confirmed.
         self.assertEqual(len(ctx.recent()), 1)
 
+        self.registry.note_user_turn()  # the user says "oui"
         confirmed = asyncio.run(tools["confirm_action"](prep["token"]))
         self.assertTrue(confirmed["ok"])
         self.assertEqual(confirmed["total_cleared"], 3)
@@ -50,6 +52,7 @@ class ClearPersonalDataTests(unittest.TestCase):
     def test_scope_context_only(self):
         tools, ctx, sched, rem = self._tools()
         prep = asyncio.run(tools["clear_personal_data"]("context"))
+        self.registry.note_user_turn()
         asyncio.run(tools["confirm_action"](prep["token"]))
         self.assertEqual(ctx.recent(), [])
         self.assertEqual(len(sched.list("pending")), 1)  # untouched
