@@ -271,6 +271,51 @@ class FileSystemToolsTest(unittest.TestCase):
         self.assertFalse(file_result["state_confirmed"])
         self.assertFalse(folder_result["state_confirmed"])
 
+    def test_open_file_refuses_executable_types_without_running_open(self):
+        names = ["run.command", "x.terminal", "install.sh", "Setup.pkg", "s.SCPT"]
+        paths = [self.write_file(f"Downloads/{name}") for name in names]
+        bare = self.write_file("Downloads/payload")
+        bare.chmod(0o755)
+        app = self.home / "Downloads/Evil.app"
+        (app / "Contents").mkdir(parents=True)
+
+        with patch("jarvis.tools.filesystem.subprocess.run") as run:
+            for path in [*paths, bare]:
+                with self.assertRaises(FileSystemError) as context:
+                    self.tools.open_file(str(path))
+                self.assertEqual(context.exception.code, "executable_refused")
+            with self.assertRaises(FileSystemError) as context:
+                self.tools.open_folder(str(app))
+            self.assertEqual(context.exception.code, "executable_refused")
+
+        run.assert_not_called()
+
+    def test_open_file_refuses_symlink_to_executable(self):
+        target = self.write_file("Downloads/run.command")
+        link = self.home / "Documents/notes.txt"
+        link.symlink_to(target)
+
+        with patch("jarvis.tools.filesystem.subprocess.run") as run:
+            with self.assertRaises(FileSystemError) as context:
+                self.tools.open_file(str(link))
+
+        self.assertEqual(context.exception.code, "executable_refused")
+        run.assert_not_called()
+
+    def test_open_file_uses_a_timeout_and_reports_it(self):
+        import subprocess
+
+        file_path = self.write_file("Documents/file.txt")
+        with patch(
+            "jarvis.tools.filesystem.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["open"], 15),
+        ) as run:
+            with self.assertRaises(FileSystemError) as context:
+                self.tools.open_file(str(file_path))
+
+        self.assertEqual(context.exception.code, "open_timeout")
+        self.assertGreater(run.call_args.kwargs["timeout"], 0)
+
     def test_unresolved_reference_is_refused(self):
         with self.assertRaises(FileSystemError) as context:
             self.tools.open_file("ce fichier")
