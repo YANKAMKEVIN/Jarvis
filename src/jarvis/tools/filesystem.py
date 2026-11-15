@@ -15,11 +15,15 @@ BUNDLE_SUFFIXES = {".app", ".bundle", ".pkg"}
 # than displaying a document, so open_file/open_folder refuse them.
 EXECUTABLE_SUFFIXES = frozenset({
     ".app", ".command", ".terminal", ".tool", ".sh", ".bash", ".zsh", ".csh",
-    ".ksh", ".fish", ".py", ".pl", ".rb", ".php", ".jar", ".pkg", ".mpkg",
+    ".ksh", ".fish", ".pkg", ".mpkg",
     ".scpt", ".scptd", ".applescript", ".workflow", ".action", ".shortcut",
     ".prefpane", ".mobileconfig", ".fileloc", ".bundle", ".plugin", ".kext",
     ".osax", ".saver", ".qlgenerator", ".dylib", ".xpc", ".appex",
 })
+# Interpreted scripts and Java archives: depending on the default app, `open`
+# shows them in an editor or runs them (Python Launcher, Jar Launcher...).
+# open_file only opens them once the user has confirmed (allow_script=True).
+SCRIPT_SUFFIXES = frozenset({".py", ".pl", ".rb", ".php", ".jar"})
 OPEN_TIMEOUT_SECONDS = 15
 REFERENCE_WORDS = {
     "ce fichier",
@@ -502,7 +506,11 @@ class FileSystemTools:
         )
         return path_info(resolved)
 
-    def open_file(self, path: str | Path) -> dict[str, Any]:
+    def open_file(
+        self,
+        path: str | Path,
+        allow_script: bool = False,
+    ) -> dict[str, Any]:
         resolved = self.resolver.resolve_existing(
             path,
             action="open_file",
@@ -510,6 +518,8 @@ class FileSystemTools:
             follow_symlink=True,
         )
         self._refuse_executable(resolved)
+        if not allow_script:
+            self._require_script_confirmation(resolved)
         return self._open_path(resolved, "open_file")
 
     def open_folder(self, path: str | Path) -> dict[str, Any]:
@@ -644,6 +654,19 @@ class FileSystemTools:
                     "ouverture refusee.",
                     "executable_refused",
                     {"suffix": suffix},
+                )
+
+    @staticmethod
+    def _require_script_confirmation(path: Path) -> None:
+        """Stop before opening a script until the user has confirmed it."""
+        for candidate in (path, path.resolve(strict=False)):
+            suffix = candidate.suffix.lower()
+            if suffix in SCRIPT_SUFFIXES:
+                raise FileSystemError(
+                    "Ce fichier est un script qui pourrait s'executer a "
+                    "l'ouverture ; confirmation requise.",
+                    "script_needs_confirmation",
+                    {"suffix": suffix, "path": str(path)},
                 )
 
     def _open_path(self, path: Path, action: str) -> dict[str, Any]:

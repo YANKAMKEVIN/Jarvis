@@ -97,14 +97,17 @@ class FilesCapability:
             **state,
         )
 
-    def open_file(self, path: str) -> ToolResult:
+    def open_file(self, path: str, allow_script: bool = False) -> ToolResult:
         security_result = self._security_result("open_file", path)
 
         if security_result is not None:
             return security_result
 
         try:
-            state = self.filesystem_tools.open_file(path)
+            if allow_script:
+                state = self.filesystem_tools.open_file(path, allow_script=True)
+            else:
+                state = self.filesystem_tools.open_file(path)
         except FileSystemError as error:
             return self._filesystem_failure("open_file", error)
         except Exception as error:
