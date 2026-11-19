@@ -3,6 +3,7 @@ from urllib.parse import urlsplit
 from PySide6.QtCore import QUrl, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from jarvis.desktop.mission_panel import timeline
 from jarvis.desktop.presentation import MISSION_GUIDANCE, STATUS_TEXT, TASK_TEXT, safe_url
 
 
@@ -56,7 +57,7 @@ class DetailPanel(QWidget):
     def render(self):
         c = self.controller
         can_cancel = bool(c.voice_worker) and c.voice_state not in {'starting', 'stopping', 'error'}
-        signature = repr((c.mission_list(), c.task, c.mission_history if self.activity else None, c.activity if self.activity else c.cards, can_cancel))
+        signature = repr((c.mission_list(), c.task, c.mission_history if self.activity else None, c.activity if self.activity else c.cards, can_cancel, c.reduced_motion))
         if signature == self.signature:
             return
         self.signature = signature
@@ -77,10 +78,11 @@ class DetailPanel(QWidget):
                 row.addWidget(text(task['objective'], 'greeting'))
             row.addWidget(text(TASK_TEXT.get(task['status'], TASK_TEXT['unknown']), 'wordmark'))
             row.addWidget(text(f"{task['step_count']} étape(s) traitée(s)", 'subtitle'))
-            if task.get('current') and task['status'] in {'running', 'cancelling'}:
-                row.addWidget(text('En cours · ' + task['current']))
-            for index, step in enumerate(task['steps'], 1):
-                row.addWidget(text(f"{index:02d} · {step['label']} · {STATUS_TEXT.get(step['status'], '')}"))
+            rail = QVBoxLayout()
+            rail.setSpacing(0)
+            for step in timeline(task, motion=not c.reduced_motion, selectable=True):
+                rail.addWidget(step)
+            row.addLayout(rail)
             if task['step_count'] > len(task['steps']):
                 row.addWidget(text(f"{len(task['steps'])} premières étapes affichées sur {task['step_count']}.", 'subtitle'))
             row.addWidget(text(MISSION_GUIDANCE.get(task['status'], MISSION_GUIDANCE['unknown']), 'subtitle'))

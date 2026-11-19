@@ -38,6 +38,47 @@ TASK_TEXT = {
     'failed': 'Tâche en échec', 'budget_exceeded': 'Limite de la tâche atteinte',
     'unknown': 'Résultat indisponible',
 }
+STEP_KINDS = {'received': 'done', 'verified': 'done', 'error': 'error', 'running': 'running',
+              'confirmation': 'waiting'}
+
+
+def count_label(count, singular, plural=None):
+    """« 1 carte », « 2 cartes » : French agreement, zero and one stay singular."""
+    return f"{count} {singular if count < 2 else plural or singular + 's'}"
+
+
+def step_kind(status):
+    """Visual family of a step marker: done, error, running, waiting or idle."""
+    return STEP_KINDS.get(status, 'idle')
+
+
+def mission_progress(task):
+    """Short position in a mission. The planner reveals steps once executed, so no total is known."""
+    done = task.get('step_count', 0)
+    if task.get('status') in {'running', 'cancelling'} and task.get('current'):
+        return f'Étape {done + 1} en cours'
+    return count_label(done, 'étape traitée', 'étapes traitées')
+
+
+def mission_timeline(task, limit=None):
+    """Rows of the step timeline: the last executed steps, then the step under way or awaited."""
+    steps = task.get('steps', [])
+    rows = [{'label': step['label'], 'status': step['status'], 'kind': step_kind(step['status']),
+             'text': step['label'] + ' · ' + STATUS_TEXT.get(step['status'], 'Résultat reçu')}
+            for step in (steps[-limit:] if limit else steps)]
+    status = task.get('status')
+    if status in {'running', 'cancelling'}:
+        current = task.get('current', '')
+        if current or status == 'running':
+            rows.append({'label': current, 'status': 'running', 'kind': 'running',
+                         'text': 'En cours · ' + current if current else 'Jarvis prépare la suite…'})
+    elif status in {'queued', 'waiting_dependency', 'paused'}:
+        rows.append({'label': '', 'status': status, 'kind': 'idle', 'text': TASK_TEXT[status]})
+    elif status in {'needs_confirmation', 'needs_clarification'}:
+        rows.append({'label': '', 'status': status, 'kind': 'waiting', 'text': TASK_TEXT[status]})
+    return rows
+
+
 SCREEN_TOOLS = frozenset({'describe_screen', 'ask_about_screen', 'capture_screen', 'capture_window', 'capture_region'})
 MISSION_GUIDANCE = {
     'paused': 'Mission en attente mise en pause. Demandez vocalement sa reprise pour la remettre en file.',

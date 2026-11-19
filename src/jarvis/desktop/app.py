@@ -50,6 +50,9 @@ QPushButton:disabled { color: #647b90; background: #152030; }
 QPushButton#primary:hover { background: #b8e4ff; }
 QPushButton#primary { background: #82caff; color: #081421; border: 0; font-weight: 600; }
 QPushButton#primary:disabled { background: #223247; color: #8096ab; }
+QPushButton#cancelTask, QPushButton#cancelMission { background: transparent; border: 1px solid #7d4a5c; color: #f0b3c3; }
+QPushButton#cancelTask:hover, QPushButton#cancelMission:hover { background: #3a2030; border-color: #ee99b9; }
+QPushButton#cancelTask:disabled, QPushButton#cancelMission:disabled { background: transparent; border-color: #3d3442; color: #7d6873; }
 QPushButton#nav { text-align: left; background: transparent; border: 0; padding: 13px; color: #91a9c1; }
 QPushButton#nav:checked { color: #e0f1ff; background: #22354b; }
 QScrollArea { background: transparent; border: 0; }
