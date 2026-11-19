@@ -79,6 +79,34 @@ def mission_timeline(task, limit=None):
     return rows
 
 
+# Things to say, shown on the idle assistant. Each needs at most one macOS
+# permission (an onboarding key); None means it works without any.
+SUGGESTIONS = (
+    ('calendar', 'Quel est mon agenda demain ?'),
+    (None, 'Cherche la météo du week-end'),
+    (None, 'Lance un minuteur de dix minutes'),
+    ('reminders', 'Rappelle-moi d’appeler Léa à 18 h'),
+    ('screen_recording', 'Décris ce que tu vois à l’écran'),
+    (None, 'Baisse le volume'),
+    ('automation', 'Ouvre Notes'),
+    (None, 'Retrouve ma note sur le budget'),
+    ('accessibility', 'Mets Safari au premier plan'),
+)
+
+
+def suggestions(snapshot=None, tick=0, count=3):
+    """`count` example requests for rotation step `tick`, skipping refused permissions.
+
+    snapshot maps a permission key to True, False or None (unknown, asked at
+    first use); only an explicit refusal hides an example.
+    """
+    snapshot = snapshot or {}
+    usable = [phrase for permission, phrase in SUGGESTIONS
+              if permission is None or snapshot.get(permission) is not False]
+    start = (tick * count) % len(usable)
+    return [usable[(start + offset) % len(usable)] for offset in range(min(count, len(usable)))]
+
+
 SCREEN_TOOLS = frozenset({'describe_screen', 'ask_about_screen', 'capture_screen', 'capture_window', 'capture_region'})
 MISSION_GUIDANCE = {
     'paused': 'Mission en attente mise en pause. Demandez vocalement sa reprise pour la remettre en file.',

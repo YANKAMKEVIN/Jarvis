@@ -672,6 +672,16 @@ class VoicePanel(QWidget):
         self.details_button.setObjectName('quiet')
         self.hint_area.addWidget(self.details_button)
         layout.addWidget(self.hint_area)
+        self.suggestions = label('', 'subtitle')
+        self.suggestions.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.suggestions.setAccessibleName('Exemples de demandes à dire')
+        self.suggestions.hide()
+        layout.addWidget(self.suggestions)
+        self.suggestion_tick = 0
+        self.permission_snapshot = None
+        self.suggestion_timer = QTimer(self)
+        self.suggestion_timer.setInterval(7000)
+        self.suggestion_timer.timeout.connect(self.next_suggestions)
         self.error_banner = QFrame()
         self.error_banner.setObjectName('errorBanner')
         self.error_banner.setAccessibleName('Problème vocal')
@@ -721,6 +731,39 @@ class VoicePanel(QWidget):
 
     def toggle_voice(self):
         self.controller.stop_voice() if self.controller.voice_worker else self.controller.start_voice()
+
+    def next_suggestions(self):
+        self.suggestion_tick += 1
+        self.render_suggestions()
+
+    def permissions(self):
+        """macOS permission statuses, read once; never queried in the demo or offscreen."""
+        if self.permission_snapshot is None:
+            self.permission_snapshot = {}
+            if not self.controller.demo and QApplication.platformName() != 'offscreen':
+                from jarvis.desktop.onboarding import default_snapshot
+                self.permission_snapshot = default_snapshot()
+        return self.permission_snapshot
+
+    def render_suggestions(self, shown=None):
+        from jarvis.desktop.presentation import suggestions
+        if shown is not None:
+            self.suggestions.setVisible(shown)
+        shown = not self.suggestions.isHidden()
+        if shown:
+            self.suggestions.setText('Essayez :  ' + '   ·   '.join(
+                '« ' + phrase + ' »' for phrase in suggestions(self.permissions(), self.suggestion_tick)))
+        rotating = shown and self.isVisible() and not self.controller.reduced_motion
+        if rotating != self.suggestion_timer.isActive():
+            self.suggestion_timer.start() if rotating else self.suggestion_timer.stop()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.render_suggestions()
+
+    def hideEvent(self, event):
+        self.suggestion_timer.stop()
+        super().hideEvent(event)
 
     def resolve_error(self):
         """Banner button: go where the error can be fixed, or start the voice again."""
@@ -841,6 +884,12 @@ class VoicePanel(QWidget):
             if state=='muted':
                 self.status.setText('Maintenir pour parler')
                 self.hint.setText(c.ptt_hotkey_message)
+        # Examples to say only fill an otherwise empty, idle or listening screen.
+        self.render_suggestions(
+            not self.compact and state in {'off', 'listening'} and not c.voice_error and not mission_shown
+            and not c.cards and not has_details and c.audio_worker is None and not c.input_suppressed
+            and not c.screen_operations and not (c.tool_notice or c.request_status)
+            and not (c.ptt_enabled and active))
         # A voice error gets its own banner with the fitting next step; the line
         # under the dock then only carries the reconnection countdown, if any.
         self.error_banner.setVisible(bool(c.voice_error))

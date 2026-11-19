@@ -122,3 +122,35 @@ def test_voice_error_banner_names_the_cause_and_opens_the_right_place(shell, app
     assert panel.error_action.text() == 'Reconnecter'
     c.voice_event({'type': 'state', 'state': 'off'})
     assert not panel.error_banner.isVisible()
+
+
+def test_suggestions_rotate_and_skip_refused_permissions():
+    from jarvis.desktop.presentation import SUGGESTIONS, suggestions
+    first = suggestions({}, 0)
+    assert len(first) == 3 and first == [phrase for _, phrase in SUGGESTIONS[:3]]
+    assert suggestions({}, 1) != first and suggestions({}, len(SUGGESTIONS)) == first
+    refused = {'calendar': False, 'reminders': False, 'screen_recording': False, 'automation': False, 'accessibility': False}
+    free = {phrase for permission, phrase in SUGGESTIONS if permission is None}
+    for tick in range(6):
+        assert set(suggestions(refused, tick)) <= free
+    assert 'Quel est mon agenda demain ?' in suggestions({'calendar': True}, 0)
+    assert 'Quel est mon agenda demain ?' in suggestions({'calendar': None}, 0)
+
+
+def test_idle_assistant_suggests_requests_until_something_else_needs_the_space(shell, app):
+    from jarvis.desktop.presentation import project_activity
+    c, panel = shell.controller, shell.full.assistant
+    shell.show_full()
+    assert panel.suggestions.isVisible() and '« Quel est mon agenda demain ? »' in panel.suggestions.text()
+    assert not panel.suggestion_timer.isActive()  # reduced motion: no rotation
+    c.reduced_motion = False
+    c.changed.emit()
+    assert panel.suggestion_timer.isActive()
+    before = panel.suggestions.text()
+    panel.next_suggestions()
+    assert panel.suggestions.text() != before
+    listen(c)
+    assert panel.suggestions.isVisible()
+    c.voice_event(project_activity('get_volume', {'ok': True, 'volume': 40}, 'v'))
+    assert not panel.suggestions.isVisible() and not panel.suggestion_timer.isActive()
+    assert not shell.compact.findChildren(type(panel))
