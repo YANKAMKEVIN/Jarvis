@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import uuid
 
 from jarvis.activity import log_event
+from jarvis.live.confirmation import note_user_turn_from_text
 from jarvis.desktop.presentation import project_activity, project_task
 from jarvis.desktop.devices import AudioDeviceError
 
@@ -429,7 +430,9 @@ class LiveRuntime:
                 if item_id in self.seen_items:
                     return
                 self.seen_items.append(item_id)
-            if role == "user":self.emit(self.turn_progress.received())
+            if role == "user":
+                self._note_user_turn(text)
+                self.emit(self.turn_progress.received())
             else:
                 self.turn_progress.response()
                 if self.profile.get("quiet"):
@@ -437,6 +440,15 @@ class LiveRuntime:
             # Conversation words stay private except opt-in quiet replies in RAM.
             self.emit({"type": "transcript", "role": role,
                        "interrupted": bool(getattr(item, "interrupted", False))})
+
+    def _note_user_turn(self, text):
+        registry = getattr(getattr(self.components, "assistant", None), "registry", None)
+        note_user_turn_from_text(registry, text)
+
+    def _user_transcribed(self, event):
+        # Partial transcripts count: the final one only arrives after the model
+        # has answered, i.e. after a confirm_action in the same generation.
+        self._note_user_turn(getattr(event, "transcript", ""))
 
     def _error(self, event):
         if not self.closing and not self.stop_requested.is_set() and not getattr(event.error, "recoverable", False):
@@ -547,6 +559,7 @@ class LiveRuntime:
             c.session.on("agent_state_changed", self._agent_changed)
             c.session.on("user_state_changed", self._user_changed)
             c.session.on("conversation_item_added", self._conversation)
+            c.session.on("user_input_transcribed", self._user_transcribed)
             c.session.on("error", self._error)
             c.session.on("function_tools_executed", self._tools_executed)
             c.session.on("close", self._closed)

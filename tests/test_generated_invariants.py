@@ -81,6 +81,7 @@ class ConfirmationSequence(RuleBasedStateMachine):
     def consume(self,index,cancel):
         self.prune();token=f'token-{index}'
         expected=token in self.pending
+        self.store.note_user_turn()  # the user answered since the preparation
         result=(self.store.cancel if cancel else self.store.confirm)(token)
         assert (result is not None)==expected
         self.pending.pop(token,None)

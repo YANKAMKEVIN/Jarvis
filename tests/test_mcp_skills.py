@@ -318,6 +318,7 @@ def test_unapproved_call_waits_for_confirmation(tmp_path):
     async def run():
         prepared = await tools["call_mcp_tool"]("gh", "create_issue", '{"title": "Bug"}')
         assert opener.session.calls == []
+        registry.note_user_turn()  # the user says "oui"
         confirmed = await tools["confirm_action"](prepared["token"])
         await registry.aclose()
         return prepared, confirmed

@@ -6,6 +6,7 @@ import tomllib
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from livekit.agents import AgentServer
@@ -24,7 +25,7 @@ from jarvis.live.logging import (
     install_livekit_pii_log_filter,
 )
 from jarvis.live.prompts import LIVE_SYSTEM_PROMPT
-from jarvis.live.tools import ToolRegistry, create_live_tools
+from jarvis.live.tools import ToolRegistry, create_live_registry, create_live_tools
 from jarvis.capabilities.results import ToolResult
 from jarvis.security import SecurityDecision
 from jarvis.voice_mode import VoiceMode
@@ -207,7 +208,11 @@ class RecordingAgentSession:
         self.kwargs = kwargs
         self.start_calls = []
         self.generate_reply_calls = []
+        self.handlers = {}
         RecordingAgentSession.instances.append(self)
+
+    def on(self, name, callback):
+        self.handlers[name] = callback
 
     async def start(self, **kwargs):
         self.start_calls.append(kwargs)
@@ -1348,6 +1353,43 @@ class LivePocAgentTest(unittest.TestCase):
             {"redaction": True},
         )
         self.assertIs(session.start_calls[0]["room"], FakeJobContext.room)
+
+    def test_live_session_user_speech_unlocks_confirmation(self):
+        from jarvis.live.confirmation import ConfirmationNeedsUserTurn
+
+        config = LiveConfig(
+            model="gemini-test-live",
+            voice="Puck",
+            temperature=0.8,
+            agent_name="jarvis-test",
+        )
+        RecordingAgentSession.instances.clear()
+
+        with patch("livekit.agents.AgentSession", RecordingAgentSession):
+            with patch.object(
+                agent,
+                "create_realtime_model",
+                return_value={"type": "fake-model"},
+            ):
+                built_server = agent.build_live_server(config)
+                asyncio.run(built_server._entrypoint_fnc(FakeJobContext()))
+
+        session = RecordingAgentSession.instances[0]
+        store = session.start_calls[0]["agent"].registry.pending_actions
+        token = store.register("send_message", lambda: "sent")
+        with self.assertRaises(ConfirmationNeedsUserTurn):
+            store.confirm(token)
+
+        session.handlers["user_input_transcribed"](
+            SimpleNamespace(transcript="oui", is_final=False)
+        )
+        self.assertEqual(store.confirm(token).executor(), "sent")
+
+        typed = store.register("send_message", lambda: "typed")
+        session.handlers["conversation_item_added"](
+            SimpleNamespace(item=SimpleNamespace(role="user", text_content="oui"))
+        )
+        self.assertEqual(store.confirm(typed).executor(), "typed")
 
     def test_voice_mode_still_imports_alongside_live_poc(self):
         self.assertTrue(hasattr(VoiceMode, "run"))
@@ -3659,7 +3701,7 @@ class RecordingLiveMessagingCapability:
 
 class LiveConfirmationToolTest(unittest.TestCase):
     def make_tools(self, interaction_capability=None, messaging_capability=None):
-        tools = create_live_tools(
+        self.registry = create_live_registry(
             security=RecordingLiveSecurity(),
             interaction_capability=(
                 interaction_capability or RecordingLiveInteractionCapability()
@@ -3668,7 +3710,7 @@ class LiveConfirmationToolTest(unittest.TestCase):
                 messaging_capability or RecordingLiveMessagingCapability()
             ),
         )
-        return {tool.info.name: tool for tool in tools}
+        return {tool.info.name: tool for tool in self.registry.livekit_tools()}
 
     def test_confirmation_tools_are_named(self):
         tools = self.make_tools()
@@ -3697,6 +3739,7 @@ class LiveConfirmationToolTest(unittest.TestCase):
         tools = self.make_tools(interaction, messaging)
 
         prepared = asyncio.run(tools["prepare_send_message"]("WhatsApp", "Salut", None))
+        self.registry.note_user_turn()  # the user says "oui"
         result = asyncio.run(tools["confirm_action"](prepared["token"]))
 
         self.assertTrue(result["ok"])
@@ -3713,6 +3756,7 @@ class LiveConfirmationToolTest(unittest.TestCase):
         prepared = asyncio.run(
             tools["prepare_send_message"]("WhatsApp", "Salut", None, "Champ custom")
         )
+        self.registry.note_user_turn()
         asyncio.run(tools["confirm_action"](prepared["token"]))
 
         self.assertEqual(capability.calls[0][3], "Champ custom")
@@ -3723,13 +3767,44 @@ class LiveConfirmationToolTest(unittest.TestCase):
 
         prepared = asyncio.run(tools["prepare_send_message"]("WhatsApp", "Salut"))
         token = prepared["token"]
+        self.registry.note_user_turn()
         asyncio.run(tools["confirm_action"](token))
+        self.registry.note_user_turn()
         second = asyncio.run(tools["confirm_action"](token))
 
         self.assertFalse(second["ok"])
         self.assertEqual(second["error_code"], "no_pending_action")
         sends = [call for call in messaging.calls if call[0] == "send_text"]
         self.assertEqual(len(sends), 1)  # executed only once
+
+    def test_confirm_without_a_user_turn_sends_nothing_and_keeps_the_token(self):
+        messaging = RecordingLiveMessagingCapability()
+        tools = self.make_tools(messaging_capability=messaging)
+
+        prepared = asyncio.run(tools["prepare_send_message"]("WhatsApp", "Salut"))
+        # The model calls confirm_action on its own (e.g. a prompt injection).
+        early = asyncio.run(tools["confirm_action"](prepared["token"]))
+
+        self.assertFalse(early["ok"])
+        self.assertEqual(early["error_code"], "confirmation_needs_user_turn")
+        self.assertNotIn(("send_text", "WhatsApp", "Salut"), messaging.calls)
+
+        self.registry.note_user_turn()
+        confirmed = asyncio.run(tools["confirm_action"](prepared["token"]))
+
+        self.assertTrue(confirmed["ok"])
+        self.assertEqual(messaging.calls[-1], ("send_text", "WhatsApp", "Salut"))
+
+    def test_user_turn_before_preparation_does_not_confirm(self):
+        messaging = RecordingLiveMessagingCapability()
+        tools = self.make_tools(messaging_capability=messaging)
+
+        self.registry.note_user_turn()  # "envoie Salut a Paul"
+        prepared = asyncio.run(tools["prepare_send_message"]("WhatsApp", "Salut"))
+        result = asyncio.run(tools["confirm_action"](prepared["token"]))
+
+        self.assertEqual(result["error_code"], "confirmation_needs_user_turn")
+        self.assertNotIn(("send_text", "WhatsApp", "Salut"), messaging.calls)
 
     def test_confirm_unknown_token_sends_nothing(self):
         capability = RecordingLiveInteractionCapability()
@@ -3774,6 +3849,7 @@ class LiveConfirmationToolTest(unittest.TestCase):
         prepared = asyncio.run(
             tools["prepare_send_message"]("Telegram", "Salut", "Joel", "Champ custom")
         )
+        self.registry.note_user_turn()
         confirmed = asyncio.run(tools["confirm_action"](prepared["token"]))
 
         self.assertTrue(confirmed["ok"])
@@ -3814,6 +3890,7 @@ class LiveConfirmationToolTest(unittest.TestCase):
                 prepared = asyncio.run(
                     tools["prepare_send_message"]("WhatsApp", "SECRET_MSG_TEXT")
                 )
+                self.registry.note_user_turn()
                 asyncio.run(tools["confirm_action"](prepared["token"]))
 
         debug_output = output.getvalue()

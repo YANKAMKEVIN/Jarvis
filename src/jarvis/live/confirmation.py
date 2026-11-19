@@ -11,12 +11,21 @@ from typing import Any, Callable
 ActionExecutor = Callable[[], Any]
 
 
+class ConfirmationNeedsUserTurn(Exception):
+    """confirm() was called before the user spoke since the preparation.
+
+    The token is left pending: the model must ask the user to confirm aloud
+    and call confirm_action again once the user has answered.
+    """
+
+
 @dataclass
 class PendingAction:
     token: str
     action: str
     executor: ActionExecutor
     created_at: float
+    user_turn: int = 0
 
 
 class PendingActionStore:
@@ -29,6 +38,12 @@ class PendingActionStore:
 
     The store keeps no message content and logs nothing; the executor closure
     carries whatever the action needs, and callers never echo it.
+
+    A token alone is not enough: the model could call confirm_action on its
+    own (for instance driven by a prompt injection in a web page or message).
+    The runtime calls note_user_turn() whenever the user says or types
+    something, and confirm() only accepts an action if at least one user turn
+    was noted after it was prepared.
     """
 
     DEFAULT_TTL_SECONDS = 300.0
@@ -46,6 +61,11 @@ class PendingActionStore:
         self._ttl_seconds = float(ttl_seconds)
         self._max_pending = max(1, int(max_pending))
         self._pending: dict[str, PendingAction] = {}
+        self._user_turn = 0
+
+    def note_user_turn(self) -> None:
+        """Record that the user spoke or typed since the last call."""
+        self._user_turn += 1
 
     def register(self, action: str, executor: ActionExecutor) -> str:
         self._prune()
@@ -55,6 +75,7 @@ class PendingActionStore:
             action=action,
             executor=executor,
             created_at=self._clock(),
+            user_turn=self._user_turn,
         )
 
         # Bound memory: drop the oldest if we somehow exceed the cap.
@@ -65,13 +86,23 @@ class PendingActionStore:
         return token
 
     def confirm(self, token: str) -> PendingAction | None:
-        """Consume and return the pending action, or None if unknown/expired."""
+        """Consume and return the pending action, or None if unknown/expired.
+
+        Raises ConfirmationNeedsUserTurn, without consuming the token, when
+        the user has not spoken since the action was prepared.
+        """
         self._prune()
 
         if not isinstance(token, str):
             return None
 
-        return self._pending.pop(token, None)
+        pending = self._pending.get(token)
+        if pending is None:
+            return None
+        if self._user_turn <= pending.user_turn:
+            raise ConfirmationNeedsUserTurn(pending.action)
+
+        return self._pending.pop(token)
 
     def cancel(self, token: str) -> PendingAction | None:
         self._prune()
@@ -95,3 +126,19 @@ class PendingActionStore:
 
         for token in expired:
             self._pending.pop(token, None)
+
+
+def note_user_turn_from_text(registry: Any, text: Any) -> bool:
+    """Note a user turn on registry when the user said or typed something.
+
+    Wired to the session's user transcriptions (partial ones included: the
+    final transcript only arrives after the model has answered) and to user
+    conversation items (typed text).
+    """
+    if not isinstance(text, str) or not text.strip():
+        return False
+    note = getattr(registry, "note_user_turn", None)
+    if note is None:
+        return False
+    note()
+    return True

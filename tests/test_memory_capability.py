@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from jarvis.capabilities.memory import MemoryCapability
 from jarvis.capabilities.results import ToolResult
-from jarvis.live.registry import create_live_tools
+from jarvis.live.registry import create_live_registry, create_live_tools
 from jarvis.memory.store import MemoryStore
 
 
@@ -169,12 +169,12 @@ class LiveMemoryToolsTest(TempMemoryMixin, unittest.TestCase):
     def make_tools(self):
         self.interaction = RecordingInteraction()
         self.messaging = RecordingMessaging()
-        tools = create_live_tools(
+        self.registry = create_live_registry(
             interaction_capability=self.interaction,
             messaging_capability=self.messaging,
             memory_capability=self.memory,
         )
-        return {tool.info.name: tool for tool in tools}
+        return {tool.info.name: tool for tool in self.registry.livekit_tools()}
 
     def test_memory_tools_are_exposed(self):
         tools = self.make_tools()
@@ -206,6 +206,7 @@ class LiveMemoryToolsTest(TempMemoryMixin, unittest.TestCase):
         self.assertTrue(proposed["requires_confirmation"])
         self.assertEqual(self.store.count(), 0)  # nothing stored yet
 
+        self.registry.note_user_turn()  # the user says "oui"
         confirmed = asyncio.run(tools["confirm_action"](proposed["token"]))
 
         self.assertTrue(confirmed["ok"])
@@ -262,6 +263,7 @@ class LiveMemoryToolsTest(TempMemoryMixin, unittest.TestCase):
         prepared = asyncio.run(
             tools["prepare_send_message"]("WhatsApp", "TEXTE_PRIVE", "Paul")
         )
+        self.registry.note_user_turn()
         asyncio.run(tools["confirm_action"](prepared["token"]))
         activity = asyncio.run(tools["recent_activity"]())
 

@@ -253,6 +253,7 @@ class RegistryTaskToolsTest(unittest.TestCase):
             await tools["run_task"]("Previens Paul que j'arrive")
             outcome = await registry.tasks.wait()
             self.assertEqual(interaction.calls, [])  # nothing sent by the task
+            registry.note_user_turn()  # the user answers the announcement
             confirmed = await tools["confirm_action"](outcome.pending["token"])
             return outcome, confirmed
 
