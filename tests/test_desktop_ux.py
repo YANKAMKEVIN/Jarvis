@@ -96,3 +96,29 @@ def test_mission_card_shows_a_step_rail_and_a_distinct_cancel_action(shell, app)
     from jarvis.desktop.mission_panel import StepRow
     rows = shell.full.activity.findChildren(StepRow)
     assert [row.marker.kind for row in rows] == ['done', 'error', 'running']
+
+
+def test_voice_error_action_points_to_the_fix():
+    from jarvis.desktop.recovery import voice_error_action
+    assert voice_error_action("Clé Gemini manquante. Ajoutez GOOGLE_API_KEY dans le fichier .env") == ('api_key', 'Ajouter la clé API')
+    assert voice_error_action("Choix audio enregistré invalide. Sélectionnez vos périphériques dans Réglages.")[0] == 'settings'
+    assert voice_error_action("Connexion perdue.", can_reconnect=True) == ('retry', 'Reconnecter')
+    assert voice_error_action("Le mot d’éveil local s’est arrêté. Relancez le vocal.") == ('retry', 'Réessayer')
+    assert voice_error_action(None) == ('retry', 'Réessayer')
+
+
+def test_voice_error_banner_names_the_cause_and_opens_the_right_place(shell, app):
+    c, panel = shell.controller, shell.full.assistant
+    shell.show_full()
+    assert not panel.error_banner.isVisible()
+    c.voice_event({'type': 'state', 'state': 'error',
+                   'message': 'Choix audio enregistré invalide. Sélectionnez vos périphériques dans Réglages.'})
+    assert panel.error_banner.isVisible() and 'Choix audio' in panel.error_text.text()
+    assert panel.error_action.text() == 'Ouvrir Réglages' and panel.voice_notice.text() == ''
+    panel.error_action.click()
+    assert shell.full.pages.currentIndex() == 3
+    shell.full.navigate(0)
+    c.voice_event({'type': 'state', 'state': 'error', 'message': 'Connexion perdue.', 'retryable': True})
+    assert panel.error_action.text() == 'Reconnecter'
+    c.voice_event({'type': 'state', 'state': 'off'})
+    assert not panel.error_banner.isVisible()

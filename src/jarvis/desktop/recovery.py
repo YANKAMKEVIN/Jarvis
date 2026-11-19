@@ -3,6 +3,18 @@ from PySide6.QtCore import QObject,QTimer,Signal
 
 READY={'listening','muted','speaking','thinking'}
 
+def voice_error_action(message,can_reconnect=False):
+    """The one useful next step for a voice error: (kind, button label).
+
+    kind is 'api_key' (open the setup guide), 'settings' (open Réglages) or
+    'retry' (start the voice again). Only the safe, user-facing message is read.
+    """
+    text=(message or '').casefold()
+    if 'google_api_key' in text or 'clé gemini' in text or 'clé api' in text:return 'api_key','Ajouter la clé API'
+    if any(word in text for word in ('périphérique','réglages','choix audio','sortie audio','microphone')):return 'settings','Ouvrir Réglages'
+    return 'retry','Reconnecter' if can_reconnect else 'Réessayer'
+
+
 class VoiceRecovery(QObject):
     def __init__(self,controller,enabled=True):
         super().__init__(controller)

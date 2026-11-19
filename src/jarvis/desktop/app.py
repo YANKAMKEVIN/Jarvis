@@ -53,6 +53,9 @@ QPushButton#primary:disabled { background: #223247; color: #8096ab; }
 QPushButton#cancelTask, QPushButton#cancelMission { background: transparent; border: 1px solid #7d4a5c; color: #f0b3c3; }
 QPushButton#cancelTask:hover, QPushButton#cancelMission:hover { background: #3a2030; border-color: #ee99b9; }
 QPushButton#cancelTask:disabled, QPushButton#cancelMission:disabled { background: transparent; border-color: #3d3442; color: #7d6873; }
+QFrame#errorBanner { background: rgba(120, 40, 62, 70); border: 1px solid #7d4a5c; border-radius: 14px; }
+QLabel#errorIcon { color: #1b0d14; background: #ee99b9; border-radius: 11px; font-weight: 700; }
+QLabel#errorText { color: #f6ccd6; }
 QPushButton#nav { text-align: left; background: transparent; border: 0; padding: 13px; color: #91a9c1; }
 QPushButton#nav:checked { color: #e0f1ff; background: #22354b; }
 QScrollArea { background: transparent; border: 0; }
@@ -669,6 +672,23 @@ class VoicePanel(QWidget):
         self.details_button.setObjectName('quiet')
         self.hint_area.addWidget(self.details_button)
         layout.addWidget(self.hint_area)
+        self.error_banner = QFrame()
+        self.error_banner.setObjectName('errorBanner')
+        self.error_banner.setAccessibleName('Problème vocal')
+        banner = QHBoxLayout(self.error_banner)
+        banner.setContentsMargins(14, 10, 10, 10)
+        banner.setSpacing(12)
+        icon = label('!', 'errorIcon')
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setFixedSize(22, 22)
+        banner.addWidget(icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.error_text = label('', 'errorText')
+        banner.addWidget(self.error_text, 1)
+        self.error_action = button('Réessayer', self.resolve_error)
+        self.error_kind = 'retry'
+        banner.addWidget(self.error_action, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.error_banner.hide()
+        layout.addWidget(self.error_banner)
         self.peek = label('', 'subtitle')
         self.peek.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.peek.setMaximumHeight(100)
@@ -702,6 +722,16 @@ class VoicePanel(QWidget):
     def toggle_voice(self):
         self.controller.stop_voice() if self.controller.voice_worker else self.controller.start_voice()
 
+    def resolve_error(self):
+        """Banner button: go where the error can be fixed, or start the voice again."""
+        shell = getattr(self.window(), 'shell', None)
+        if self.error_kind == 'api_key' and shell is not None:
+            shell.experience.setup()
+        elif self.error_kind == 'settings' and shell is not None:
+            shell.show_settings()
+        elif self.controller.voice_worker is None:
+            self.controller.start_voice()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, 'footnote'):
@@ -729,7 +759,7 @@ class VoicePanel(QWidget):
             summary = latest['body'] if not latest['items'] else latest['items'][0]
             self.peek.setText(latest['title'] + '\n' + summary[:160])
         compact_orb = 140 if len(c.focus_missions()) > 1 else 180
-        orb_size = (compact_orb if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else 280 if c.cards or mission_shown else 360)
+        orb_size = (compact_orb if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else 280 if c.cards or mission_shown or c.voice_error else 360)
         self.orb.setFixedSize(orb_size, orb_size)
         self.orb_slot.setMinimumHeight(orb_size + (0 if self.compact else self.appearance_button.sizeHint().height() + 12))
         self.orb.set_appearance(c.appearance)
@@ -763,7 +793,7 @@ class VoicePanel(QWidget):
         elif state == 'error' and c.can_reconnect:
             self.hint.setText('Reconnecter ouvre une nouvelle conversation. Vérifiez le résultat des actions précédentes dans Activité.')
         elif state == 'error':
-            self.hint.setText('Vérifiez le message ci-dessous, puis réessayez ou ouvrez Réglages.')
+            self.hint.setText('Le vocal n’a pas pu démarrer. La cause et la marche à suivre sont indiquées ci-dessous.')
         if c.tool_notice and not c.voice_error:
             self.hint.setText(c.tool_notice)
             self.hint.setStyleSheet("color: #bfe5f6; font-size: 12px; background: rgba(63, 106, 136, 35); border: 1px solid #284357; border-radius: 12px; padding: 5px;")
@@ -811,7 +841,16 @@ class VoicePanel(QWidget):
             if state=='muted':
                 self.status.setText('Maintenir pour parler')
                 self.hint.setText(c.ptt_hotkey_message)
-        self.voice_notice.setText(c.recovery_message or notice)
+        # A voice error gets its own banner with the fitting next step; the line
+        # under the dock then only carries the reconnection countdown, if any.
+        self.error_banner.setVisible(bool(c.voice_error))
+        if c.voice_error:
+            from jarvis.desktop.recovery import voice_error_action
+            self.error_kind, action = voice_error_action(c.voice_error, c.can_reconnect)
+            self.error_text.setText(c.voice_error)
+            self.error_action.setText(action)
+            self.error_action.setEnabled(self.error_kind != 'retry' or self.voice_button.isEnabled())
+        self.voice_notice.setText(c.recovery_message if c.voice_error else c.recovery_message or notice)
         self.voice_notice.setStyleSheet("color: #e5a0aa;" if c.voice_error else "color: #91a9c1;")
         self.footnote.setText("JARVIS · ASSISTANT VOCAL" if not active else "GEMINI LIVE · CONFIRMATIONS VOCALES")
 
