@@ -198,7 +198,13 @@ class CompanionWindow(OrbWindow):
             if event.key() == Qt.Key.Key_Escape:
                 self.controller.dance.stop()
                 self.controller.end_push_to_talk()
+                if self.controller.voice_state == 'speaking':
+                    self.controller.interrupt_voice()
                 self.conceal_controls()
+                return True
+            if (event.key() == Qt.Key.Key_M and event.modifiers() == Qt.KeyboardModifier.NoModifier
+                    and not event.isAutoRepeat() and self.controller.voice_worker is not None):
+                self.controller.toggle_microphone()
                 return True
             if event.key() in {Qt.Key.Key_Tab, Qt.Key.Key_Backtab} and not self.keyboard_controls:
                 self.reveal_controls(keyboard=True)
@@ -276,7 +282,8 @@ class CompanionWindow(OrbWindow):
                 registered=getattr(getattr(self.shell,'hold_hotkey',None),'active',False)
                 label='Maintenir pour parler · ⌘⌥Espace' if registered else 'Maintenir ce bouton pour parler · Espace sur le compagnon'
             self.voice_button.setText('■' if c.voice_state=='speaking' else '●' if c.voice_mic_open else '▶')
-            self.voice_button.setAccessibleName(label);self.voice_button.setToolTip(label)
+            key=(' · Échap' if label=='Interrompre la réponse' else ' · M' if label in {'Couper le micro','Réactiver le micro'} else '')
+            self.voice_button.setAccessibleName(label);self.voice_button.setToolTip(label+key)
             self.voice_button.setEnabled(not c.demo and c.audio_worker is None and c.voice_state not in {'starting','stopping'} and not(c.voice_worker and c.voice_state=='error'))
         if hasattr(self,'idle_timer'):
             if getattr(self,'last_voice_state',None)!=c.voice_state:

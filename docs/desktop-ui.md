@@ -31,6 +31,9 @@ Les modes terminal existants restent indépendants.
   continuer. L’entrée audio est suspendue pendant la lecture de Jarvis et une
   courte période après pour limiter les retours de sa propre voix. Pour reprendre
   la parole avant la fin, utiliser ce bouton et attendre le retour de l’écoute.
+- Raccourcis de la fenêtre complète : **Échap** interrompt la réponse, **M** coupe ou
+  réactive le micro, **⌘1** à **⌘4** ouvrent Assistant, Cartes, Activité et Réglages.
+  Échap et M agissent aussi quand le compagnon a le focus clavier.
 - **Arrêter** ferme l’audio puis nettoie la session. Les confirmations des outils
   se font vocalement, selon le protocole existant de Gemini Live.
 - L’onglet Activité suit les actions et les étapes du planificateur, jamais le

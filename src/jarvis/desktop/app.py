@@ -680,9 +680,11 @@ class VoicePanel(QWidget):
         self.voice_button.setAccessibleName("Démarrer ou arrêter l’assistant vocal")
         controls.addWidget(self.voice_button)
         self.mic_button = button("Couper le micro", controller.toggle_microphone)
+        self.mic_button.setToolTip("Couper ou réactiver le micro · touche M")
         controls.addWidget(self.mic_button)
-        self.interrupt_button = button("Interrompre", controller.interrupt_voice)
-        self.interrupt_button.setToolTip("Couper la réponse orale pour reprendre la parole. Les actions système déjà lancées peuvent continuer.")
+        self.interrupt_button = button("Interrompre · Échap", controller.interrupt_voice)
+        self.interrupt_button.setAccessibleName("Interrompre la réponse")
+        self.interrupt_button.setToolTip("Couper la réponse orale pour reprendre la parole (touche Échap). Les actions système déjà lancées peuvent continuer.")
         controls.addWidget(self.interrupt_button)
         layout.addWidget(self.controls)
         self.voice_notice = label("", "subtitle")
@@ -744,7 +746,7 @@ class VoicePanel(QWidget):
         self.status.setText(states.get(state, "Jarvis"))
         if c.wake_standby and state == "muted":
             self.status.setText("En veille")
-        self.hint.setText("Cliquez sur Interrompre pour reprendre la parole." if state == "speaking" else
+        self.hint.setText("Appuyez sur Échap ou cliquez sur Interrompre pour reprendre la parole." if state == "speaking" else
                           "Parlez naturellement, vos demandes restent vocales." if active else
                           "Une question, une idée, une action. Dites-le à Jarvis.")
         if c.wake_standby and state == "muted":
@@ -771,7 +773,8 @@ class VoicePanel(QWidget):
         for control in (self.mic_button, self.interrupt_button):
             control.setVisible(active and not (control is self.mic_button and c.ptt_enabled))
             control.setEnabled(active and state not in {"starting", "stopping", "error"})
-        self.mic_button.setText("Couper le micro" if c.voice_mic_open else "Réactiver le micro")
+        self.mic_button.setText(("Couper le micro" if c.voice_mic_open else "Réactiver le micro") + " · M")
+        self.mic_button.setAccessibleName("Couper le micro" if c.voice_mic_open else "Réactiver le micro")
         if c.screen_operations and state not in {'off', 'error', 'stopping'}:
             self.status.setText('Observation d’écran en cours')
             self.hint_area.setCurrentIndex(0)
@@ -844,6 +847,7 @@ class DesktopWindow(QMainWindow):
                 b = button(text, lambda checked=False, index=i: self.navigate(index))
                 b.setObjectName("nav")
                 b.setCheckable(True)
+                b.setToolTip(f"{text} · ⌘{i + 1}")
                 self.nav.append(b)
                 nav.addWidget(b)
             nav.addStretch()
@@ -948,7 +952,7 @@ class DesktopWindow(QMainWindow):
                     ("VOTRE VOIX, VOTRE COMMANDE",
                      "Gemini Live écoute uniquement après activation. Les confirmations des outils restent vocales."),
                     ("ÉCOUTE ET RÉPONSE",
-                     "L’écoute est suspendue pendant la lecture de la voix de Jarvis pour éviter qu’il se réponde à lui-même. Cliquez sur Interrompre pour reprendre la parole."),
+                     "L’écoute est suspendue pendant la lecture de la voix de Jarvis pour éviter qu’il se réponde à lui-même. Appuyez sur Échap ou cliquez sur Interrompre pour reprendre la parole."),
                     ("SESSION ET OUTILS",
                      "La session Gemini utilise le contexte de votre conversation ; les outils gardent leurs règles existantes de mémoire et de journalisation.")):
                 details.addWidget(label(title, "eyebrow"))
@@ -966,6 +970,25 @@ class DesktopWindow(QMainWindow):
         row.addLayout(workspace, 1)
         self.shortcut = QShortcut(QKeySequence("Ctrl+Shift+Space"), self)
         self.shortcut.activated.connect(shell.show_compact)
+        # Voice shortcuts follow the dock buttons: they only fire while those are usable.
+        self.interrupt_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        self.interrupt_shortcut.activated.connect(controller.interrupt_voice)
+        self.mic_shortcut = QShortcut(QKeySequence(Qt.Key.Key_M), self)
+        self.mic_shortcut.activated.connect(controller.toggle_microphone)
+        self.page_shortcuts = []
+        if not compact:
+            for index in range(len(self.nav)):
+                shortcut = QShortcut(QKeySequence(f"Ctrl+{index + 1}"), self)
+                shortcut.activated.connect(lambda index=index: self.navigate(index))
+                self.page_shortcuts.append(shortcut)
+        controller.changed.connect(self.render_shortcuts)
+        self.render_shortcuts()
+
+    def render_shortcuts(self):
+        c = self.controller
+        usable = c.voice_worker is not None and c.voice_state not in {"starting", "stopping", "error"}
+        self.interrupt_shortcut.setEnabled(usable)
+        self.mic_shortcut.setEnabled(usable and not c.ptt_enabled)
 
     def navigate(self, index):
         self.shell.finish_transfer()
