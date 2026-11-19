@@ -101,6 +101,18 @@ def card(title, text):
     return frame
 
 
+def section(title, parent):
+    """Titled settings group; returns the layout that receives its controls."""
+    frame = QFrame()
+    frame.setObjectName("card")
+    layout = QVBoxLayout(frame)
+    layout.setContentsMargins(18, 14, 18, 14)
+    layout.setSpacing(6)
+    layout.addWidget(label(title, "eyebrow"))
+    parent.addWidget(frame)
+    return layout
+
+
 class Controller(QObject):
     routine_result = Signal(object)
     notice = Signal(object)
@@ -872,21 +884,11 @@ class DesktopWindow(QMainWindow):
             self.pages.addWidget(self.activity)
             settings = QWidget()
             settings_layout = QVBoxLayout(settings)
-            settings_layout.setContentsMargins(0, 0, 0, 0)
-            settings_layout.addWidget(card("VOTRE VOIX, VOTRE COMMANDE",
-                "Gemini Live écoute uniquement après activation. Les confirmations des outils restent vocales."))
-            settings_layout.addWidget(card("ÉCOUTE ET RÉPONSE",
-                "L’écoute est suspendue pendant la lecture de la voix de Jarvis pour éviter qu’il se réponde à lui-même. Cliquez sur Interrompre pour reprendre la parole."))
-            settings_layout.addWidget(card("CONFIDENTIALITÉ",
-                "Cette interface n’affiche et n’enregistre aucun texte de transcription. La session Gemini utilise le contexte de votre conversation ; les outils gardent leurs règles existantes de mémoire et de journalisation."))
-            reduce = QCheckBox("Réduire les animations")
-            reduce.setChecked(controller.reduced_motion)
-            reduce.toggled.connect(self.set_reduced_motion)
-            settings_layout.addWidget(reduce)
-            sounds = QCheckBox("Sons discrets à l’activation et au changement du micro")
-            sounds.setChecked(controller.sounds_enabled)
-            sounds.toggled.connect(self.set_sounds)
-            settings_layout.addWidget(sounds)
+            settings_layout.setContentsMargins(0, 0, 6, 0)
+            settings_layout.setSpacing(14)
+            settings_layout.addWidget(label("Réglages", "greeting"))
+
+            voice = section("VOIX ET MICRO", settings_layout)
             self.wake_check = QCheckBox("Réveiller Jarvis en disant « Jarvis » (détection locale)")
             self.wake_check.setToolTip("Le micro écoute sur ce Mac ; rien n’est envoyé à Gemini avant le mot d’éveil. "
                                        "Retour en veille après un silence. Remplace le maintien pour parler.")
@@ -894,27 +896,65 @@ class DesktopWindow(QMainWindow):
             self.wake_check.setEnabled(not controller.demo)
             self.wake_check.toggled.connect(shell.set_wake_word)
             controller.changed.connect(lambda: self.wake_check.setChecked(controller.wake_enabled))
-            settings_layout.addWidget(self.wake_check)
-            settings_layout.addWidget(button("Jarvis au quotidien…", lambda: shell.experience.open()))
-            settings_layout.addWidget(button("Palette de commandes · ⌘K", lambda: shell.experience.palette()))
-            settings_layout.addWidget(button("Voix des avatars…", shell.show_voices))
-            settings_layout.addWidget(button("Configurer les routines vocales…",shell.show_routines))
-            settings_layout.addWidget(label('PÉRIPHÉRIQUES ET TESTS LOCAUX', 'eyebrow'))
+            voice.addWidget(self.wake_check)
+            voice.addWidget(label("Sans mot d’éveil, Gemini Live écoute uniquement après activation.", "subtitle"))
+            voice.addWidget(button("Voix des avatars…", shell.show_voices))
+
+            audio = section("AUDIO", settings_layout)
+            sounds = QCheckBox("Sons discrets à l’activation et au changement du micro")
+            sounds.setChecked(controller.sounds_enabled)
+            sounds.toggled.connect(self.set_sounds)
+            audio.addWidget(sounds)
+            audio.addWidget(label('PÉRIPHÉRIQUES ET TESTS LOCAUX', 'eyebrow'))
             self.audio_settings = AudioSettings(controller)
-            settings_layout.addWidget(self.audio_settings)
+            audio.addWidget(self.audio_settings)
+
+            keys = section("RACCOURCIS", settings_layout)
             self.hotkey_check = QCheckBox('Activer le raccourci global ⌘⇧Espace')
             self.hotkey_check.setChecked(controller.hotkey_enabled)
             self.hotkey_check.setEnabled(not controller.demo)
             self.hotkey_check.toggled.connect(shell.set_global_hotkey)
-            settings_layout.addWidget(self.hotkey_check)
+            keys.addWidget(self.hotkey_check)
             self.hotkey_status = label(controller.hotkey_message, 'subtitle')
-            settings_layout.addWidget(self.hotkey_status)
+            keys.addWidget(self.hotkey_status)
             self.hotkey_retry = button('Réessayer le raccourci', shell.retry_hotkey)
-            settings_layout.addWidget(self.hotkey_retry)
+            keys.addWidget(self.hotkey_retry)
             def render_hotkey():
                 self.hotkey_status.setText(controller.hotkey_message)
                 self.hotkey_retry.setEnabled(controller.hotkey_enabled and not controller.hotkey_active and not controller.demo)
             controller.changed.connect(render_hotkey)
+            keys.addWidget(button("Palette de commandes · ⌘K", lambda: shell.experience.palette()))
+
+            look = section("COMPAGNON ET APPARENCE", settings_layout)
+            reduce = QCheckBox("Réduire les animations")
+            reduce.setChecked(controller.reduced_motion)
+            reduce.toggled.connect(self.set_reduced_motion)
+            look.addWidget(reduce)
+            look.addWidget(button("Apparence de Jarvis…", shell.show_appearances))
+            look.addWidget(button("Jarvis au quotidien…", lambda: shell.experience.open()))
+            look.addWidget(button("Configurer les routines vocales…", shell.show_routines))
+
+            privacy = section("CONFIDENTIALITÉ", settings_layout)
+            privacy.addWidget(label("Cette interface n’affiche et n’enregistre aucun texte de transcription."))
+            self.privacy_more = button("En savoir plus ▸", self.toggle_privacy_details)
+            self.privacy_more.setObjectName("quiet")
+            self.privacy_more.setAccessibleName("Afficher ou masquer les explications sur l’écoute et la confidentialité")
+            privacy.addWidget(self.privacy_more)
+            self.privacy_details = QWidget()
+            details = QVBoxLayout(self.privacy_details)
+            details.setContentsMargins(0, 4, 0, 0)
+            details.setSpacing(10)
+            for title, body in (
+                    ("VOTRE VOIX, VOTRE COMMANDE",
+                     "Gemini Live écoute uniquement après activation. Les confirmations des outils restent vocales."),
+                    ("ÉCOUTE ET RÉPONSE",
+                     "L’écoute est suspendue pendant la lecture de la voix de Jarvis pour éviter qu’il se réponde à lui-même. Cliquez sur Interrompre pour reprendre la parole."),
+                    ("SESSION ET OUTILS",
+                     "La session Gemini utilise le contexte de votre conversation ; les outils gardent leurs règles existantes de mémoire et de journalisation.")):
+                details.addWidget(label(title, "eyebrow"))
+                details.addWidget(label(body, "subtitle"))
+            self.privacy_details.hide()
+            privacy.addWidget(self.privacy_details)
             settings_layout.addStretch()
             settings_scroll = QScrollArea()
             settings_scroll.setWidgetResizable(True)
@@ -932,6 +972,11 @@ class DesktopWindow(QMainWindow):
         self.pages.setCurrentIndex(index)
         for i, widget in enumerate(self.nav):
             widget.setChecked(index == i)
+
+    def toggle_privacy_details(self):
+        shown = self.privacy_details.isHidden()
+        self.privacy_details.setVisible(shown)
+        self.privacy_more.setText("Masquer les explications ▾" if shown else "En savoir plus ▸")
 
     def set_reduced_motion(self, checked):
         if checked:
