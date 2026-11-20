@@ -7,7 +7,7 @@ import json
 from collections import OrderedDict
 from datetime import datetime
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSettings, QTimer, Qt, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPoint, QPropertyAnimation, QRect, QSettings, QTimer, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QBoxLayout, QCheckBox, QFrame, QHBoxLayout, QLabel, QMainWindow,
@@ -18,7 +18,7 @@ from jarvis.desktop.audio_settings import AudioSettings
 from jarvis.desktop.devices import valid_choice
 from jarvis.desktop.hotkey import GlobalHotkey
 from jarvis.desktop.tray import TrayControls
-from jarvis.desktop.visuals import Orb
+from jarvis.desktop.visuals import Orb, state_tint
 from jarvis.desktop.panels import DetailPanel
 from jarvis.desktop.mission_panel import MissionDeck
 from jarvis.desktop.orb_window import OrbWindow
@@ -668,6 +668,13 @@ class VoicePanel(QWidget):
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if compact:
             self.status.setStyleSheet("font-size: 21px;")
+        # The title takes a hint of the orb's state colour and fades in when it changes.
+        self.status_tint = self.status_shown = None
+        self.status_opacity = QGraphicsOpacityEffect(self.status)
+        self.status.setGraphicsEffect(self.status_opacity)
+        self.status_fade = QPropertyAnimation(self.status_opacity, b'opacity', self)
+        self.status_fade.setDuration(240)
+        self.status_fade.setEasingCurve(QEasingCurve.Type.OutCubic)
         layout.addWidget(self.status)
         self.hint = label("Parlez-moi simplement.", "intro")
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -908,6 +915,23 @@ class VoicePanel(QWidget):
         self.voice_notice.setText(c.recovery_message if c.voice_error else c.recovery_message or notice)
         self.voice_notice.setStyleSheet("color: #e5a0aa;" if c.voice_error else "color: #91a9c1;")
         self.footnote.setText("JARVIS · ASSISTANT VOCAL" if not active else "GEMINI LIVE · CONFIRMATIONS VOCALES")
+        tint = state_tint(self.orb.state)
+        if tint != self.status_tint:
+            self.status_tint = tint
+            self.status.setStyleSheet(f"color: {tint};" + (" font-size: 21px;" if self.compact else ""))
+        shown = (self.status.text(), tint)
+        if shown != self.status_shown:
+            self.status_fade.stop()
+            if self.status_shown is None or c.reduced_motion or not self.status.isVisible():
+                self.status_opacity.setOpacity(1.0)
+            else:
+                self.status_fade.setStartValue(0.25)
+                self.status_fade.setEndValue(1.0)
+                self.status_fade.start()
+            self.status_shown = shown
+        elif c.reduced_motion and self.status_fade.state() == QPropertyAnimation.State.Running:
+            self.status_fade.stop()
+            self.status_opacity.setOpacity(1.0)
 
 
 class DesktopWindow(QMainWindow):

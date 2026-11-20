@@ -225,3 +225,24 @@ def test_sidebar_counts_unseen_cards_and_marks_running_activity(shell, app):
     assert activity.timer.isActive()
     c.voice_event(project_task({'id': 'm', 'objective': 'Trier', 'status': 'completed', 'steps': []}))
     assert not activity.live and not activity.timer.isActive()
+
+
+def test_status_title_takes_the_state_colour_and_fades_unless_motion_is_reduced(shell, app):
+    from PySide6.QtCore import QPropertyAnimation
+    from jarvis.desktop.visuals import STATE_COLORS, state_tint
+    assert state_tint('off') == '#eef7ff' and state_tint('inconnu') == '#eef7ff'
+    assert state_tint('thinking') not in {'#eef7ff', STATE_COLORS['thinking']}
+    assert state_tint('error', amount=1.0) == STATE_COLORS['error']
+    c, panel = shell.controller, shell.full.assistant
+    shell.show_full()
+    assert '#eef7ff' in panel.status.styleSheet()
+    listen(c, 'thinking')
+    assert state_tint('thinking') in panel.status.styleSheet()
+    assert panel.status_fade.state() != QPropertyAnimation.State.Running and panel.status_opacity.opacity() == 1.0
+    c.reduced_motion = False
+    c.voice_event({'type': 'state', 'state': 'speaking', 'mic_open': True})
+    assert state_tint('speaking') in panel.status.styleSheet()
+    assert panel.status_fade.state() == QPropertyAnimation.State.Running
+    c.reduced_motion = True
+    c.changed.emit()
+    assert panel.status_fade.state() != QPropertyAnimation.State.Running and panel.status_opacity.opacity() == 1.0

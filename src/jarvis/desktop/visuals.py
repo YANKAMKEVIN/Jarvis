@@ -32,6 +32,16 @@ _DEFAULT_COLOR = '#87e3ff'
 _DEFAULT_GLOW = 0.35
 
 
+def state_tint(state, base='#eef7ff', amount=0.4):
+    """Title colour for a voice state: the near-white text pulled toward the orb's accent.
+
+    The resting state keeps the plain title colour.
+    """
+    if state == 'off' or state not in STATE_COLORS:
+        return QColor(base).name()
+    return _ease_color(QColor(base), QColor(STATE_COLORS[state]), amount).name()
+
+
 def _ease_color(current, target, t):
     return QColor(
         round(current.red() + (target.red() - current.red()) * t),
