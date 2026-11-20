@@ -292,3 +292,31 @@ def test_header_names_the_page_and_footer_reports_the_connection(shell):
     from PySide6.QtWidgets import QLabel
     mentions = [w.text() for w in window.findChildren(QLabel) if 'jarvis' in w.text().replace(' ', '').casefold() and w.isVisible()]
     assert mentions == ['J A R V I S']
+
+
+def test_shorten_cuts_on_a_word_and_marks_the_cut():
+    from jarvis.desktop.presentation import shorten
+    assert shorten('Court.') == 'Court.'
+    text = 'Le TGV met environ deux heures, avec un train toutes les demi-heures aux heures de pointe'
+    cut = shorten(text, 40)
+    assert cut == 'Le TGV met environ deux heures, avec un…' and len(cut) <= 41
+    assert shorten('a  b\n c', 10) == 'a b c'
+    assert shorten('x' * 60, 20) == 'x' * 20 + '…'  # no space to cut on
+
+
+def test_latest_card_preview_is_a_clickable_card_with_a_clean_excerpt(shell, app):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from jarvis.desktop.presentation import project_activity
+    c, panel = shell.controller, shell.full.assistant
+    shell.show_full()
+    long_answer = 'Le TGV Paris–Lyon met environ deux heures. ' * 8
+    c.voice_event(project_activity('web_answer', {'ok': True, 'external_knowledge_retrieved': True,
+                                                  'message': long_answer, 'sources': []}, 'w'))
+    app.processEvents()
+    assert panel.peek.isVisible() and panel.peek.title.text() == 'Réponse web'
+    summary = panel.peek.summary.text()
+    assert summary.endswith('…') and len(summary) <= 151 and not summary[:-1].endswith(' ')
+    assert bool(panel.peek.title.alignment() & Qt.AlignmentFlag.AlignLeft)
+    QTest.mouseClick(panel.peek, Qt.MouseButton.LeftButton)
+    assert shell.full.pages.currentIndex() == 1

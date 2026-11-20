@@ -47,6 +47,16 @@ def count_label(count, singular, plural=None):
     return f"{count} {singular if count < 2 else plural or singular + 's'}"
 
 
+def shorten(value, limit=150):
+    """One-paragraph excerpt cut at the last whole word, with an ellipsis when cut."""
+    value = ' '.join(str(value or '').split())
+    if len(value) <= limit:
+        return value
+    cut = value[:limit + 1]
+    head = cut[:cut.rfind(' ')] if ' ' in cut[limit // 2:] else value[:limit]
+    return head.rstrip(' ,;:.·-–—«(') + '…'
+
+
 def step_kind(status):
     """Visual family of a step marker: done, error, running, waiting or idle."""
     return STEP_KINDS.get(status, 'idle')

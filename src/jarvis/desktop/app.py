@@ -23,7 +23,7 @@ from jarvis.desktop.panels import DetailPanel
 from jarvis.desktop.mission_panel import MissionDeck
 from jarvis.desktop.orb_window import OrbWindow
 from jarvis.desktop.companion import CompanionWindow
-from jarvis.desktop.presentation import STATUS_TEXT, count_label
+from jarvis.desktop.presentation import STATUS_TEXT, count_label, shorten
 from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, NavButton, OrbTransfer
 
 STYLE = """
@@ -53,6 +53,10 @@ QPushButton#primary:disabled { background: #223247; color: #8096ab; }
 QPushButton#cancelTask, QPushButton#cancelMission { background: transparent; border: 1px solid #7d4a5c; color: #f0b3c3; }
 QPushButton#cancelTask:hover, QPushButton#cancelMission:hover { background: #3a2030; border-color: #ee99b9; }
 QPushButton#cancelTask:disabled, QPushButton#cancelMission:disabled { background: transparent; border-color: #3d3442; color: #7d6873; }
+QFrame#peek { background: rgba(36, 65, 86, 65); border: 1px solid #29465c; border-radius: 14px; }
+QFrame#peek:hover { background: rgba(46, 80, 104, 90); border-color: #517ca2; }
+QFrame#peek:focus { border-color: #83cfff; }
+QLabel#peekTitle { color: #e4f3ff; font-size: 14px; font-weight: 600; }
 QFrame#errorBanner { background: rgba(120, 40, 62, 70); border: 1px solid #7d4a5c; border-radius: 14px; }
 QLabel#errorIcon { color: #1b0d14; background: #ee99b9; border-radius: 11px; font-weight: 700; }
 QLabel#errorText { color: #f6ccd6; }
@@ -123,6 +127,49 @@ def section(title, parent):
     layout.addWidget(label(title, "eyebrow"))
     parent.addWidget(frame)
     return layout
+
+
+class PeekCard(QFrame):
+    """Preview of the latest result card under the orb; the whole card opens Cartes."""
+    clicked = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName('peek')
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.setToolTip('Ouvrir cette carte')
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 10, 16, 11)
+        layout.setSpacing(3)
+        self.title = label('', 'peekTitle')
+        self.title.setWordWrap(False)
+        self.summary = label('', 'subtitle')
+        self.summary.setMaximumHeight(self.summary.fontMetrics().lineSpacing() * 2 + 2)
+        for widget in (self.title, self.summary):
+            widget.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+            widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            layout.addWidget(widget)
+
+    def show_card(self, title, summary):
+        self.title.setText(title)
+        self.summary.setText(summary)
+        self.summary.setVisible(bool(summary))
+        self.setAccessibleName('Dernière carte : ' + title + ('. ' + summary if summary else '') + ' Ouvrir les cartes.')
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space}:
+            self.clicked.emit()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
 
 class Controller(QObject):
@@ -712,10 +759,8 @@ class VoicePanel(QWidget):
         banner.addWidget(self.error_action, 0, Qt.AlignmentFlag.AlignVCenter)
         self.error_banner.hide()
         layout.addWidget(self.error_banner)
-        self.peek = label('', 'subtitle')
-        self.peek.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.peek.setMaximumHeight(100)
-        self.peek.setStyleSheet('background: rgba(36, 65, 86, 65); border: 1px solid #29465c; border-radius: 14px; padding: 10px; color: #bfdeed;')
+        self.peek = PeekCard()
+        self.peek.clicked.connect(controller.details_requested.emit)
         layout.addWidget(self.peek)
         layout.addStretch(2)
         self.controls = ControlDock(controller)
@@ -813,7 +858,7 @@ class VoicePanel(QWidget):
         if c.cards:
             latest = next(reversed(c.cards.values()))
             summary = latest['body'] if not latest['items'] else latest['items'][0]
-            self.peek.setText(latest['title'] + '\n' + summary[:160])
+            self.peek.show_card(latest['title'], shorten(summary))
         compact_orb = 140 if len(c.focus_missions()) > 1 else 180
         orb_size = (compact_orb if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else 280 if c.cards or mission_shown or c.voice_error else 360)
         self.orb.setFixedSize(orb_size, orb_size)
