@@ -914,7 +914,14 @@ class VoicePanel(QWidget):
             self.error_action.setEnabled(self.error_kind != 'retry' or self.voice_button.isEnabled())
         self.voice_notice.setText(c.recovery_message if c.voice_error else c.recovery_message or notice)
         self.voice_notice.setStyleSheet("color: #e5a0aa;" if c.voice_error else "color: #91a9c1;")
-        self.footnote.setText("JARVIS · ASSISTANT VOCAL" if not active else "GEMINI LIVE · CONFIRMATIONS VOCALES")
+        # The footer is reserved for the state of the connection.
+        self.footnote.setText("DÉMONSTRATION · HORS LIGNE" if c.demo else
+                              "GEMINI LIVE · RECONNEXION…" if state == "starting" and c.reconnecting else
+                              "GEMINI LIVE · CONNEXION…" if state == "starting" else
+                              "GEMINI LIVE · DÉCONNEXION…" if state == "stopping" else
+                              "GEMINI LIVE · CONNEXION INTERROMPUE" if state == "error" else
+                              "GEMINI LIVE · CONNECTÉ · CONFIRMATIONS VOCALES" if active else
+                              "GEMINI LIVE · HORS LIGNE")
         tint = state_tint(self.orb.state)
         if tint != self.status_tint:
             self.status_tint = tint
@@ -986,15 +993,14 @@ class DesktopWindow(QMainWindow):
                 b.setToolTip(tip)
                 self.tools[key] = b
                 nav.addWidget(b)
-            nav.addSpacing(14)
-            nav.addWidget(label("PENSÉ POUR LA VOIX", "eyebrow"))
-            nav.addWidget(label("Parlez. Jarvis s’occupe de la suite.", "subtitle"))
             row.addWidget(sidebar)
         workspace = QVBoxLayout()
         workspace.setContentsMargins(28 if compact else 40, 26, 28 if compact else 40, 28)
         workspace.setSpacing(16)
         heading = QHBoxLayout()
-        heading.addWidget(DragHandle("◌   J A R V I S") if compact else label("COMPAGNON VOCAL     /     JARVIS", "eyebrow"), 1)
+        # The sidebar already carries the wordmark: the header names the current page.
+        self.page_title = None if compact else label("ASSISTANT", "eyebrow")
+        heading.addWidget(DragHandle("◌   J A R V I S") if compact else self.page_title, 1)
         heading.addStretch()
         switch = button("Agrandir ↗" if compact else "Mode compact ↙", shell.switch_view)
         switch.setObjectName("quiet")
@@ -1150,6 +1156,7 @@ class DesktopWindow(QMainWindow):
         self.pages.setCurrentIndex(index)
         for i, widget in enumerate(self.nav):
             widget.setChecked(index == i)
+        self.page_title.setText(self.nav[index].text().upper())
         if hasattr(self, 'seen_cards') and hasattr(self, 'mic_shortcut'):
             self.render_nav()
 

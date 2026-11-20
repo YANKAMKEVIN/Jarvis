@@ -274,3 +274,21 @@ def test_counts_agree_in_number_instead_of_using_parenthesised_plurals(shell):
     assert c.cards['calendar']['body'] == '2 rendez-vous · 2 affichés'
     assert shell.full.assistant.details_button.text().startswith('2 cartes ·')
     assert shell.orb_window.status.text().endswith('· 2 cartes')
+
+
+def test_header_names_the_page_and_footer_reports_the_connection(shell):
+    c, window = shell.controller, shell.full
+    shell.show_full()
+    assert window.page_title.text() == 'ASSISTANT'
+    for index, name in enumerate(('ASSISTANT', 'CARTES', 'ACTIVITÉ', 'RÉGLAGES')):
+        window.navigate(index)
+        assert window.page_title.text() == name
+    footnote = window.assistant.footnote
+    assert footnote.text() == 'GEMINI LIVE · HORS LIGNE'
+    listen(c)
+    assert 'CONNECTÉ' in footnote.text()
+    c.voice_event({'type': 'state', 'state': 'error', 'message': 'Connexion perdue.'})
+    assert 'INTERROMPUE' in footnote.text()
+    from PySide6.QtWidgets import QLabel
+    mentions = [w.text() for w in window.findChildren(QLabel) if 'jarvis' in w.text().replace(' ', '').casefold() and w.isVisible()]
+    assert mentions == ['J A R V I S']
