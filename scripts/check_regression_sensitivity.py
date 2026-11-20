@@ -59,7 +59,7 @@ MUTATIONS=[
      'if now - item.created_at > self._ttl_seconds','if False',
      'tests/test_generated_invariants.py::TestConfirmationSequences'),
     ('read_only_guard_bypassed','jarvis/live/registry.py',
-     'if getattr(self, "read_only_mode", False):','if False:',
+     'if not allowed and getattr(self, "read_only_mode", False):','if False:',
      'tests/test_read_only_mode.py::ReadOnlyModeTests::test_blocked_tool_refuses_and_runs_nothing_in_safe_mode'),
 ]
 
