@@ -58,6 +58,9 @@ QLabel#errorIcon { color: #1b0d14; background: #ee99b9; border-radius: 11px; fon
 QLabel#errorText { color: #f6ccd6; }
 QPushButton#nav { text-align: left; background: transparent; border: 0; padding: 13px; color: #91a9c1; }
 QPushButton#nav:checked { color: #e0f1ff; background: #22354b; }
+QPushButton#copyCard { background: transparent; border: 1px solid #304659; color: #a7c1d6; padding: 6px 12px; font-size: 12px; }
+QPushButton#copyCard:hover { background: #243d57; border-color: #517ca2; color: #e0f1ff; }
+QPushButton#chip { border-radius: 13px; padding: 5px 12px; font-size: 12px; color: #bfdeed; }
 QPushButton#tool { text-align: left; background: transparent; border: 0; padding: 8px 13px; color: #91a9c1; font-size: 12px; }
 QPushButton#tool:hover { color: #e0f1ff; background: #17273a; }
 QPushButton#tool:focus { border: 1px solid #83cfff; padding: 7px 12px; }

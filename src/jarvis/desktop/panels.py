@@ -1,10 +1,40 @@
 """Read-only context cards and real action/task progress. No conversation feed."""
 from urllib.parse import urlsplit
-from PySide6.QtCore import QUrl, Qt
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QTimer, QUrl, Qt
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 from jarvis.desktop.mission_panel import timeline
-from jarvis.desktop.presentation import MISSION_GUIDANCE, STATUS_TEXT, TASK_TEXT, safe_url
+from jarvis.desktop.presentation import MISSION_GUIDANCE, STATUS_TEXT, TASK_TEXT, card_text, safe_url
+
+
+class ChipRow(QWidget):
+    """Keeps chips on one line and wraps them when the card is too narrow."""
+    spacing = 8
+
+    def __init__(self):
+        super().__init__()
+        self.chips = []
+
+    def add(self, chip):
+        chip.setParent(self)
+        self.chips.append(chip)
+        self.setFixedHeight(self.arrange(self.width()))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # The height follows the width; a fixed height avoids height-for-width guesses.
+        self.setFixedHeight(self.arrange(self.width()))
+
+    def arrange(self, width):
+        x = y = line = 0
+        for chip in self.chips:
+            hint = chip.sizeHint()
+            if x and x + hint.width() > width:
+                x, y, line = 0, y + line + self.spacing, 0
+            chip.setGeometry(x, y, min(hint.width(), max(width, 1)), hint.height())
+            x += hint.width() + self.spacing
+            line = max(line, hint.height())
+        return y + line
 
 
 def text(value, name=None):
@@ -53,6 +83,18 @@ class DetailPanel(QWidget):
         layout.addWidget(self.scroll)
         controller.changed.connect(self.render)
         self.render()
+
+    def copy_card(self, button, content):
+        """Put the card on the clipboard and confirm on the button for two seconds."""
+        QGuiApplication.clipboard().setText(content)
+        button.setText('Copié ✓')
+        timer = getattr(button, 'restore', None)
+        if timer is None:
+            timer = button.restore = QTimer(button)  # dies with the button when cards re-render
+            timer.setSingleShot(True)
+            timer.setInterval(2000)
+            timer.timeout.connect(lambda: button.setText('Copier'))
+        timer.start()
 
     def render(self):
         c = self.controller
@@ -104,22 +146,34 @@ class DetailPanel(QWidget):
                 row.addWidget(status)
                 row.addWidget(text(entry['time'], 'eyebrow'))
             else:
-                row.addWidget(text(entry['title'], 'wordmark'))
+                head = QHBoxLayout()
+                head.addWidget(text(entry['title'], 'wordmark'), 1)
+                copy = QPushButton('Copier')
+                copy.setObjectName('copyCard')
+                copy.setToolTip('Copier le texte et les sources de cette carte')
+                copy.setAccessibleName('Copier la carte : ' + entry['title'])
+                copy.clicked.connect(lambda checked=False, button=copy, content=card_text(entry): self.copy_card(button, content))
+                head.addWidget(copy, 0, Qt.AlignmentFlag.AlignTop)
+                row.addLayout(head)
                 row.addWidget(text('Résultat reçu à ' + entry['time'], 'eyebrow'))
                 if entry['body']:
                     row.addWidget(text(entry['body']))
                 for item in entry['items']:
                     row.addWidget(text('•  ' + item))
+                chips = ChipRow()
                 for index, source in enumerate(entry['sources'], 1):
                     url = safe_url(source['url'])
                     if not url:
                         continue
-                    row.addWidget(text(source['title'], 'subtitle'))
                     link = QPushButton(f"{index}. {urlsplit(url).hostname} ↗")
-                    link.setToolTip(url)
+                    link.setObjectName('chip')
+                    link.setToolTip(source['title'] + '\n' + url)
                     link.setAccessibleName('Ouvrir la source : ' + source['title'])
                     link.clicked.connect(lambda checked=False, target=url: QDesktopServices.openUrl(QUrl(target)))
-                    row.addWidget(link)
+                    chips.add(link)
+                if chips.chips:
+                    row.addWidget(text('SOURCES', 'eyebrow'))
+                    row.addWidget(chips)
             self.rows.addWidget(frame)
         if not entries and not c.task:
             frame, row = box()

@@ -282,6 +282,21 @@ def project_card(name, result):
     return {'kind': kind, 'title': title, 'body': body, 'items': items, 'sources': sources}
 
 
+def card_text(entry):
+    """Plain text of a result card for the clipboard: title, text, bullets, then safe sources."""
+    lines = [entry.get('title', '')]
+    if entry.get('body'):
+        lines += ['', entry['body']]
+    if entry.get('items'):
+        lines += [''] + ['• ' + item for item in entry['items']]
+    sources = [(source.get('title', ''), safe_url(source.get('url'))) for source in entry.get('sources', [])]
+    sources = [(title, url) for title, url in sources if url]
+    if sources:
+        lines += ['', 'Sources :'] + [f'{index}. {title} — {url}' if title else f'{index}. {url}'
+                                       for index, (title, url) in enumerate(sources, 1)]
+    return '\n'.join(lines).strip()
+
+
 def project_activity(name, raw, activity_id, phase='result'):
     result = result_dict(raw)
     if phase == 'started':

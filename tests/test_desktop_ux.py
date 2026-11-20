@@ -165,3 +165,37 @@ def test_sidebar_tools_open_the_existing_dashboard_history_memory_and_palette(sh
     for tool in shell.full.tools.values():
         tool.click()
     assert opened == [('dashboard', 'jarvis'), ('history', None), ('memory', None), ('palette', None)]
+
+
+def test_card_text_keeps_title_body_bullets_and_only_safe_sources():
+    from jarvis.desktop.presentation import card_text
+    entry = {'title': 'Réponse web', 'body': 'Deux heures de trajet.', 'items': ['Départ 6 h', 'Retour 21 h'],
+             'sources': [{'title': 'SNCF', 'url': 'https://www.sncf-connect.com/train'},
+                         {'title': 'Local', 'url': 'file:///etc/passwd'}]}
+    assert card_text(entry) == ('Réponse web\n\nDeux heures de trajet.\n\n• Départ 6 h\n• Retour 21 h\n\n'
+                                'Sources :\n1. SNCF — https://www.sncf-connect.com/train')
+    assert card_text({'title': 'Volume', 'body': '', 'items': [], 'sources': []}) == 'Volume'
+
+
+def test_card_copy_button_fills_the_clipboard_and_sources_become_chips(shell, app):
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtWidgets import QPushButton
+    from jarvis.desktop.presentation import project_activity
+    c = shell.controller
+    shell.show_full()
+    c.voice_event(project_activity('web_answer', {'ok': True, 'external_knowledge_retrieved': True, 'message': 'Environ deux heures.',
+        'sources': [{'title': 'SNCF', 'url': 'https://www.sncf-connect.com/train'},
+                    {'title': 'Wikipédia', 'url': 'https://fr.wikipedia.org/wiki/LGV'}]}, 'w'))
+    shell.full.navigate(1)
+    app.processEvents()
+    page = shell.full.cards_page
+    chips = page.findChildren(QPushButton, 'chip')
+    assert [chip.text() for chip in chips] == ['1. www.sncf-connect.com ↗', '2. fr.wikipedia.org ↗']
+    assert chips[0].geometry().top() == chips[1].geometry().top()  # one line when there is room
+    copy = page.findChild(QPushButton, 'copyCard')
+    copy.click()
+    copied = QGuiApplication.clipboard().text()
+    assert 'Environ deux heures.' in copied and 'https://fr.wikipedia.org/wiki/LGV' in copied
+    assert copy.text() == 'Copié ✓'
+    copy.restore.timeout.emit()
+    assert copy.text() == 'Copier'
