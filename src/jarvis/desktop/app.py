@@ -1621,6 +1621,10 @@ def run(demo=False, compact=False, orb=False):
     app.setApplicationName("Jarvis")
     app.setOrganizationName("Jarvis")
     app.setStyleSheet(STYLE)
+    from jarvis.desktop.tray import app_icon
+    icon = app_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)  # also the Dock icon on macOS, inherited by every window
     controller = Controller(demo=demo)
     shell = DesktopShell(app, controller)
     shell.show_orb() if orb else shell.show_compact() if compact else shell.show_full()

@@ -246,3 +246,12 @@ def test_status_title_takes_the_state_colour_and_fades_unless_motion_is_reduced(
     c.reduced_motion = True
     c.changed.emit()
     assert panel.status_fade.state() != QPropertyAnimation.State.Running and panel.status_opacity.opacity() == 1.0
+
+
+def test_application_icon_is_bundled_and_renders(app):
+    from jarvis.desktop.tray import app_icon
+    icon = app_icon()
+    assert not icon.isNull()
+    image = icon.pixmap(128, 128).toImage()
+    assert image.pixelColor(2, 2).alpha() == 0  # transparent corner around the rounded tile
+    assert image.pixelColor(64, 64).lightness() > 200  # glowing core

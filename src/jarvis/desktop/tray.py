@@ -49,6 +49,26 @@ def presence_icon(color, microphone):
     return QIcon(pixmap)
 
 
+def app_icon():
+    """Application icon for the Dock, the app switcher and window title bars.
+
+    Drawn from the bundled SVG at the usual sizes; a null icon (keeping the
+    system default) if the file or the SVG plugin is missing.
+    """
+    from importlib.resources import files
+    path = files('jarvis.desktop').joinpath('assets', 'icons', 'app.svg')
+    icon = QIcon()
+    try:
+        source = QIcon(str(path)) if path.is_file() else QIcon()
+    except (OSError, TypeError):
+        source = QIcon()
+    for size in (16, 32, 64, 128, 256, 512, 1024):
+        pixmap = source.pixmap(size, size)
+        if not pixmap.isNull():
+            icon.addPixmap(pixmap)
+    return icon
+
+
 class TrayControls:
     def __init__(self, shell, tray):
         self.shell, self.controller, self.tray = shell, shell.controller, tray
