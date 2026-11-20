@@ -24,7 +24,7 @@ from jarvis.desktop.mission_panel import MissionDeck
 from jarvis.desktop.orb_window import OrbWindow
 from jarvis.desktop.companion import CompanionWindow
 from jarvis.desktop.presentation import STATUS_TEXT
-from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, OrbTransfer
+from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, NavButton, OrbTransfer
 
 STYLE = """
 QWidget { background: transparent; color: #dce8f6; font-family: '.AppleSystemUIFont', 'Inter', 'DejaVu Sans'; font-size: 13px; }
@@ -56,7 +56,7 @@ QPushButton#cancelTask:disabled, QPushButton#cancelMission:disabled { background
 QFrame#errorBanner { background: rgba(120, 40, 62, 70); border: 1px solid #7d4a5c; border-radius: 14px; }
 QLabel#errorIcon { color: #1b0d14; background: #ee99b9; border-radius: 11px; font-weight: 700; }
 QLabel#errorText { color: #f6ccd6; }
-QPushButton#nav { text-align: left; background: transparent; border: 0; padding: 13px; color: #91a9c1; }
+QPushButton#nav { text-align: left; background: transparent; border: 0; padding: 13px 13px 13px 44px; color: #91a9c1; }
 QPushButton#nav:checked { color: #e0f1ff; background: #22354b; }
 QPushButton#copyCard { background: transparent; border: 1px solid #304659; color: #a7c1d6; padding: 6px 12px; font-size: 12px; }
 QPushButton#copyCard:hover { background: #243d57; border-color: #517ca2; color: #e0f1ff; }
@@ -940,10 +940,11 @@ class DesktopWindow(QMainWindow):
             nav.addWidget(label("ASSISTANT VOCAL", "eyebrow"))
             nav.addSpacing(34)
             self.nav = []
-            for i, text in enumerate(("Assistant", "Cartes", "Activité", "Réglages")):
-                b = button(text, lambda checked=False, index=i: self.navigate(index))
-                b.setObjectName("nav")
-                b.setCheckable(True)
+            self.seen_cards = set()
+            for i, (text, kind) in enumerate((("Assistant", "assistant"), ("Cartes", "cards"),
+                                              ("Activité", "activity"), ("Réglages", "settings"))):
+                b = NavButton(text, kind, f"⌘{i + 1}")
+                b.clicked.connect(lambda checked=False, index=i: self.navigate(index))
                 b.setToolTip(f"{text} · ⌘{i + 1}")
                 self.nav.append(b)
                 nav.addWidget(b)
@@ -1094,6 +1095,25 @@ class DesktopWindow(QMainWindow):
                 self.page_shortcuts.append(shortcut)
         controller.changed.connect(self.render_shortcuts)
         self.render_shortcuts()
+        if not compact:
+            controller.changed.connect(self.render_nav)
+            self.render_nav()
+
+    def render_nav(self):
+        """Counter of result cards not yet looked at, and a live dot while a mission or tool runs."""
+        c = self.controller
+        current = {(kind, card.get('time'), card.get('title')) for kind, card in c.cards.items()}
+        if self.pages.currentIndex() == 1 and self.isVisible():
+            self.seen_cards = current
+        self.seen_cards &= current
+        unseen = len(current - self.seen_cards)
+        busy = (any(m['status'] in {'running', 'cancelling'} for m in c.mission_list())
+                or any(entry['status'] == 'running' for entry in c.activity.values()))
+        motion = not c.reduced_motion
+        self.nav[1].set_signal(badge=unseen, motion=motion)
+        self.nav[1].setAccessibleName('Cartes' + (f' · {unseen} nouvelle' + ('s' if unseen > 1 else '') if unseen else ''))
+        self.nav[2].set_signal(live=busy, motion=motion)
+        self.nav[2].setAccessibleName('Activité' + (' · en cours' if busy else ''))
 
     def render_shortcuts(self):
         c = self.controller
@@ -1106,6 +1126,13 @@ class DesktopWindow(QMainWindow):
         self.pages.setCurrentIndex(index)
         for i, widget in enumerate(self.nav):
             widget.setChecked(index == i)
+        if hasattr(self, 'seen_cards') and hasattr(self, 'mic_shortcut'):
+            self.render_nav()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, 'seen_cards') and hasattr(self, 'mic_shortcut'):
+            self.render_nav()  # cards under the user's eyes again count as seen
 
     def toggle_privacy_details(self):
         shown = self.privacy_details.isHidden()

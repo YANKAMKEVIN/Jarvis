@@ -199,3 +199,29 @@ def test_card_copy_button_fills_the_clipboard_and_sources_become_chips(shell, ap
     assert copy.text() == 'Copié ✓'
     copy.restore.timeout.emit()
     assert copy.text() == 'Copier'
+
+
+def test_sidebar_counts_unseen_cards_and_marks_running_activity(shell, app):
+    from jarvis.desktop.presentation import project_activity, project_task
+    c, window = shell.controller, shell.full
+    cards, activity = window.nav[1], window.nav[2]
+    shell.show_full()
+    listen(c)
+    assert cards.badge == 0 and not activity.live
+    c.voice_event(project_activity('get_volume', {'ok': True, 'volume': 40}, 'v'))
+    c.voice_event(project_activity('list_calendar_events', {'ok': True, 'events': [{'title': 'Point', 'start': '10:00'}]}, 'cal'))
+    assert cards.badge == 2 and '2 nouvelles' in cards.accessibleName()
+    window.navigate(1)
+    assert cards.badge == 0
+    c.voice_event(project_activity('list_reminders', {'ok': True, 'reminders': [{'text': 'Pain'}]}, 'r'))
+    assert cards.badge == 0  # arrives under the user's eyes
+    window.navigate(0)
+    c.clear_cards()
+    assert cards.badge == 0
+    c.voice_event(project_task({'id': 'm', 'objective': 'Trier', 'status': 'running', 'current_tool': 'list_files', 'steps': []}))
+    assert activity.live and not activity.timer.isActive()  # reduced motion: steady dot
+    c.reduced_motion = False
+    c.changed.emit()
+    assert activity.timer.isActive()
+    c.voice_event(project_task({'id': 'm', 'objective': 'Trier', 'status': 'completed', 'steps': []}))
+    assert not activity.live and not activity.timer.isActive()

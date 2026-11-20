@@ -1,7 +1,7 @@
 """Desktop glass surface, discoverable controls and an orb transfer animation."""
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt
+from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QTimer, Qt
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
-from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect, QLabel, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect, QLabel, QPushButton, QWidget
 
 
 class GlassSurface(QWidget):
@@ -54,6 +54,98 @@ class DragHandle(QLabel):
             self.setCursor(Qt.CursorShape.OpenHandCursor)
             self.window().shell.remember_companion()
             event.accept()
+
+
+class NavButton(QPushButton):
+    """Sidebar entry: line icon on the left; counter, live dot or shortcut on the right."""
+    def __init__(self, text, kind, shortcut=''):
+        super().__init__(text)
+        self.kind, self.shortcut = kind, shortcut
+        self.badge, self.live, self.motion, self.phase = 0, False, True, 0
+        self.setObjectName('nav')
+        self.setCheckable(True)
+        self.timer = QTimer(self)
+        self.timer.setInterval(70)
+        self.timer.timeout.connect(self.advance)
+
+    def advance(self):
+        self.phase = (self.phase + 1) % 24
+        self.update()
+
+    def set_signal(self, badge=0, live=False, motion=True):
+        self.badge, self.live, self.motion = badge, live, motion
+        self.sync()
+        self.update()
+
+    def sync(self):
+        pulsing = self.live and self.motion and self.isVisible()
+        if pulsing != self.timer.isActive():
+            self.timer.start() if pulsing else self.timer.stop()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.sync()
+
+    def hideEvent(self, event):
+        self.timer.stop()
+        super().hideEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor('#e0f1ff' if self.isChecked() or self.underMouse() else '#91a9c1')
+        pen = QPen(color, 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        cx, cy = 23.0, self.height() / 2
+        if self.kind == 'assistant':
+            p.drawEllipse(QPointF(cx, cy), 7, 7)
+            p.setBrush(color)
+            p.drawEllipse(QPointF(cx, cy), 2.2, 2.2)
+        elif self.kind == 'cards':
+            p.drawRoundedRect(QRectF(cx - 7, cy - 3, 14, 10), 2.5, 2.5)
+            p.drawLine(QPointF(cx - 4.5, cy - 6.5), QPointF(cx + 4.5, cy - 6.5))
+        elif self.kind == 'activity':
+            p.drawPolyline([QPointF(cx - 8, cy), QPointF(cx - 3.5, cy), QPointF(cx - 1, cy - 6),
+                            QPointF(cx + 2, cy + 6), QPointF(cx + 4, cy), QPointF(cx + 8, cy)])
+        else:
+            for offset, knob in ((-5, 3), (0, -3), (5, 1)):
+                p.drawLine(QPointF(cx - 7, cy + offset), QPointF(cx + 7, cy + offset))
+                p.setBrush(QColor('#0b1420'))
+                p.drawEllipse(QPointF(cx + knob, cy + offset), 2, 2)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+        right = self.width() - 12
+        if self.badge:
+            text = str(self.badge) if self.badge < 10 else '9+'
+            width = max(18, p.fontMetrics().horizontalAdvance(text) + 10)
+            box = QRectF(right - width, cy - 9, width, 18)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor('#82caff'))
+            p.drawRoundedRect(box, 9, 9)
+            p.setPen(QColor('#081421'))
+            font = p.font()
+            font.setBold(True)
+            font.setPixelSize(11)
+            p.setFont(font)
+            p.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
+        elif self.live:
+            glow = QColor('#87d2ff')
+            wave = abs(12 - self.phase) / 12 if self.motion else 1.0
+            glow.setAlpha(int(40 + 60 * wave))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(glow)
+            p.drawEllipse(QPointF(right - 6, cy), 4 + 3 * (1 - wave), 4 + 3 * (1 - wave))
+            p.setBrush(QColor('#87d2ff'))
+            p.drawEllipse(QPointF(right - 6, cy), 3.2, 3.2)
+        elif self.shortcut:
+            p.setPen(QColor('#5f7a92'))
+            font = p.font()
+            font.setPixelSize(11)
+            p.setFont(font)
+            p.drawText(QRectF(right - 40, 0, 40, self.height()),
+                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, self.shortcut)
+        p.end()
 
 
 class ControlDock(QFrame):
