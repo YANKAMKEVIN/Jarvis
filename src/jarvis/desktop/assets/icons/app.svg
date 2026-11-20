@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Jarvis application icon: the orb (glowing core and glass rings) on the night background. -->
+  <defs>
+    <radialGradient id="night" cx="0.5" cy="0.42" r="0.75">
+      <stop offset="0" stop-color="#1b3347"/>
+      <stop offset="0.55" stop-color="#0c1826"/>
+      <stop offset="1" stop-color="#060c15"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#87e3ff" stop-opacity="0.55"/>
+      <stop offset="0.45" stop-color="#5fb8e6" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#5fb8e6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core" cx="0.42" cy="0.38" r="0.7">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.35" stop-color="#c9f1ff"/>
+      <stop offset="0.75" stop-color="#6fcbf5"/>
+      <stop offset="1" stop-color="#3f8fc4"/>
+    </radialGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#night)"/>
+  <rect x="101.500" y="101.500" width="821" height="821" rx="184.500" fill="none" stroke="#91cce8" stroke-opacity="0.22" stroke-width="3"/>
+  <circle cx="512" cy="512" r="330" fill="url(#halo)"/>
+  <g fill="none" stroke-linecap="round">
+    <circle cx="512" cy="512" r="262" stroke="#87e3ff" stroke-opacity="0.28" stroke-width="6"/>
+    <ellipse cx="512" cy="512" rx="262" ry="96" stroke="#bea5ff" stroke-opacity="0.75" stroke-width="10" transform="rotate(-28 512 512)"/>
+    <ellipse cx="512" cy="512" rx="262" ry="96" stroke="#87e3ff" stroke-opacity="0.85" stroke-width="10" transform="rotate(32 512 512)"/>
+  </g>
+  <circle cx="512" cy="512" r="128" fill="url(#core)"/>
+  <circle cx="512" cy="512" r="128" fill="none" stroke="#e8f8ff" stroke-opacity="0.6" stroke-width="4"/>
+  <circle cx="742" cy="368" r="15" fill="#e8f8ff"/>
+  <circle cx="290" cy="372" r="11" fill="#bea5ff"/>
+</svg>

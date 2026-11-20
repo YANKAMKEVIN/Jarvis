@@ -2,6 +2,7 @@
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
+from jarvis.desktop.presentation import count_label
 from jarvis.desktop.visuals import Orb
 
 
@@ -109,7 +110,7 @@ class OrbWindow(QWidget):
         if c.demo:
             state = 'Démo · micro fermé'
         count = len(c.cards)
-        self.status.setText(state + (f' · {count} carte(s)' if count else ''))
+        self.status.setText(state + (' · ' + count_label(count, 'carte') if count else ''))
         self.setToolTip(state + '\nCliquer pour ouvrir · glisser pour déplacer · clic droit pour les commandes')
 
     def contextMenuEvent(self, event):

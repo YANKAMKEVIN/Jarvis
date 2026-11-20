@@ -3,14 +3,16 @@
 macOS only grants TCC permissions when the matching API is first exercised, so
 without guidance the user meets Microphone, Calendar, Reminders and Automation
 prompts scattered across their first few sentences. This module gathers them
-into one explained first-run screen: what Jarvis will ask for, why, the current
-status, a button to request what can be requested programmatically, and a deep
-link to the right System Settings pane for the rest.
+into one explained first-run walkthrough, one permission per step: what Jarvis
+will ask for, why, the current status, a button to request what can be requested
+programmatically, and a deep link to the right System Settings pane for the
+rest. Only the microphone matters up front; every other step can wait until its
+first use.
 
 The logic is split so it stays testable off a real Mac:
 - needs_onboarding / mark_done persist a version in QSettings (pure).
 - permission_items merges the permission specs with an injected status
-  snapshot (pure).
+  snapshot (pure); onboarding_steps orders them into the walkthrough (pure).
 - default_snapshot / request_permission / open_settings are the native,
   best-effort side (never raise); the dialog takes them injected so tests pass
   fakes and never touch TCC.
@@ -126,6 +128,40 @@ def permission_items(snapshot: dict | None = None) -> list[dict]:
     return rows
 
 
+# The only permission the voice needs from the first sentence.
+ESSENTIAL = "microphone"
+
+
+def onboarding_steps(snapshot: dict | None = None) -> list[dict]:
+    """Walkthrough steps: the microphone first, then what can wait, then a recap.
+
+    Each permission step is its display row plus `essential` and a `note` that
+    tells whether it is needed now or only asked at first use. The last step has
+    key "done" and carries no permission.
+    """
+    rows = permission_items(snapshot)
+    rows.sort(key=lambda row: row["key"] != ESSENTIAL)  # stable: keeps the declared order
+    steps = []
+    for row in rows:
+        essential = row["key"] == ESSENTIAL
+        steps.append({
+            **row,
+            "essential": essential,
+            "note": (
+                "Déjà accordé." if row["status"] is True
+                else "Indispensable pour parler à Jarvis. macOS le demande au premier démarrage du vocal."
+                if essential else "Peut attendre : plus tard, au premier usage."
+            ),
+        })
+    steps.append({"key": "done", "title": "Tout est prêt", "essential": False, "note": ""})
+    return steps
+
+
+def step_caption(index: int, steps: list[dict]) -> str:
+    """« Étape 2 sur 7 · Calendrier » for the progress line."""
+    return f"Étape {index + 1} sur {len(steps)} · {steps[index]['title']}"
+
+
 # --- native, best-effort side (never raises) -------------------------------
 
 
@@ -235,16 +271,21 @@ _DIALOG_STYLE = """
 #onboarding QLabel { color: #c4d6e8; background: transparent; }
 #onboarding QLabel#ob_heading { color: #eef7ff; font-size: 16px; font-weight: 600; }
 #onboarding QLabel#ob_intro { color: #91a9c1; font-size: 12px; }
-#onboarding QLabel#ob_why { color: #9fb6cc; font-size: 12px; }
+#onboarding QLabel#ob_why { color: #c4d6e8; font-size: 13px; }
+#onboarding QLabel#ob_step { color: #7794af; font-size: 10px; font-weight: 600; }
+#onboarding QLabel#ob_note { color: #91a9c1; font-size: 12px; }
+#onboarding QLabel#ob_recap { color: #c4d6e8; font-size: 12px; }
+#onboarding QProgressBar { background: #192c3d; border: 1px solid #314b60; border-radius: 4px; min-height: 6px; max-height: 6px; }
+#onboarding QProgressBar::chunk { background: #87d9ff; border-radius: 3px; }
 #onboarding QFrame#ob_row { background: rgba(26, 43, 61, 130); border: 1px solid #243a4e; border-radius: 12px; }
-#onboarding QScrollArea { background: transparent; border: 0; }
 #onboarding QPushButton { background: #1a2a3d; border: 1px solid #2b435c; border-radius: 9px; padding: 8px 13px; color: #dce8f6; }
 #onboarding QPushButton:hover { background: #243d57; border-color: #517ca2; }
+#onboarding QPushButton:pressed { background: #131f2e; }
+#onboarding QPushButton:disabled { color: #647b90; background: #152030; }
+#onboarding QPushButton#ob_later { background: transparent; border: 1px solid #304659; color: #a7c1d6; }
 #onboarding QPushButton#primary { background: #82caff; color: #081421; border: 0; font-weight: 600; padding: 9px 20px; }
 #onboarding QPushButton#primary:hover { background: #b8e4ff; }
-#onboarding QScrollBar:vertical { background: #101927; width: 8px; margin: 0; }
-#onboarding QScrollBar::handle:vertical { background: #344c63; border-radius: 4px; min-height: 24px; }
-#onboarding QScrollBar::add-line:vertical, #onboarding QScrollBar::sub-line:vertical { height: 0; }
+#onboarding QPushButton#primary:pressed { background: #5fa9de; }
 """
 
 _STATUS_CHIP = {True: "#7fd1a6", False: "#e8b971", None: "#8fa6bd"}
@@ -256,7 +297,7 @@ def _chip(status) -> str:
 
 def _header_html(title: str, status_text: str, chip: str) -> str:
     return (
-        f"<span style='font-size:14px;font-weight:600;color:#eef7ff'>{title}</span>"
+        f"<span style='font-size:20px;font-weight:600;color:#eef7ff'>{title}</span>"
         f"&nbsp;&nbsp;<span style='font-size:12px;color:{chip}'>{status_text}</span>"
     )
 
@@ -268,56 +309,68 @@ def make_onboarding_dialog(
     open_settings_fn=open_settings,
     parent=None,
 ):
-    """Build the first-run onboarding dialog.
+    """Build the first-run onboarding walkthrough.
 
     settings: a QSettings-like object (marked done on finish). snapshot/request/
     open_settings_fn are injectable so tests drive the dialog without touching
     TCC. Returns a QDialog. Call .exec() (blocking) or .show().
+
+    One permission per page, the microphone first; `dialog.rows` maps each
+    permission key to its widgets, `dialog.go(index)` moves between pages and
+    `dialog.finish_button` (on the last page) marks the onboarding done.
     """
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import (
-        QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-        QVBoxLayout, QWidget,
+        QDialog, QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton,
+        QStackedWidget, QVBoxLayout,
     )
 
-    items = permission_items(snapshot if snapshot is not None else default_snapshot())
+    steps = onboarding_steps(snapshot if snapshot is not None else default_snapshot())
 
     dialog = QDialog(parent)
     dialog.setObjectName("onboarding")
     dialog.setWindowTitle("Jarvis — autorisations")
     dialog.setModal(True)
     dialog.setStyleSheet(_DIALOG_STYLE)
-    dialog.setMinimumSize(500, 560)
+    dialog.setMinimumSize(500, 430)
     dialog.rows = {}
+    dialog.steps = steps
 
     outer = QVBoxLayout(dialog)
     outer.setContentsMargins(22, 20, 22, 18)
     outer.setSpacing(12)
 
-    heading = QLabel("Bienvenue. Voici ce que Jarvis peut demander — et pourquoi.")
+    heading = QLabel("Bienvenue. Préparons Jarvis, une autorisation à la fois.")
     heading.setObjectName("ob_heading")
     heading.setWordWrap(True)
     outer.addWidget(heading)
     intro = QLabel(
-        "Vous pouvez tout autoriser maintenant ou plus tard : rien n'est "
-        "obligatoire, et chaque action reste sur demande. Les autorisations se "
-        "règlent aussi à tout moment dans Réglages Système."
+        "Seul le micro compte pour commencer. Le reste peut attendre : rien n'est "
+        "obligatoire, chaque action reste sur demande, et tout se règle à tout "
+        "moment dans Réglages Système."
     )
     intro.setObjectName("ob_intro")
     intro.setWordWrap(True)
     outer.addWidget(intro)
 
-    body = QWidget()
-    body_layout = QVBoxLayout(body)
-    body_layout.setContentsMargins(0, 2, 6, 2)
-    body_layout.setSpacing(10)
+    progress = QProgressBar()
+    progress.setRange(0, len(steps))
+    progress.setTextVisible(False)
+    progress.setAccessibleName("Avancement de l'accueil")
+    outer.addWidget(progress)
+    step_label = QLabel()
+    step_label.setObjectName("ob_step")
+    outer.addWidget(step_label)
 
-    for item in items:
+    pages = QStackedWidget()
+    recap = {}
+
+    for item in steps[:-1]:
         row = QFrame()
         row.setObjectName("ob_row")
         row_layout = QVBoxLayout(row)
-        row_layout.setContentsMargins(14, 12, 14, 12)
-        row_layout.setSpacing(6)
+        row_layout.setContentsMargins(18, 16, 18, 16)
+        row_layout.setSpacing(10)
 
         header = QLabel(_header_html(item["title"], item["status_text"], _chip(item["status"])))
         header.setTextFormat(Qt.TextFormat.RichText)
@@ -327,6 +380,12 @@ def make_onboarding_dialog(
         why.setObjectName("ob_why")
         why.setWordWrap(True)
         row_layout.addWidget(why)
+
+        note = QLabel(item["note"])
+        note.setObjectName("ob_note")
+        note.setWordWrap(True)
+        row_layout.addWidget(note)
+        row_layout.addStretch()
 
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
@@ -341,6 +400,7 @@ def make_onboarding_dialog(
                     if requestable:
                         request(key)
                         header.setText(_header_html(title, "demande envoyée · vérifiez Réglages", "#e8b971"))
+                        recap[key].setText(f"{title} · demande envoyée")
                     else:
                         spec = {s.key: s for s in PERMISSIONS}[key]
                         open_settings_fn(spec.settings_url)
@@ -359,33 +419,80 @@ def make_onboarding_dialog(
         buttons.addStretch()
         row_layout.addLayout(buttons)
 
-        body_layout.addWidget(row)
+        pages.addWidget(row)
         dialog.rows[item["key"]] = {
             "title": header,
             "request": request_button,
             "settings": settings_button,
+            "note": note,
         }
 
-    body_layout.addStretch()
-    scroll = QScrollArea()
-    scroll.setWidgetResizable(True)
-    scroll.setFrameShape(QFrame.Shape.NoFrame)
-    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    scroll.setWidget(body)
-    outer.addWidget(scroll, 1)
+    # Last page: where each permission stands, and what to try first.
+    done = QFrame()
+    done.setObjectName("ob_row")
+    done_layout = QVBoxLayout(done)
+    done_layout.setContentsMargins(18, 16, 18, 16)
+    done_layout.setSpacing(7)
+    done_title = QLabel(_header_html("Tout est prêt", "", "#7fd1a6"))
+    done_title.setTextFormat(Qt.TextFormat.RichText)
+    done_layout.addWidget(done_title)
+    for item in steps[:-1]:
+        line = QLabel(f"{item['title']} · {item['status_text']}")
+        line.setObjectName("ob_recap")
+        done_layout.addWidget(line)
+        recap[item["key"]] = line
+    done_layout.addStretch()
+    trial = QLabel(
+        "Pour un premier essai : démarrez Jarvis, puis dites « Quelle heure est-il ? ». "
+        "macOS demandera alors l'accès au micro."
+    )
+    trial.setObjectName("ob_why")
+    trial.setWordWrap(True)
+    done_layout.addWidget(trial)
+    pages.addWidget(done)
+    outer.addWidget(pages, 1)
 
+    back = QPushButton("Précédent")
+    later = QPushButton("Plus tard")
+    later.setObjectName("ob_later")
+    later.setToolTip("Passer cette autorisation : macOS la demandera au premier usage.")
+    forward = QPushButton("Suivant")
+    forward.setObjectName("primary")
     finish = QPushButton("Terminer")
     finish.setObjectName("primary")
+
+    def go(index):
+        index = max(0, min(index, len(steps) - 1))
+        step = steps[index]
+        last = index == len(steps) - 1
+        pages.setCurrentIndex(index)
+        progress.setValue(index + 1)
+        step_label.setText(step_caption(index, steps).upper())
+        back.setEnabled(index > 0)
+        # "Plus tard" only where there is something to postpone.
+        later.setVisible(not last and not step["essential"] and step.get("status") is not True)
+        forward.setVisible(not last)
+        finish.setVisible(last)
+        (finish if last else forward).setDefault(True)
 
     def _finish():
         mark_done(settings)
         dialog.accept()
 
+    back.clicked.connect(lambda: go(pages.currentIndex() - 1))
+    later.clicked.connect(lambda: go(pages.currentIndex() + 1))
+    forward.clicked.connect(lambda: go(pages.currentIndex() + 1))
     finish.clicked.connect(_finish)
     dialog.finish_button = finish
+    dialog.back_button, dialog.later_button, dialog.next_button = back, later, forward
+    dialog.pages, dialog.progress, dialog.step_label, dialog.go = pages, progress, step_label, go
 
     footer = QHBoxLayout()
+    footer.addWidget(back)
     footer.addStretch()
+    footer.addWidget(later)
+    footer.addWidget(forward)
     footer.addWidget(finish)
     outer.addLayout(footer)
+    go(0)
     return dialog

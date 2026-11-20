@@ -129,5 +129,49 @@ def test_finish_marks_done_and_closes(app):
     assert not dialog.isVisible()
 
 
+def test_steps_start_with_the_microphone_and_defer_the_rest():
+    steps = onboarding.onboarding_steps({"calendar": True, "reminders": False})
+    assert [step["key"] for step in steps] == [
+        "microphone", "calendar", "reminders", "automation", "accessibility", "screen_recording", "done"]
+    assert steps[0]["essential"] and "Indispensable" in steps[0]["note"]
+    assert not any(step["essential"] for step in steps[1:])
+    assert steps[1]["note"] == "Déjà accordé."
+    assert all("plus tard, au premier usage" in step["note"] for step in steps[2:-1])
+    assert onboarding.step_caption(0, steps) == "Étape 1 sur 7 · Microphone"
+    assert onboarding.step_caption(6, steps) == "Étape 7 sur 7 · Tout est prêt"
+
+
+def test_dialog_walks_one_permission_per_step_with_progress(app):
+    calls = []
+    settings = FakeSettings()
+    dialog = onboarding.make_onboarding_dialog(
+        settings, snapshot={"calendar": True, "reminders": False},
+        request=lambda key: calls.append(key), open_settings_fn=lambda url: None,
+    )
+    dialog.show()
+    assert dialog.pages.count() == 7 and dialog.pages.currentIndex() == 0
+    assert dialog.progress.value() == 1 and dialog.progress.maximum() == 7
+    assert dialog.step_label.text() == "ÉTAPE 1 SUR 7 · MICROPHONE"
+    # The microphone is the one step that matters: no "later", nothing behind it yet.
+    assert not dialog.back_button.isEnabled() and not dialog.later_button.isVisible()
+    assert dialog.next_button.isVisible() and not dialog.finish_button.isVisible()
+    dialog.next_button.click()
+    assert dialog.pages.currentIndex() == 1 and not dialog.later_button.isVisible()  # already granted
+    dialog.next_button.click()
+    assert dialog.step_label.text() == "ÉTAPE 3 SUR 7 · RAPPELS" and dialog.later_button.isVisible()
+    dialog.rows["reminders"]["request"].click()
+    assert calls == ["reminders"]
+    dialog.later_button.click()
+    assert dialog.pages.currentIndex() == 3
+    dialog.back_button.click()
+    assert dialog.pages.currentIndex() == 2
+    dialog.go(6)
+    assert dialog.progress.value() == 7 and dialog.finish_button.isVisible()
+    assert not dialog.next_button.isVisible() and not dialog.later_button.isVisible()
+    assert needs_onboarding(settings) is True
+    dialog.finish_button.click()
+    assert needs_onboarding(settings) is False and not dialog.isVisible()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-q"])

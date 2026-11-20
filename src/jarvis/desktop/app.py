@@ -7,7 +7,7 @@ import json
 from collections import OrderedDict
 from datetime import datetime
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSettings, QTimer, Qt, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPoint, QPropertyAnimation, QRect, QSettings, QTimer, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QBoxLayout, QCheckBox, QFrame, QHBoxLayout, QLabel, QMainWindow,
@@ -18,13 +18,13 @@ from jarvis.desktop.audio_settings import AudioSettings
 from jarvis.desktop.devices import valid_choice
 from jarvis.desktop.hotkey import GlobalHotkey
 from jarvis.desktop.tray import TrayControls
-from jarvis.desktop.visuals import Orb
+from jarvis.desktop.visuals import Orb, state_tint
 from jarvis.desktop.panels import DetailPanel
 from jarvis.desktop.mission_panel import MissionDeck
 from jarvis.desktop.orb_window import OrbWindow
 from jarvis.desktop.companion import CompanionWindow
-from jarvis.desktop.presentation import STATUS_TEXT
-from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, OrbTransfer
+from jarvis.desktop.presentation import STATUS_TEXT, count_label, shorten
+from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, NavButton, OrbTransfer
 
 STYLE = """
 QWidget { background: transparent; color: #dce8f6; font-family: '.AppleSystemUIFont', 'Inter', 'DejaVu Sans'; font-size: 13px; }
@@ -45,13 +45,40 @@ QFrame#controlDock { background: rgba(20, 36, 51, 105); border: 1px solid rgba(1
 QFrame#card { background: rgba(26, 43, 61, 155); border: 1px solid #293e52; border-radius: 16px; }
 QPushButton { background: #1a2a3d; border: 1px solid #2b435c; border-radius: 9px; padding: 10px 14px; }
 QPushButton:hover { background: #243d57; border-color: #517ca2; }
+QPushButton:pressed { background: #131f2e; border-color: #517ca2; padding: 11px 14px 9px 14px; }
 QPushButton:focus { border: 1px solid #83cfff; }
 QPushButton:disabled { color: #647b90; background: #152030; }
 QPushButton#primary:hover { background: #b8e4ff; }
 QPushButton#primary { background: #82caff; color: #081421; border: 0; font-weight: 600; }
+QPushButton#primary:pressed { background: #5fa9de; }
+QPushButton#quiet:hover { background: #17273a; border-color: #517ca2; color: #e0f1ff; }
+QPushButton#quiet:pressed { background: #0f1a28; }
 QPushButton#primary:disabled { background: #223247; color: #8096ab; }
-QPushButton#nav { text-align: left; background: transparent; border: 0; padding: 13px; color: #91a9c1; }
+QPushButton#cancelTask, QPushButton#cancelMission { background: transparent; border: 1px solid #7d4a5c; color: #f0b3c3; }
+QPushButton#cancelTask:hover, QPushButton#cancelMission:hover { background: #3a2030; border-color: #ee99b9; }
+QPushButton#cancelTask:pressed, QPushButton#cancelMission:pressed { background: #2a1722; }
+QPushButton#cancelTask:disabled, QPushButton#cancelMission:disabled { background: transparent; border-color: #3d3442; color: #7d6873; }
+QFrame#peek { background: rgba(36, 65, 86, 65); border: 1px solid #29465c; border-radius: 14px; }
+QFrame#peek:hover { background: rgba(46, 80, 104, 90); border-color: #517ca2; }
+QFrame#peek:focus { border-color: #83cfff; }
+QLabel#peekTitle { color: #e4f3ff; font-size: 14px; font-weight: 600; }
+QFrame#errorBanner { background: rgba(120, 40, 62, 70); border: 1px solid #7d4a5c; border-radius: 14px; }
+QLabel#errorIcon { color: #1b0d14; background: #ee99b9; border-radius: 11px; font-weight: 700; }
+QLabel#errorText { color: #f6ccd6; }
+QPushButton#nav { text-align: left; background: transparent; border: 0; padding: 13px 13px 13px 44px; color: #91a9c1; }
+QPushButton#nav:hover { color: #e0f1ff; background: #17273a; }
+QPushButton#nav:pressed { background: #101b29; padding: 14px 13px 12px 44px; }
 QPushButton#nav:checked { color: #e0f1ff; background: #22354b; }
+QPushButton#nav:checked:hover { background: #283e57; }
+QPushButton#copyCard { background: transparent; border: 1px solid #304659; color: #a7c1d6; padding: 6px 12px; font-size: 12px; }
+QPushButton#copyCard:hover { background: #243d57; border-color: #517ca2; color: #e0f1ff; }
+QPushButton#copyCard:pressed { background: #131f2e; padding: 7px 12px 5px 12px; }
+QPushButton#chip:pressed { padding: 6px 12px 4px 12px; }
+QPushButton#chip { border-radius: 13px; padding: 5px 12px; font-size: 12px; color: #bfdeed; }
+QPushButton#tool { text-align: left; background: transparent; border: 0; padding: 8px 13px; color: #91a9c1; font-size: 12px; }
+QPushButton#tool:hover { color: #e0f1ff; background: #17273a; }
+QPushButton#tool:pressed { background: #101b29; padding: 9px 13px 7px 13px; }
+QPushButton#tool:focus { border: 1px solid #83cfff; padding: 7px 12px; }
 QScrollArea { background: transparent; border: 0; }
 QScrollBar:vertical { background: #101927; width: 7px; }
 QScrollBar::handle:vertical { background: #344c63; border-radius: 3px; min-height: 24px; }
@@ -99,6 +126,61 @@ def card(title, text):
     layout.addWidget(label(title, "eyebrow"))
     layout.addWidget(label(text))
     return frame
+
+
+def section(title, parent):
+    """Titled settings group; returns the layout that receives its controls."""
+    frame = QFrame()
+    frame.setObjectName("card")
+    layout = QVBoxLayout(frame)
+    layout.setContentsMargins(18, 14, 18, 14)
+    layout.setSpacing(6)
+    layout.addWidget(label(title, "eyebrow"))
+    parent.addWidget(frame)
+    return layout
+
+
+class PeekCard(QFrame):
+    """Preview of the latest result card under the orb; the whole card opens Cartes."""
+    clicked = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName('peek')
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.setToolTip('Ouvrir cette carte')
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 10, 16, 11)
+        layout.setSpacing(3)
+        self.title = label('', 'peekTitle')
+        self.title.setWordWrap(False)
+        self.summary = label('', 'subtitle')
+        self.summary.setMaximumHeight(self.summary.fontMetrics().lineSpacing() * 2 + 2)
+        for widget in (self.title, self.summary):
+            widget.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+            widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            layout.addWidget(widget)
+
+    def show_card(self, title, summary):
+        self.title.setText(title)
+        self.summary.setText(summary)
+        self.summary.setVisible(bool(summary))
+        self.setAccessibleName('Dernière carte : ' + title + ('. ' + summary if summary else '') + ' Ouvrir les cartes.')
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space}:
+            self.clicked.emit()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
 
 class Controller(QObject):
@@ -644,6 +726,13 @@ class VoicePanel(QWidget):
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if compact:
             self.status.setStyleSheet("font-size: 21px;")
+        # The title takes a hint of the orb's state colour and fades in when it changes.
+        self.status_tint = self.status_shown = None
+        self.status_opacity = QGraphicsOpacityEffect(self.status)
+        self.status.setGraphicsEffect(self.status_opacity)
+        self.status_fade = QPropertyAnimation(self.status_opacity, b'opacity', self)
+        self.status_fade.setDuration(240)
+        self.status_fade.setEasingCurve(QEasingCurve.Type.OutCubic)
         layout.addWidget(self.status)
         self.hint = label("Parlez-moi simplement.", "intro")
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -654,10 +743,35 @@ class VoicePanel(QWidget):
         self.details_button.setObjectName('quiet')
         self.hint_area.addWidget(self.details_button)
         layout.addWidget(self.hint_area)
-        self.peek = label('', 'subtitle')
-        self.peek.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.peek.setMaximumHeight(100)
-        self.peek.setStyleSheet('background: rgba(36, 65, 86, 65); border: 1px solid #29465c; border-radius: 14px; padding: 10px; color: #bfdeed;')
+        self.suggestions = label('', 'subtitle')
+        self.suggestions.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.suggestions.setAccessibleName('Exemples de demandes à dire')
+        self.suggestions.hide()
+        layout.addWidget(self.suggestions)
+        self.suggestion_tick = 0
+        self.permission_snapshot = None
+        self.suggestion_timer = QTimer(self)
+        self.suggestion_timer.setInterval(7000)
+        self.suggestion_timer.timeout.connect(self.next_suggestions)
+        self.error_banner = QFrame()
+        self.error_banner.setObjectName('errorBanner')
+        self.error_banner.setAccessibleName('Problème vocal')
+        banner = QHBoxLayout(self.error_banner)
+        banner.setContentsMargins(14, 10, 10, 10)
+        banner.setSpacing(12)
+        icon = label('!', 'errorIcon')
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setFixedSize(22, 22)
+        banner.addWidget(icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.error_text = label('', 'errorText')
+        banner.addWidget(self.error_text, 1)
+        self.error_action = button('Réessayer', self.resolve_error)
+        self.error_kind = 'retry'
+        banner.addWidget(self.error_action, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.error_banner.hide()
+        layout.addWidget(self.error_banner)
+        self.peek = PeekCard()
+        self.peek.clicked.connect(controller.details_requested.emit)
         layout.addWidget(self.peek)
         layout.addStretch(2)
         self.controls = ControlDock(controller)
@@ -668,9 +782,11 @@ class VoicePanel(QWidget):
         self.voice_button.setAccessibleName("Démarrer ou arrêter l’assistant vocal")
         controls.addWidget(self.voice_button)
         self.mic_button = button("Couper le micro", controller.toggle_microphone)
+        self.mic_button.setToolTip("Couper ou réactiver le micro · touche M")
         controls.addWidget(self.mic_button)
-        self.interrupt_button = button("Interrompre", controller.interrupt_voice)
-        self.interrupt_button.setToolTip("Couper la réponse orale pour reprendre la parole. Les actions système déjà lancées peuvent continuer.")
+        self.interrupt_button = button("Interrompre · Échap", controller.interrupt_voice)
+        self.interrupt_button.setAccessibleName("Interrompre la réponse")
+        self.interrupt_button.setToolTip("Couper la réponse orale pour reprendre la parole (touche Échap). Les actions système déjà lancées peuvent continuer.")
         controls.addWidget(self.interrupt_button)
         layout.addWidget(self.controls)
         self.voice_notice = label("", "subtitle")
@@ -684,6 +800,62 @@ class VoicePanel(QWidget):
 
     def toggle_voice(self):
         self.controller.stop_voice() if self.controller.voice_worker else self.controller.start_voice()
+
+    def fit_orb(self, wanted):
+        """Largest orb up to `wanted` that leaves room for what is shown under it."""
+        spacing = self.layout().spacing()
+        used = self.appearance_button.sizeHint().height() + 12 + 2 * spacing
+        for widget in (self.status, self.hint_area, self.suggestions, self.error_banner, self.peek,
+                       self.controls, self.voice_notice, self.footnote):
+            if not widget.isHidden():
+                height = widget.heightForWidth(self.width()) if widget.hasHeightForWidth() else -1
+                used += (height if height > 0 else widget.sizeHint().height()) + spacing
+        if self.mission.isVisibleTo(self):
+            used += self.mission.sizeHint().height() + self.stage.spacing()
+        return max(160, min(wanted, self.height() - used))
+
+    def next_suggestions(self):
+        self.suggestion_tick += 1
+        self.render_suggestions()
+
+    def permissions(self):
+        """macOS permission statuses, read once; never queried in the demo or offscreen."""
+        if self.permission_snapshot is None:
+            self.permission_snapshot = {}
+            if not self.controller.demo and QApplication.platformName() != 'offscreen':
+                from jarvis.desktop.onboarding import default_snapshot
+                self.permission_snapshot = default_snapshot()
+        return self.permission_snapshot
+
+    def render_suggestions(self, shown=None):
+        from jarvis.desktop.presentation import suggestions
+        if shown is not None:
+            self.suggestions.setVisible(shown)
+        shown = not self.suggestions.isHidden()
+        if shown:
+            self.suggestions.setText('Essayez :  ' + '   ·   '.join(
+                '« ' + phrase + ' »' for phrase in suggestions(self.permissions(), self.suggestion_tick)))
+        rotating = shown and self.isVisible() and not self.controller.reduced_motion
+        if rotating != self.suggestion_timer.isActive():
+            self.suggestion_timer.start() if rotating else self.suggestion_timer.stop()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.render_suggestions()
+
+    def hideEvent(self, event):
+        self.suggestion_timer.stop()
+        super().hideEvent(event)
+
+    def resolve_error(self):
+        """Banner button: go where the error can be fixed, or start the voice again."""
+        shell = getattr(self.window(), 'shell', None)
+        if self.error_kind == 'api_key' and shell is not None:
+            shell.experience.setup()
+        elif self.error_kind == 'settings' and shell is not None:
+            shell.show_settings()
+        elif self.controller.voice_worker is None:
+            self.controller.start_voice()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -704,17 +876,13 @@ class VoicePanel(QWidget):
         self.mission.setMaximumWidth(370 if beside else 16777215)
         has_details = bool(c.cards or c.task or c.activity)
         self.hint_area.setCurrentIndex(1 if has_details and state not in {"error", "starting"} else 0)
-        self.details_button.setText(f'{len(c.cards)} carte(s) · Voir les détails →' if c.cards else
+        self.details_button.setText(count_label(len(c.cards), 'carte') + ' · Voir les détails →' if c.cards else
                                     'Suivre la tâche →' if c.task else 'Voir l’activité →')
         self.peek.setVisible(bool(c.cards) and not self.compact)
         if c.cards:
             latest = next(reversed(c.cards.values()))
             summary = latest['body'] if not latest['items'] else latest['items'][0]
-            self.peek.setText(latest['title'] + '\n' + summary[:160])
-        compact_orb = 140 if len(c.focus_missions()) > 1 else 180
-        orb_size = (compact_orb if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else 280 if c.cards or mission_shown else 360)
-        self.orb.setFixedSize(orb_size, orb_size)
-        self.orb_slot.setMinimumHeight(orb_size + (0 if self.compact else self.appearance_button.sizeHint().height() + 12))
+            self.peek.show_card(latest['title'], shorten(summary))
         self.orb.set_appearance(c.appearance)
         self.orb.dance = c.dance
         self.orb.state = c.avatar_state()
@@ -732,7 +900,7 @@ class VoicePanel(QWidget):
         self.status.setText(states.get(state, "Jarvis"))
         if c.wake_standby and state == "muted":
             self.status.setText("En veille")
-        self.hint.setText("Cliquez sur Interrompre pour reprendre la parole." if state == "speaking" else
+        self.hint.setText("Appuyez sur Échap ou cliquez sur Interrompre pour reprendre la parole." if state == "speaking" else
                           "Parlez naturellement, vos demandes restent vocales." if active else
                           "Une question, une idée, une action. Dites-le à Jarvis.")
         if c.wake_standby and state == "muted":
@@ -746,7 +914,7 @@ class VoicePanel(QWidget):
         elif state == 'error' and c.can_reconnect:
             self.hint.setText('Reconnecter ouvre une nouvelle conversation. Vérifiez le résultat des actions précédentes dans Activité.')
         elif state == 'error':
-            self.hint.setText('Vérifiez le message ci-dessous, puis réessayez ou ouvrez Réglages.')
+            self.hint.setText('Le vocal n’a pas pu démarrer. La cause et la marche à suivre sont indiquées ci-dessous.')
         if c.tool_notice and not c.voice_error:
             self.hint.setText(c.tool_notice)
             self.hint.setStyleSheet("color: #bfe5f6; font-size: 12px; background: rgba(63, 106, 136, 35); border: 1px solid #284357; border-radius: 12px; padding: 5px;")
@@ -759,7 +927,8 @@ class VoicePanel(QWidget):
         for control in (self.mic_button, self.interrupt_button):
             control.setVisible(active and not (control is self.mic_button and c.ptt_enabled))
             control.setEnabled(active and state not in {"starting", "stopping", "error"})
-        self.mic_button.setText("Couper le micro" if c.voice_mic_open else "Réactiver le micro")
+        self.mic_button.setText(("Couper le micro" if c.voice_mic_open else "Réactiver le micro") + " · M")
+        self.mic_button.setAccessibleName("Couper le micro" if c.voice_mic_open else "Réactiver le micro")
         if c.screen_operations and state not in {'off', 'error', 'stopping'}:
             self.status.setText('Observation d’écran en cours')
             self.hint_area.setCurrentIndex(0)
@@ -793,9 +962,52 @@ class VoicePanel(QWidget):
             if state=='muted':
                 self.status.setText('Maintenir pour parler')
                 self.hint.setText(c.ptt_hotkey_message)
-        self.voice_notice.setText(c.recovery_message or notice)
+        # Examples to say only fill an otherwise empty, idle or listening screen.
+        self.render_suggestions(
+            not self.compact and state in {'off', 'listening'} and not c.voice_error and not mission_shown
+            and not c.cards and not has_details and c.audio_worker is None and not c.input_suppressed
+            and not c.screen_operations and not (c.tool_notice or c.request_status)
+            and not (c.ptt_enabled and active))
+        # A voice error gets its own banner with the fitting next step; the line
+        # under the dock then only carries the reconnection countdown, if any.
+        self.error_banner.setVisible(bool(c.voice_error))
+        if c.voice_error:
+            from jarvis.desktop.recovery import voice_error_action
+            self.error_kind, action = voice_error_action(c.voice_error, c.can_reconnect)
+            self.error_text.setText(c.voice_error)
+            self.error_action.setText(action)
+            self.error_action.setEnabled(self.error_kind != 'retry' or self.voice_button.isEnabled())
+        self.voice_notice.setText(c.recovery_message if c.voice_error else c.recovery_message or notice)
         self.voice_notice.setStyleSheet("color: #e5a0aa;" if c.voice_error else "color: #91a9c1;")
-        self.footnote.setText("JARVIS · ASSISTANT VOCAL" if not active else "GEMINI LIVE · CONFIRMATIONS VOCALES")
+        # The footer is reserved for the state of the connection.
+        self.footnote.setText("DÉMONSTRATION · HORS LIGNE" if c.demo else
+                              "GEMINI LIVE · RECONNEXION…" if state == "starting" and c.reconnecting else
+                              "GEMINI LIVE · CONNEXION…" if state == "starting" else
+                              "GEMINI LIVE · DÉCONNEXION…" if state == "stopping" else
+                              "GEMINI LIVE · CONNEXION INTERROMPUE" if state == "error" else
+                              "GEMINI LIVE · CONNECTÉ · CONFIRMATIONS VOCALES" if active else
+                              "GEMINI LIVE · HORS LIGNE")
+        compact_orb = 140 if len(c.focus_missions()) > 1 else 180
+        orb_size = (compact_orb if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else self.fit_orb(280 if c.cards or mission_shown or c.voice_error else 360))
+        self.orb.setFixedSize(orb_size, orb_size)
+        self.orb_slot.setMinimumHeight(orb_size + (0 if self.compact else self.appearance_button.sizeHint().height() + 12))
+        tint = state_tint(self.orb.state)
+        if tint != self.status_tint:
+            self.status_tint = tint
+            self.status.setStyleSheet(f"color: {tint};" + (" font-size: 21px;" if self.compact else ""))
+        shown = (self.status.text(), tint)
+        if shown != self.status_shown:
+            self.status_fade.stop()
+            if self.status_shown is None or c.reduced_motion or not self.status.isVisible():
+                self.status_opacity.setOpacity(1.0)
+            else:
+                self.status_fade.setStartValue(0.25)
+                self.status_fade.setEndValue(1.0)
+                self.status_fade.start()
+            self.status_shown = shown
+        elif c.reduced_motion and self.status_fade.state() == QPropertyAnimation.State.Running:
+            self.status_fade.stop()
+            self.status_opacity.setOpacity(1.0)
 
 
 class DesktopWindow(QMainWindow):
@@ -828,21 +1040,36 @@ class DesktopWindow(QMainWindow):
             nav.addWidget(label("ASSISTANT VOCAL", "eyebrow"))
             nav.addSpacing(34)
             self.nav = []
-            for i, text in enumerate(("Assistant", "Cartes", "Activité", "Réglages")):
-                b = button(text, lambda checked=False, index=i: self.navigate(index))
-                b.setObjectName("nav")
-                b.setCheckable(True)
+            self.seen_cards = set()
+            for i, (text, kind) in enumerate((("Assistant", "assistant"), ("Cartes", "cards"),
+                                              ("Activité", "activity"), ("Réglages", "settings"))):
+                b = NavButton(text, kind, f"⌘{i + 1}")
+                b.clicked.connect(lambda checked=False, index=i: self.navigate(index))
+                b.setToolTip(f"{text} · ⌘{i + 1}")
                 self.nav.append(b)
                 nav.addWidget(b)
             nav.addStretch()
-            nav.addWidget(label("PENSÉ POUR LA VOIX", "eyebrow"))
-            nav.addWidget(label("Parlez. Jarvis s’occupe de la suite.", "subtitle"))
+            # Screens that already exist but were only reachable from the menu bar or the palette.
+            nav.addWidget(label("OUTILS", "eyebrow"))
+            self.tools = {}
+            for key, text, tip, callback in (
+                    ("dashboard", "Tableau de bord", "Usage, métriques et alertes", lambda: shell.show_dashboard()),
+                    ("history", "Historique", "Missions et procédures retenues", lambda: shell.experience.history()),
+                    ("memory", "Mémoire", "Mémoire et préférences retenues", lambda: shell.experience.memory()),
+                    ("palette", "Palette  ⌘K", "Palette de commandes · ⌘K", lambda: shell.experience.palette())):
+                b = button(text, lambda checked=False, run=callback: run())
+                b.setObjectName("tool")
+                b.setToolTip(tip)
+                self.tools[key] = b
+                nav.addWidget(b)
             row.addWidget(sidebar)
         workspace = QVBoxLayout()
         workspace.setContentsMargins(28 if compact else 40, 26, 28 if compact else 40, 28)
         workspace.setSpacing(16)
         heading = QHBoxLayout()
-        heading.addWidget(DragHandle("◌   J A R V I S") if compact else label("COMPAGNON VOCAL     /     JARVIS", "eyebrow"), 1)
+        # The sidebar already carries the wordmark: the header names the current page.
+        self.page_title = None if compact else label("ASSISTANT", "eyebrow")
+        heading.addWidget(DragHandle("◌   J A R V I S") if compact else self.page_title, 1)
         heading.addStretch()
         switch = button("Agrandir ↗" if compact else "Mode compact ↙", shell.switch_view)
         switch.setObjectName("quiet")
@@ -872,21 +1099,11 @@ class DesktopWindow(QMainWindow):
             self.pages.addWidget(self.activity)
             settings = QWidget()
             settings_layout = QVBoxLayout(settings)
-            settings_layout.setContentsMargins(0, 0, 0, 0)
-            settings_layout.addWidget(card("VOTRE VOIX, VOTRE COMMANDE",
-                "Gemini Live écoute uniquement après activation. Les confirmations des outils restent vocales."))
-            settings_layout.addWidget(card("ÉCOUTE ET RÉPONSE",
-                "L’écoute est suspendue pendant la lecture de la voix de Jarvis pour éviter qu’il se réponde à lui-même. Cliquez sur Interrompre pour reprendre la parole."))
-            settings_layout.addWidget(card("CONFIDENTIALITÉ",
-                "Cette interface n’affiche et n’enregistre aucun texte de transcription. La session Gemini utilise le contexte de votre conversation ; les outils gardent leurs règles existantes de mémoire et de journalisation."))
-            reduce = QCheckBox("Réduire les animations")
-            reduce.setChecked(controller.reduced_motion)
-            reduce.toggled.connect(self.set_reduced_motion)
-            settings_layout.addWidget(reduce)
-            sounds = QCheckBox("Sons discrets à l’activation et au changement du micro")
-            sounds.setChecked(controller.sounds_enabled)
-            sounds.toggled.connect(self.set_sounds)
-            settings_layout.addWidget(sounds)
+            settings_layout.setContentsMargins(0, 0, 6, 0)
+            settings_layout.setSpacing(14)
+            settings_layout.addWidget(label("Réglages", "greeting"))
+
+            voice = section("VOIX ET MICRO", settings_layout)
             self.wake_check = QCheckBox("Réveiller Jarvis en disant « Jarvis » (détection locale)")
             self.wake_check.setToolTip("Le micro écoute sur ce Mac ; rien n’est envoyé à Gemini avant le mot d’éveil. "
                                        "Retour en veille après un silence. Remplace le maintien pour parler.")
@@ -894,27 +1111,65 @@ class DesktopWindow(QMainWindow):
             self.wake_check.setEnabled(not controller.demo)
             self.wake_check.toggled.connect(shell.set_wake_word)
             controller.changed.connect(lambda: self.wake_check.setChecked(controller.wake_enabled))
-            settings_layout.addWidget(self.wake_check)
-            settings_layout.addWidget(button("Jarvis au quotidien…", lambda: shell.experience.open()))
-            settings_layout.addWidget(button("Palette de commandes · ⌘K", lambda: shell.experience.palette()))
-            settings_layout.addWidget(button("Voix des avatars…", shell.show_voices))
-            settings_layout.addWidget(button("Configurer les routines vocales…",shell.show_routines))
-            settings_layout.addWidget(label('PÉRIPHÉRIQUES ET TESTS LOCAUX', 'eyebrow'))
+            voice.addWidget(self.wake_check)
+            voice.addWidget(label("Sans mot d’éveil, Gemini Live écoute uniquement après activation.", "subtitle"))
+            voice.addWidget(button("Voix des avatars…", shell.show_voices))
+
+            audio = section("AUDIO", settings_layout)
+            sounds = QCheckBox("Sons discrets à l’activation et au changement du micro")
+            sounds.setChecked(controller.sounds_enabled)
+            sounds.toggled.connect(self.set_sounds)
+            audio.addWidget(sounds)
+            audio.addWidget(label('PÉRIPHÉRIQUES ET TESTS LOCAUX', 'eyebrow'))
             self.audio_settings = AudioSettings(controller)
-            settings_layout.addWidget(self.audio_settings)
+            audio.addWidget(self.audio_settings)
+
+            keys = section("RACCOURCIS", settings_layout)
             self.hotkey_check = QCheckBox('Activer le raccourci global ⌘⇧Espace')
             self.hotkey_check.setChecked(controller.hotkey_enabled)
             self.hotkey_check.setEnabled(not controller.demo)
             self.hotkey_check.toggled.connect(shell.set_global_hotkey)
-            settings_layout.addWidget(self.hotkey_check)
+            keys.addWidget(self.hotkey_check)
             self.hotkey_status = label(controller.hotkey_message, 'subtitle')
-            settings_layout.addWidget(self.hotkey_status)
+            keys.addWidget(self.hotkey_status)
             self.hotkey_retry = button('Réessayer le raccourci', shell.retry_hotkey)
-            settings_layout.addWidget(self.hotkey_retry)
+            keys.addWidget(self.hotkey_retry)
             def render_hotkey():
                 self.hotkey_status.setText(controller.hotkey_message)
                 self.hotkey_retry.setEnabled(controller.hotkey_enabled and not controller.hotkey_active and not controller.demo)
             controller.changed.connect(render_hotkey)
+            keys.addWidget(button("Palette de commandes · ⌘K", lambda: shell.experience.palette()))
+
+            look = section("COMPAGNON ET APPARENCE", settings_layout)
+            reduce = QCheckBox("Réduire les animations")
+            reduce.setChecked(controller.reduced_motion)
+            reduce.toggled.connect(self.set_reduced_motion)
+            look.addWidget(reduce)
+            look.addWidget(button("Apparence de Jarvis…", shell.show_appearances))
+            look.addWidget(button("Jarvis au quotidien…", lambda: shell.experience.open()))
+            look.addWidget(button("Configurer les routines vocales…", shell.show_routines))
+
+            privacy = section("CONFIDENTIALITÉ", settings_layout)
+            privacy.addWidget(label("Cette interface n’affiche et n’enregistre aucun texte de transcription."))
+            self.privacy_more = button("En savoir plus ▸", self.toggle_privacy_details)
+            self.privacy_more.setObjectName("quiet")
+            self.privacy_more.setAccessibleName("Afficher ou masquer les explications sur l’écoute et la confidentialité")
+            privacy.addWidget(self.privacy_more)
+            self.privacy_details = QWidget()
+            details = QVBoxLayout(self.privacy_details)
+            details.setContentsMargins(0, 4, 0, 0)
+            details.setSpacing(10)
+            for title, body in (
+                    ("VOTRE VOIX, VOTRE COMMANDE",
+                     "Gemini Live écoute uniquement après activation. Les confirmations des outils restent vocales."),
+                    ("ÉCOUTE ET RÉPONSE",
+                     "L’écoute est suspendue pendant la lecture de la voix de Jarvis pour éviter qu’il se réponde à lui-même. Appuyez sur Échap ou cliquez sur Interrompre pour reprendre la parole."),
+                    ("SESSION ET OUTILS",
+                     "La session Gemini utilise le contexte de votre conversation ; les outils gardent leurs règles existantes de mémoire et de journalisation.")):
+                details.addWidget(label(title, "eyebrow"))
+                details.addWidget(label(body, "subtitle"))
+            self.privacy_details.hide()
+            privacy.addWidget(self.privacy_details)
             settings_layout.addStretch()
             settings_scroll = QScrollArea()
             settings_scroll.setWidgetResizable(True)
@@ -926,12 +1181,63 @@ class DesktopWindow(QMainWindow):
         row.addLayout(workspace, 1)
         self.shortcut = QShortcut(QKeySequence("Ctrl+Shift+Space"), self)
         self.shortcut.activated.connect(shell.show_compact)
+        # Voice shortcuts follow the dock buttons: they only fire while those are usable.
+        self.interrupt_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        self.interrupt_shortcut.activated.connect(controller.interrupt_voice)
+        self.mic_shortcut = QShortcut(QKeySequence(Qt.Key.Key_M), self)
+        self.mic_shortcut.activated.connect(controller.toggle_microphone)
+        self.page_shortcuts = []
+        if not compact:
+            for index in range(len(self.nav)):
+                shortcut = QShortcut(QKeySequence(f"Ctrl+{index + 1}"), self)
+                shortcut.activated.connect(lambda index=index: self.navigate(index))
+                self.page_shortcuts.append(shortcut)
+        controller.changed.connect(self.render_shortcuts)
+        self.render_shortcuts()
+        if not compact:
+            controller.changed.connect(self.render_nav)
+            self.render_nav()
+
+    def render_nav(self):
+        """Counter of result cards not yet looked at, and a live dot while a mission or tool runs."""
+        c = self.controller
+        current = {(kind, card.get('time'), card.get('title')) for kind, card in c.cards.items()}
+        if self.pages.currentIndex() == 1 and self.isVisible():
+            self.seen_cards = current
+        self.seen_cards &= current
+        unseen = len(current - self.seen_cards)
+        busy = (any(m['status'] in {'running', 'cancelling'} for m in c.mission_list())
+                or any(entry['status'] == 'running' for entry in c.activity.values()))
+        motion = not c.reduced_motion
+        self.nav[1].set_signal(badge=unseen, motion=motion)
+        self.nav[1].setAccessibleName('Cartes' + (f' · {unseen} nouvelle' + ('s' if unseen > 1 else '') if unseen else ''))
+        self.nav[2].set_signal(live=busy, motion=motion)
+        self.nav[2].setAccessibleName('Activité' + (' · en cours' if busy else ''))
+
+    def render_shortcuts(self):
+        c = self.controller
+        usable = c.voice_worker is not None and c.voice_state not in {"starting", "stopping", "error"}
+        self.interrupt_shortcut.setEnabled(usable)
+        self.mic_shortcut.setEnabled(usable and not c.ptt_enabled)
 
     def navigate(self, index):
         self.shell.finish_transfer()
         self.pages.setCurrentIndex(index)
         for i, widget in enumerate(self.nav):
             widget.setChecked(index == i)
+        self.page_title.setText(self.nav[index].text().upper())
+        if hasattr(self, 'seen_cards') and hasattr(self, 'mic_shortcut'):
+            self.render_nav()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, 'seen_cards') and hasattr(self, 'mic_shortcut'):
+            self.render_nav()  # cards under the user's eyes again count as seen
+
+    def toggle_privacy_details(self):
+        shown = self.privacy_details.isHidden()
+        self.privacy_details.setVisible(shown)
+        self.privacy_more.setText("Masquer les explications ▾" if shown else "En savoir plus ▸")
 
     def set_reduced_motion(self, checked):
         if checked:
@@ -1391,6 +1697,10 @@ def run(demo=False, compact=False, orb=False):
     app.setApplicationName("Jarvis")
     app.setOrganizationName("Jarvis")
     app.setStyleSheet(STYLE)
+    from jarvis.desktop.tray import app_icon
+    icon = app_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)  # also the Dock icon on macOS, inherited by every window
     controller = Controller(demo=demo)
     shell = DesktopShell(app, controller)
     shell.show_orb() if orb else shell.show_compact() if compact else shell.show_full()

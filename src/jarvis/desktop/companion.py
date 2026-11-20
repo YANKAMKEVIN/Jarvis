@@ -2,6 +2,7 @@
 from PySide6.QtCore import QEvent, QPoint, QTimer, Qt
 from PySide6.QtWidgets import QApplication, QMenu, QPushButton
 from jarvis.desktop.orb_window import InteractiveOrb, OrbWindow
+from jarvis.desktop.presentation import count_label
 from jarvis.desktop.tray import presence
 from jarvis.desktop.companion_preferences import CompanionPreferences
 from jarvis.desktop.notice_bubble import NoticeBubble
@@ -153,7 +154,7 @@ class CompanionWindow(OrbWindow):
         button.setFixedSize(32, 32)
         button.move(x, 4)
         button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        button.setStyleSheet('QPushButton { background: rgba(13, 29, 43, 230); color: #d9f1ff; border: 1px solid #42617a; border-radius: 16px; padding: 0; font-size: 17px; } QPushButton:hover, QPushButton:focus { background: #29485f; border-color: #8bdcff; }')
+        button.setStyleSheet('QPushButton { background: rgba(13, 29, 43, 230); color: #d9f1ff; border: 1px solid #42617a; border-radius: 16px; padding: 0; font-size: 17px; } QPushButton:hover, QPushButton:focus { background: #29485f; border-color: #8bdcff; } QPushButton:pressed { background: #16293a; }')
         button.clicked.connect(callback)
         button.hide()
         return button
@@ -198,7 +199,13 @@ class CompanionWindow(OrbWindow):
             if event.key() == Qt.Key.Key_Escape:
                 self.controller.dance.stop()
                 self.controller.end_push_to_talk()
+                if self.controller.voice_state == 'speaking':
+                    self.controller.interrupt_voice()
                 self.conceal_controls()
+                return True
+            if (event.key() == Qt.Key.Key_M and event.modifiers() == Qt.KeyboardModifier.NoModifier
+                    and not event.isAutoRepeat() and self.controller.voice_worker is not None):
+                self.controller.toggle_microphone()
                 return True
             if event.key() in {Qt.Key.Key_Tab, Qt.Key.Key_Backtab} and not self.keyboard_controls:
                 self.reveal_controls(keyboard=True)
@@ -262,7 +269,7 @@ class CompanionWindow(OrbWindow):
         status, _, _ = presence(self.controller)
         notice = self.controller.recovery_message or self.controller.voice_error or self.controller.tool_notice
         count = len(self.controller.focus_missions())
-        text = status + (f' · {count} mission(s)' if count else '')
+        text = status + (' · ' + count_label(count, 'mission') if count else '')
         if notice:
             text += '\n' + notice
         self.orb.setToolTip(text + '\nGlisser pour déplacer · survoler pour les commandes')
@@ -276,7 +283,8 @@ class CompanionWindow(OrbWindow):
                 registered=getattr(getattr(self.shell,'hold_hotkey',None),'active',False)
                 label='Maintenir pour parler · ⌘⌥Espace' if registered else 'Maintenir ce bouton pour parler · Espace sur le compagnon'
             self.voice_button.setText('■' if c.voice_state=='speaking' else '●' if c.voice_mic_open else '▶')
-            self.voice_button.setAccessibleName(label);self.voice_button.setToolTip(label)
+            key=(' · Échap' if label=='Interrompre la réponse' else ' · M' if label in {'Couper le micro','Réactiver le micro'} else '')
+            self.voice_button.setAccessibleName(label);self.voice_button.setToolTip(label+key)
             self.voice_button.setEnabled(not c.demo and c.audio_worker is None and c.voice_state not in {'starting','stopping'} and not(c.voice_worker and c.voice_state=='error'))
         if hasattr(self,'idle_timer'):
             if getattr(self,'last_voice_state',None)!=c.voice_state:

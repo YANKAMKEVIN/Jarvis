@@ -1,7 +1,8 @@
 """Glanceable mission state beside the assistant, using its shared controller."""
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt
-from PySide6.QtWidgets import QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
-from jarvis.desktop.presentation import MISSION_GUIDANCE, STATUS_TEXT, TASK_TEXT
+from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QTimer, Qt
+from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtWidgets import QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from jarvis.desktop.presentation import MISSION_GUIDANCE, TASK_TEXT, mission_progress, mission_timeline
 
 EXPANDED_STATES = {'queued', 'waiting_dependency', 'paused', 'running', 'cancelling', 'needs_confirmation', 'needs_clarification'}
 
@@ -13,6 +14,117 @@ def caption(name=None):
     if name:
         label.setObjectName(name)
     return label
+
+
+STEP_COLORS = {'done': '#7fd1a6', 'error': '#ee99b9', 'running': '#87d2ff', 'waiting': '#f6cf88', 'idle': '#5f7a92'}
+
+
+class StepMarker(QWidget):
+    """Painted state dot of one step, joined to its neighbours by a thin rail."""
+    def __init__(self):
+        super().__init__()
+        self.kind, self.first, self.last, self.angle = 'idle', True, True, 0
+        self.setFixedWidth(18)
+        self.setMinimumHeight(22)
+        self.timer = QTimer(self)
+        self.timer.setInterval(60)
+        self.timer.timeout.connect(self.advance)
+
+    def advance(self):
+        self.angle = (self.angle + 24) % 360
+        self.update()
+
+    def configure(self, kind, first, last, motion):
+        self.kind, self.first, self.last = kind, first, last
+        self.motion = motion
+        self.sync()
+        self.update()
+
+    def sync(self):
+        spinning = self.kind == 'running' and getattr(self, 'motion', False) and self.isVisible()
+        if spinning != self.timer.isActive():
+            self.timer.start() if spinning else self.timer.stop()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.sync()
+
+    def hideEvent(self, event):
+        self.timer.stop()
+        super().hideEvent(event)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor(STEP_COLORS[self.kind])
+        cx, cy, r = self.width() / 2, self.height() / 2, 6
+        p.setPen(QPen(QColor(95, 122, 146, 120), 1))
+        if not self.first:
+            p.drawLine(int(cx), 0, int(cx), int(cy - r - 2))
+        if not self.last:
+            p.drawLine(int(cx), int(cy + r + 2), int(cx), self.height())
+        box = QRectF(cx - r, cy - r, 2 * r, 2 * r)
+        if self.kind == 'done':
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(color)
+            p.drawEllipse(box)
+            p.setPen(QPen(QColor('#0b1825'), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            p.drawPolyline([box.center() + QPointF(-3, 0), box.center() + QPointF(-1, 2.2), box.center() + QPointF(3, -2.4)])
+        elif self.kind == 'error':
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(color)
+            p.drawEllipse(box)
+            p.setPen(QPen(QColor('#0b1825'), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(box.center() + QPointF(-2.3, -2.3), box.center() + QPointF(2.3, 2.3))
+            p.drawLine(box.center() + QPointF(-2.3, 2.3), box.center() + QPointF(2.3, -2.3))
+        elif self.kind == 'running':
+            faint = QColor(color)
+            faint.setAlpha(70)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(faint, 2))
+            p.drawEllipse(box)
+            p.setPen(QPen(color, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawArc(box, -self.angle * 16, 110 * 16)
+        else:
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(color, 1.6))
+            p.drawEllipse(box.adjusted(1, 1, -1, -1))
+        p.end()
+
+
+class StepRow(QWidget):
+    """One line of the mission timeline: a state marker and its plain-text label."""
+    def __init__(self, selectable=False):
+        super().__init__()
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        self.marker = StepMarker()
+        self.label = caption()
+        if selectable:
+            self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        row.addWidget(self.marker)
+        row.addWidget(self.label, 1)
+
+    def text(self):
+        return self.label.text()
+
+    def show_step(self, step, first=True, last=True, motion=False):
+        self.label.setText(step['text'])
+        self.label.setStyleSheet('color: #efb0bd;' if step['kind'] == 'error' else
+                                 'color: #dce8f6;' if step['kind'] in {'running', 'waiting'} else 'color: #91a9c1;')
+        self.marker.configure(step['kind'], first, last, motion)
+
+
+def timeline(task, motion=False, selectable=False):
+    """Full static timeline of a mission, for the Activity page."""
+    rows = mission_timeline(task)
+    widgets = []
+    for index, step in enumerate(rows):
+        row = StepRow(selectable)
+        row.show_step(step, index == 0, index == len(rows) - 1, motion)
+        widgets.append(row)
+    return widgets
 
 
 class MissionPanel(QFrame):
@@ -32,11 +144,17 @@ class MissionPanel(QFrame):
         self.objective = caption()
         self.objective.setStyleSheet('font-size: 18px; font-weight: 500;')
         self.state = caption()
-        self.current = caption()
-        self.steps = [caption('subtitle') for _ in range(3)]
+        self.steps = [StepRow() for _ in range(3)]
+        self.current = StepRow()
         self.guidance = caption('subtitle')
-        for widget in (self.heading, self.objective, self.state, self.current, *self.steps, self.guidance):
+        self.rail = QVBoxLayout()
+        self.rail.setSpacing(0)
+        for widget in (*self.steps, self.current):
+            self.rail.addWidget(widget)
+        for widget in (self.heading, self.objective, self.state):
             layout.addWidget(widget)
+        layout.addLayout(self.rail)
+        layout.addWidget(self.guidance)
         self.summary = QPushButton()
         self.summary.setObjectName('missionSummary')
         self.summary.clicked.connect(self.open_details)
@@ -45,6 +163,7 @@ class MissionPanel(QFrame):
         self.details = QPushButton('Détails →')
         self.details.clicked.connect(self.open_details)
         self.cancel = QPushButton('Annuler la mission')
+        self.cancel.setObjectName('cancelMission')
         self.cancel.setToolTip('Demander l’arrêt de la mission. Une action déjà lancée peut se terminer.')
         self.pressed_task_id = None
         self.cancel.pressed.connect(self.capture_cancel_target)
@@ -101,17 +220,24 @@ class MissionPanel(QFrame):
         self.setStyleSheet('QFrame#missionPanel { background: rgba(22, 40, 57, 195); border: 1px solid #2b455c; '
                           'border-left: 2px solid ' + color + '; border-radius: 14px; } '
                           'QPushButton#missionSummary { text-align: left; background: transparent; border: 0; padding: 0; }')
-        self.heading.setText('EN PAUSE' if status == 'paused' else 'EN ATTENTE' if status in {'queued', 'waiting_dependency'} else 'MISSION EN COURS' if status in {'running', 'cancelling'} else 'VOTRE ACCORD VOCAL' if status == 'needs_confirmation' else 'PRÉCISION DEMANDÉE')
+        heading = 'EN PAUSE' if status == 'paused' else 'EN ATTENTE' if status in {'queued', 'waiting_dependency'} else 'MISSION EN COURS' if status in {'running', 'cancelling'} else 'VOTRE ACCORD VOCAL' if status == 'needs_confirmation' else 'PRÉCISION DEMANDÉE'
+        self.heading.setText(heading + ' · ' + mission_progress(task).upper() if task['step_count'] or status in {'running', 'cancelling'} else heading)
         available = max(150, self.width()-36)
         self.objective.setText(self.objective.fontMetrics().elidedText(objective, Qt.TextElideMode.ElideRight, int(available * (1.7 if self.expanded and not dense else 1))))
         self.objective.setToolTip(objective)
         self.state.setText(state)
         current = task.get('current', '')
-        self.current.setText('En cours · ' + current if current else 'Jarvis prépare la suite…' if status == 'running' else '')
-        last_steps = task['steps'][-1 if dense else -3:]
+        motion = not c.reduced_motion
+        rows = mission_timeline(task, limit=1 if dense else 3)
+        under_way = rows.pop() if rows and rows[-1]['kind'] == 'running' and status in {'running', 'cancelling'} else None
+        last_steps = [row for row in rows if row['kind'] in {'done', 'error'}]
         for index, widget in enumerate(self.steps):
-            widget.setText((last_steps[index]['label'] + ' · ' + STATUS_TEXT.get(last_steps[index]['status'], 'Résultat reçu')) if index < len(last_steps) else '')
-            widget.setVisible(not self.compact and self.expanded and index < len(last_steps))
+            shown = not self.compact and self.expanded and index < len(last_steps)
+            if index < len(last_steps):
+                widget.show_step(last_steps[index], index == 0, index == len(last_steps) - 1 and under_way is None, motion)
+            widget.setVisible(shown)
+        self.current.show_step(under_way or {'text': 'En cours · ' + current if current else '', 'kind': 'running'},
+                               not last_steps, True, motion)
         self.guidance.setText(MISSION_GUIDANCE.get(status, MISSION_GUIDANCE['unknown']))
         for widget in (self.heading, self.current, self.guidance):
             widget.setVisible(not self.compact and not dense and self.expanded and bool(widget.text()))
@@ -158,7 +284,7 @@ class MissionPanel(QFrame):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, 'fade'):
+        if hasattr(self, 'fade') and self.bound_task is not None:
             self.render(self.bound_task, self.dense)
 
 

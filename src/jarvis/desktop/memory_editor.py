@@ -32,7 +32,7 @@ class MemoryEditor(QDialog):
                   if self.kind.currentData()=='memory' else [{'id':r['id'],'subject':'Contexte','content':r['text']} for r in self.context.recent(50)])
             for row in rows:
                 item=QListWidgetItem(row['subject']+' · '+row['content'][:70].replace('\n',' '));item.setData(Qt.ItemDataRole.UserRole,row);self.list.addItem(item)
-            self.status.setText(f'{len(rows)} élément(s) locaux.')
+            self.status.setText(f'{len(rows)} élément local.' if len(rows)<2 else f'{len(rows)} éléments locaux.')
         except Exception:self.status.setText('Mémoire locale indisponible.')
     def select(self,*_):
         row=self.current()

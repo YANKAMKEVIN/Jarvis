@@ -38,6 +38,85 @@ TASK_TEXT = {
     'failed': 'Tâche en échec', 'budget_exceeded': 'Limite de la tâche atteinte',
     'unknown': 'Résultat indisponible',
 }
+STEP_KINDS = {'received': 'done', 'verified': 'done', 'error': 'error', 'running': 'running',
+              'confirmation': 'waiting'}
+
+
+def count_label(count, singular, plural=None):
+    """« 1 carte », « 2 cartes » : French agreement, zero and one stay singular."""
+    return f"{count} {singular if count < 2 else plural or singular + 's'}"
+
+
+def shorten(value, limit=150):
+    """One-paragraph excerpt cut at the last whole word, with an ellipsis when cut."""
+    value = ' '.join(str(value or '').split())
+    if len(value) <= limit:
+        return value
+    cut = value[:limit + 1]
+    head = cut[:cut.rfind(' ')] if ' ' in cut[limit // 2:] else value[:limit]
+    return head.rstrip(' ,;:.·-–—«(') + '…'
+
+
+def step_kind(status):
+    """Visual family of a step marker: done, error, running, waiting or idle."""
+    return STEP_KINDS.get(status, 'idle')
+
+
+def mission_progress(task):
+    """Short position in a mission. The planner reveals steps once executed, so no total is known."""
+    done = task.get('step_count', 0)
+    if task.get('status') in {'running', 'cancelling'} and task.get('current'):
+        return f'Étape {done + 1} en cours'
+    return count_label(done, 'étape traitée', 'étapes traitées')
+
+
+def mission_timeline(task, limit=None):
+    """Rows of the step timeline: the last executed steps, then the step under way or awaited."""
+    steps = task.get('steps', [])
+    rows = [{'label': step['label'], 'status': step['status'], 'kind': step_kind(step['status']),
+             'text': step['label'] + ' · ' + STATUS_TEXT.get(step['status'], 'Résultat reçu')}
+            for step in (steps[-limit:] if limit else steps)]
+    status = task.get('status')
+    if status in {'running', 'cancelling'}:
+        current = task.get('current', '')
+        if current or status == 'running':
+            rows.append({'label': current, 'status': 'running', 'kind': 'running',
+                         'text': 'En cours · ' + current if current else 'Jarvis prépare la suite…'})
+    elif status in {'queued', 'waiting_dependency', 'paused'}:
+        rows.append({'label': '', 'status': status, 'kind': 'idle', 'text': TASK_TEXT[status]})
+    elif status in {'needs_confirmation', 'needs_clarification'}:
+        rows.append({'label': '', 'status': status, 'kind': 'waiting', 'text': TASK_TEXT[status]})
+    return rows
+
+
+# Things to say, shown on the idle assistant. Each needs at most one macOS
+# permission (an onboarding key); None means it works without any.
+SUGGESTIONS = (
+    ('calendar', 'Quel est mon agenda demain ?'),
+    (None, 'Cherche la météo du week-end'),
+    (None, 'Lance un minuteur de dix minutes'),
+    ('reminders', 'Rappelle-moi d’appeler Léa à 18 h'),
+    ('screen_recording', 'Décris ce que tu vois à l’écran'),
+    (None, 'Baisse le volume'),
+    ('automation', 'Ouvre Notes'),
+    (None, 'Retrouve ma note sur le budget'),
+    ('accessibility', 'Mets Safari au premier plan'),
+)
+
+
+def suggestions(snapshot=None, tick=0, count=3):
+    """`count` example requests for rotation step `tick`, skipping refused permissions.
+
+    snapshot maps a permission key to True, False or None (unknown, asked at
+    first use); only an explicit refusal hides an example.
+    """
+    snapshot = snapshot or {}
+    usable = [phrase for permission, phrase in SUGGESTIONS
+              if permission is None or snapshot.get(permission) is not False]
+    start = (tick * count) % len(usable)
+    return [usable[(start + offset) % len(usable)] for offset in range(min(count, len(usable)))]
+
+
 SCREEN_TOOLS = frozenset({'describe_screen', 'ask_about_screen', 'capture_screen', 'capture_window', 'capture_region'})
 MISSION_GUIDANCE = {
     'paused': 'Mission en attente mise en pause. Demandez vocalement sa reprise pour la remettre en file.',
@@ -123,7 +202,7 @@ def project_card(name, result):
         for item in result['items'][:6]:
             if isinstance(item, dict):
                 items.append(('✓ ' if item.get('done') else '○ ') + plain(item.get('text'), 180))
-        body = f"{len(result['items'])} element(s) · {len(items)} affiche(s)"
+        body = count_label(len(result['items']), 'élément') + ' · ' + count_label(len(items), 'affiché')
     elif name in {'find_free_slots', 'calendar_conflicts'}:
         kind, title = 'calendar', 'Plages disponibles' if name == 'find_free_slots' else 'Chevauchements d’agenda'
         rows = result.get('slots', []) if name == 'find_free_slots' else result.get('conflicts', [])
@@ -166,13 +245,13 @@ def project_card(name, result):
         for row in result['events'][:6]:
             if isinstance(row, dict):
                 items.append(' · '.join(v for v in (date_text(row.get('start')), plain(row.get('title'))) if v))
-        body = 'Aucun rendez-vous dans ce résultat.' if not items else f"{len(result['events'])} rendez-vous · {len(items)} affiché(s)"
+        body = 'Aucun rendez-vous dans ce résultat.' if not items else count_label(len(result['events']), 'rendez-vous', 'rendez-vous') + ' · ' + count_label(len(items), 'affiché')
     elif name == 'list_reminders' and isinstance(result.get('reminders'), list):
         kind, title = 'reminders', 'Vos rappels'
         for row in result['reminders'][:6]:
             if isinstance(row, dict):
                 items.append(' · '.join(v for v in (date_text(row.get('due_at')), plain(row.get('text'))) if v))
-        body = 'Aucun rappel en attente.' if not items else f"{len(result['reminders'])} rappel(s) · {len(items)} affiché(s)"
+        body = 'Aucun rappel en attente.' if not items else count_label(len(result['reminders']), 'rappel') + ' · ' + count_label(len(items), 'affiché')
     elif name in {'web_answer', 'search_the_web', 'summarize_url'}:
         if result.get('search_started'):
             return None
@@ -211,6 +290,21 @@ def project_card(name, result):
     if not kind:
         return None
     return {'kind': kind, 'title': title, 'body': body, 'items': items, 'sources': sources}
+
+
+def card_text(entry):
+    """Plain text of a result card for the clipboard: title, text, bullets, then safe sources."""
+    lines = [entry.get('title', '')]
+    if entry.get('body'):
+        lines += ['', entry['body']]
+    if entry.get('items'):
+        lines += [''] + ['• ' + item for item in entry['items']]
+    sources = [(source.get('title', ''), safe_url(source.get('url'))) for source in entry.get('sources', [])]
+    sources = [(title, url) for title, url in sources if url]
+    if sources:
+        lines += ['', 'Sources :'] + [f'{index}. {title} — {url}' if title else f'{index}. {url}'
+                                       for index, (title, url) in enumerate(sources, 1)]
+    return '\n'.join(lines).strip()
 
 
 def project_activity(name, raw, activity_id, phase='result'):
