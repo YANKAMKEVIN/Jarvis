@@ -154,7 +154,7 @@ class CompanionWindow(OrbWindow):
         button.setFixedSize(32, 32)
         button.move(x, 4)
         button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        button.setStyleSheet('QPushButton { background: rgba(13, 29, 43, 230); color: #d9f1ff; border: 1px solid #42617a; border-radius: 16px; padding: 0; font-size: 17px; } QPushButton:hover, QPushButton:focus { background: #29485f; border-color: #8bdcff; }')
+        button.setStyleSheet('QPushButton { background: rgba(13, 29, 43, 230); color: #d9f1ff; border: 1px solid #42617a; border-radius: 16px; padding: 0; font-size: 17px; } QPushButton:hover, QPushButton:focus { background: #29485f; border-color: #8bdcff; } QPushButton:pressed { background: #16293a; }')
         button.clicked.connect(callback)
         button.hide()
         return button

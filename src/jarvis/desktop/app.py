@@ -45,13 +45,18 @@ QFrame#controlDock { background: rgba(20, 36, 51, 105); border: 1px solid rgba(1
 QFrame#card { background: rgba(26, 43, 61, 155); border: 1px solid #293e52; border-radius: 16px; }
 QPushButton { background: #1a2a3d; border: 1px solid #2b435c; border-radius: 9px; padding: 10px 14px; }
 QPushButton:hover { background: #243d57; border-color: #517ca2; }
+QPushButton:pressed { background: #131f2e; border-color: #517ca2; padding: 11px 14px 9px 14px; }
 QPushButton:focus { border: 1px solid #83cfff; }
 QPushButton:disabled { color: #647b90; background: #152030; }
 QPushButton#primary:hover { background: #b8e4ff; }
 QPushButton#primary { background: #82caff; color: #081421; border: 0; font-weight: 600; }
+QPushButton#primary:pressed { background: #5fa9de; }
+QPushButton#quiet:hover { background: #17273a; border-color: #517ca2; color: #e0f1ff; }
+QPushButton#quiet:pressed { background: #0f1a28; }
 QPushButton#primary:disabled { background: #223247; color: #8096ab; }
 QPushButton#cancelTask, QPushButton#cancelMission { background: transparent; border: 1px solid #7d4a5c; color: #f0b3c3; }
 QPushButton#cancelTask:hover, QPushButton#cancelMission:hover { background: #3a2030; border-color: #ee99b9; }
+QPushButton#cancelTask:pressed, QPushButton#cancelMission:pressed { background: #2a1722; }
 QPushButton#cancelTask:disabled, QPushButton#cancelMission:disabled { background: transparent; border-color: #3d3442; color: #7d6873; }
 QFrame#peek { background: rgba(36, 65, 86, 65); border: 1px solid #29465c; border-radius: 14px; }
 QFrame#peek:hover { background: rgba(46, 80, 104, 90); border-color: #517ca2; }
@@ -61,12 +66,18 @@ QFrame#errorBanner { background: rgba(120, 40, 62, 70); border: 1px solid #7d4a5
 QLabel#errorIcon { color: #1b0d14; background: #ee99b9; border-radius: 11px; font-weight: 700; }
 QLabel#errorText { color: #f6ccd6; }
 QPushButton#nav { text-align: left; background: transparent; border: 0; padding: 13px 13px 13px 44px; color: #91a9c1; }
+QPushButton#nav:hover { color: #e0f1ff; background: #17273a; }
+QPushButton#nav:pressed { background: #101b29; padding: 14px 13px 12px 44px; }
 QPushButton#nav:checked { color: #e0f1ff; background: #22354b; }
+QPushButton#nav:checked:hover { background: #283e57; }
 QPushButton#copyCard { background: transparent; border: 1px solid #304659; color: #a7c1d6; padding: 6px 12px; font-size: 12px; }
 QPushButton#copyCard:hover { background: #243d57; border-color: #517ca2; color: #e0f1ff; }
+QPushButton#copyCard:pressed { background: #131f2e; padding: 7px 12px 5px 12px; }
+QPushButton#chip:pressed { padding: 6px 12px 4px 12px; }
 QPushButton#chip { border-radius: 13px; padding: 5px 12px; font-size: 12px; color: #bfdeed; }
 QPushButton#tool { text-align: left; background: transparent; border: 0; padding: 8px 13px; color: #91a9c1; font-size: 12px; }
 QPushButton#tool:hover { color: #e0f1ff; background: #17273a; }
+QPushButton#tool:pressed { background: #101b29; padding: 9px 13px 7px 13px; }
 QPushButton#tool:focus { border: 1px solid #83cfff; padding: 7px 12px; }
 QScrollArea { background: transparent; border: 0; }
 QScrollBar:vertical { background: #101927; width: 7px; }

@@ -320,3 +320,9 @@ def test_latest_card_preview_is_a_clickable_card_with_a_clean_excerpt(shell, app
     assert bool(panel.peek.title.alignment() & Qt.AlignmentFlag.AlignLeft)
     QTest.mouseClick(panel.peek, Qt.MouseButton.LeftButton)
     assert shell.full.pages.currentIndex() == 1
+
+
+def test_stylesheet_gives_buttons_a_pressed_state_and_navigation_a_hover():
+    for selector in ('QPushButton:pressed', 'QPushButton#primary:pressed', 'QPushButton#quiet:pressed',
+                     'QPushButton#nav:hover', 'QPushButton#nav:pressed', 'QPushButton#tool:pressed'):
+        assert selector + ' {' in STYLE
