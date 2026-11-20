@@ -58,6 +58,9 @@ QLabel#errorIcon { color: #1b0d14; background: #ee99b9; border-radius: 11px; fon
 QLabel#errorText { color: #f6ccd6; }
 QPushButton#nav { text-align: left; background: transparent; border: 0; padding: 13px; color: #91a9c1; }
 QPushButton#nav:checked { color: #e0f1ff; background: #22354b; }
+QPushButton#tool { text-align: left; background: transparent; border: 0; padding: 8px 13px; color: #91a9c1; font-size: 12px; }
+QPushButton#tool:hover { color: #e0f1ff; background: #17273a; }
+QPushButton#tool:focus { border: 1px solid #83cfff; padding: 7px 12px; }
 QScrollArea { background: transparent; border: 0; }
 QScrollBar:vertical { background: #101927; width: 7px; }
 QScrollBar::handle:vertical { background: #344c63; border-radius: 3px; min-height: 24px; }
@@ -942,6 +945,20 @@ class DesktopWindow(QMainWindow):
                 self.nav.append(b)
                 nav.addWidget(b)
             nav.addStretch()
+            # Screens that already exist but were only reachable from the menu bar or the palette.
+            nav.addWidget(label("OUTILS", "eyebrow"))
+            self.tools = {}
+            for key, text, tip, callback in (
+                    ("dashboard", "Tableau de bord", "Usage, métriques et alertes", lambda: shell.show_dashboard()),
+                    ("history", "Historique", "Missions et procédures retenues", lambda: shell.experience.history()),
+                    ("memory", "Mémoire", "Mémoire et préférences retenues", lambda: shell.experience.memory()),
+                    ("palette", "Palette  ⌘K", "Palette de commandes · ⌘K", lambda: shell.experience.palette())):
+                b = button(text, lambda checked=False, run=callback: run())
+                b.setObjectName("tool")
+                b.setToolTip(tip)
+                self.tools[key] = b
+                nav.addWidget(b)
+            nav.addSpacing(14)
             nav.addWidget(label("PENSÉ POUR LA VOIX", "eyebrow"))
             nav.addWidget(label("Parlez. Jarvis s’occupe de la suite.", "subtitle"))
             row.addWidget(sidebar)

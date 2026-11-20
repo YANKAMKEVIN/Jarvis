@@ -154,3 +154,14 @@ def test_idle_assistant_suggests_requests_until_something_else_needs_the_space(s
     c.voice_event(project_activity('get_volume', {'ok': True, 'volume': 40}, 'v'))
     assert not panel.suggestions.isVisible() and not panel.suggestion_timer.isActive()
     assert not shell.compact.findChildren(type(panel))
+
+
+def test_sidebar_tools_open_the_existing_dashboard_history_memory_and_palette(shell, monkeypatch):
+    opened = []
+    monkeypatch.setattr(shell, 'show_dashboard', lambda tab='jarvis': opened.append(('dashboard', tab)))
+    for name in ('history', 'memory', 'palette'):
+        monkeypatch.setattr(shell.experience, name, lambda name=name: opened.append((name, None)))
+    assert list(shell.full.tools) == ['dashboard', 'history', 'memory', 'palette']
+    for tool in shell.full.tools.values():
+        tool.click()
+    assert opened == [('dashboard', 'jarvis'), ('history', None), ('memory', None), ('palette', None)]
