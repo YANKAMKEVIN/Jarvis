@@ -326,3 +326,28 @@ def test_stylesheet_gives_buttons_a_pressed_state_and_navigation_a_hover():
     for selector in ('QPushButton:pressed', 'QPushButton#primary:pressed', 'QPushButton#quiet:pressed',
                      'QPushButton#nav:hover', 'QPushButton#nav:pressed', 'QPushButton#tool:pressed'):
         assert selector + ' {' in STYLE
+
+
+def test_orb_shrinks_so_nothing_overlaps_at_the_minimum_window_size(shell, app):
+    from PySide6.QtTest import QTest
+    c, panel = shell.controller, shell.full.assistant
+    shell.full.resize(800, 730)
+    shell.show_full()
+    def settled():
+        for _ in range(6):
+            app.processEvents()
+            QTest.qWait(10)
+    settled()
+    assert panel.suggestions.isVisible() and 160 <= panel.orb.width() < 360
+    assert panel.status.geometry().top() >= panel.orb_slot.geometry().bottom()
+    assert panel.footnote.geometry().bottom() < panel.height()
+    c.voice_event({'type': 'state', 'state': 'error', 'message': 'Clé Gemini manquante. Ajoutez GOOGLE_API_KEY dans le fichier .env du projet '
+                   'ou dans ~/Library/Application Support/Jarvis/desktop.env, puis réessayez.'})
+    settled()
+    assert panel.error_banner.isVisible()
+    assert panel.status.geometry().top() >= panel.orb_slot.geometry().bottom()
+    assert panel.footnote.geometry().bottom() < panel.height()
+    shell.full.resize(1080, 800)
+    c.voice_event({'type': 'state', 'state': 'off'})
+    settled()
+    assert panel.orb.width() == 360

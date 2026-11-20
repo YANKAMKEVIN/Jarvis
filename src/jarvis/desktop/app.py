@@ -801,6 +801,19 @@ class VoicePanel(QWidget):
     def toggle_voice(self):
         self.controller.stop_voice() if self.controller.voice_worker else self.controller.start_voice()
 
+    def fit_orb(self, wanted):
+        """Largest orb up to `wanted` that leaves room for what is shown under it."""
+        spacing = self.layout().spacing()
+        used = self.appearance_button.sizeHint().height() + 12 + 2 * spacing
+        for widget in (self.status, self.hint_area, self.suggestions, self.error_banner, self.peek,
+                       self.controls, self.voice_notice, self.footnote):
+            if not widget.isHidden():
+                height = widget.heightForWidth(self.width()) if widget.hasHeightForWidth() else -1
+                used += (height if height > 0 else widget.sizeHint().height()) + spacing
+        if self.mission.isVisibleTo(self):
+            used += self.mission.sizeHint().height() + self.stage.spacing()
+        return max(160, min(wanted, self.height() - used))
+
     def next_suggestions(self):
         self.suggestion_tick += 1
         self.render_suggestions()
@@ -870,10 +883,6 @@ class VoicePanel(QWidget):
             latest = next(reversed(c.cards.values()))
             summary = latest['body'] if not latest['items'] else latest['items'][0]
             self.peek.show_card(latest['title'], shorten(summary))
-        compact_orb = 140 if len(c.focus_missions()) > 1 else 180
-        orb_size = (compact_orb if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else 280 if c.cards or mission_shown or c.voice_error else 360)
-        self.orb.setFixedSize(orb_size, orb_size)
-        self.orb_slot.setMinimumHeight(orb_size + (0 if self.compact else self.appearance_button.sizeHint().height() + 12))
         self.orb.set_appearance(c.appearance)
         self.orb.dance = c.dance
         self.orb.state = c.avatar_state()
@@ -978,6 +987,10 @@ class VoicePanel(QWidget):
                               "GEMINI LIVE · CONNEXION INTERROMPUE" if state == "error" else
                               "GEMINI LIVE · CONNECTÉ · CONFIRMATIONS VOCALES" if active else
                               "GEMINI LIVE · HORS LIGNE")
+        compact_orb = 140 if len(c.focus_missions()) > 1 else 180
+        orb_size = (compact_orb if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else self.fit_orb(280 if c.cards or mission_shown or c.voice_error else 360))
+        self.orb.setFixedSize(orb_size, orb_size)
+        self.orb_slot.setMinimumHeight(orb_size + (0 if self.compact else self.appearance_button.sizeHint().height() + 12))
         tint = state_tint(self.orb.state)
         if tint != self.status_tint:
             self.status_tint = tint
