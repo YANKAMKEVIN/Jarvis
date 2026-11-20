@@ -23,7 +23,7 @@ from jarvis.desktop.panels import DetailPanel
 from jarvis.desktop.mission_panel import MissionDeck
 from jarvis.desktop.orb_window import OrbWindow
 from jarvis.desktop.companion import CompanionWindow
-from jarvis.desktop.presentation import STATUS_TEXT
+from jarvis.desktop.presentation import STATUS_TEXT, count_label
 from jarvis.desktop.surfaces import ControlDock, DragHandle, GlassSurface, NavButton, OrbTransfer
 
 STYLE = """
@@ -807,7 +807,7 @@ class VoicePanel(QWidget):
         self.mission.setMaximumWidth(370 if beside else 16777215)
         has_details = bool(c.cards or c.task or c.activity)
         self.hint_area.setCurrentIndex(1 if has_details and state not in {"error", "starting"} else 0)
-        self.details_button.setText(f'{len(c.cards)} carte(s) · Voir les détails →' if c.cards else
+        self.details_button.setText(count_label(len(c.cards), 'carte') + ' · Voir les détails →' if c.cards else
                                     'Suivre la tâche →' if c.task else 'Voir l’activité →')
         self.peek.setVisible(bool(c.cards) and not self.compact)
         if c.cards:

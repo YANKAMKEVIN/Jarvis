@@ -255,3 +255,22 @@ def test_application_icon_is_bundled_and_renders(app):
     image = icon.pixmap(128, 128).toImage()
     assert image.pixelColor(2, 2).alpha() == 0  # transparent corner around the rounded tile
     assert image.pixelColor(64, 64).lightness() > 200  # glowing core
+
+
+def test_counts_agree_in_number_instead_of_using_parenthesised_plurals(shell):
+    from jarvis.desktop.presentation import count_label, project_activity
+    assert count_label(0, 'carte') == '0 carte' and count_label(1, 'carte') == '1 carte'
+    assert count_label(2, 'carte') == '2 cartes'
+    assert count_label(3, 'étape traitée', 'étapes traitées') == '3 étapes traitées'
+    assert count_label(4, 'rendez-vous', 'rendez-vous') == '4 rendez-vous'
+    c = shell.controller
+    shell.show_full()
+    c.voice_event(project_activity('list_reminders', {'ok': True, 'reminders': [{'text': 'Pain'}]}, 'r'))
+    assert next(iter(c.cards.values()))['body'] == '1 rappel · 1 affiché'
+    assert shell.full.assistant.details_button.text().startswith('1 carte ·')
+    assert shell.orb_window.status.text().endswith('· 1 carte')
+    c.voice_event(project_activity('list_calendar_events', {'ok': True,
+        'events': [{'title': 'Point', 'start': '10:00'}, {'title': 'Déjeuner', 'start': '12:30'}]}, 'cal'))
+    assert c.cards['calendar']['body'] == '2 rendez-vous · 2 affichés'
+    assert shell.full.assistant.details_button.text().startswith('2 cartes ·')
+    assert shell.orb_window.status.text().endswith('· 2 cartes')

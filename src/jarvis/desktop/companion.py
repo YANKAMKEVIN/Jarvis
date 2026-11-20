@@ -2,6 +2,7 @@
 from PySide6.QtCore import QEvent, QPoint, QTimer, Qt
 from PySide6.QtWidgets import QApplication, QMenu, QPushButton
 from jarvis.desktop.orb_window import InteractiveOrb, OrbWindow
+from jarvis.desktop.presentation import count_label
 from jarvis.desktop.tray import presence
 from jarvis.desktop.companion_preferences import CompanionPreferences
 from jarvis.desktop.notice_bubble import NoticeBubble
@@ -268,7 +269,7 @@ class CompanionWindow(OrbWindow):
         status, _, _ = presence(self.controller)
         notice = self.controller.recovery_message or self.controller.voice_error or self.controller.tool_notice
         count = len(self.controller.focus_missions())
-        text = status + (f' · {count} mission(s)' if count else '')
+        text = status + (' · ' + count_label(count, 'mission') if count else '')
         if notice:
             text += '\n' + notice
         self.orb.setToolTip(text + '\nGlisser pour déplacer · survoler pour les commandes')

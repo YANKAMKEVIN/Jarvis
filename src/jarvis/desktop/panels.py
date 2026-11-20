@@ -4,7 +4,7 @@ from PySide6.QtCore import QTimer, QUrl, Qt
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 from jarvis.desktop.mission_panel import timeline
-from jarvis.desktop.presentation import MISSION_GUIDANCE, STATUS_TEXT, TASK_TEXT, card_text, safe_url
+from jarvis.desktop.presentation import MISSION_GUIDANCE, STATUS_TEXT, TASK_TEXT, card_text, count_label, safe_url
 
 
 class ChipRow(QWidget):
@@ -119,7 +119,7 @@ class DetailPanel(QWidget):
             if task.get('objective'):
                 row.addWidget(text(task['objective'], 'greeting'))
             row.addWidget(text(TASK_TEXT.get(task['status'], TASK_TEXT['unknown']), 'wordmark'))
-            row.addWidget(text(f"{task['step_count']} étape(s) traitée(s)", 'subtitle'))
+            row.addWidget(text(count_label(task['step_count'], 'étape traitée', 'étapes traitées'), 'subtitle'))
             rail = QVBoxLayout()
             rail.setSpacing(0)
             for step in timeline(task, motion=not c.reduced_motion, selectable=True):

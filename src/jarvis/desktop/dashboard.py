@@ -156,7 +156,7 @@ def make_jarvis_dashboard(
         label, color = _MISSION_STATUS.get(m.get("status"), (m.get("status") or "?", _MUTED))
         steps = m.get("step_count") or 0
         side = f"{label} · {ago(now - (m.get('at') or now))}"
-        detail = f"{m.get('goal')} — {label}" + (f", {steps} étape(s)" if steps else "")
+        detail = f"{m.get('goal')} — {label}" + (f", {steps} étape{'s' if steps > 1 else ''}" if steps else "")
         rows.append((color, plain_label(m.get("goal"), 70), side, detail))
     layout.addWidget(_rows_panel("Dernières missions", rows,
                                  "Aucune mission pour l'instant. Demande à Jarvis "

@@ -192,7 +192,7 @@ def project_card(name, result):
         for item in result['items'][:6]:
             if isinstance(item, dict):
                 items.append(('✓ ' if item.get('done') else '○ ') + plain(item.get('text'), 180))
-        body = f"{len(result['items'])} element(s) · {len(items)} affiche(s)"
+        body = count_label(len(result['items']), 'élément') + ' · ' + count_label(len(items), 'affiché')
     elif name in {'find_free_slots', 'calendar_conflicts'}:
         kind, title = 'calendar', 'Plages disponibles' if name == 'find_free_slots' else 'Chevauchements d’agenda'
         rows = result.get('slots', []) if name == 'find_free_slots' else result.get('conflicts', [])
@@ -235,13 +235,13 @@ def project_card(name, result):
         for row in result['events'][:6]:
             if isinstance(row, dict):
                 items.append(' · '.join(v for v in (date_text(row.get('start')), plain(row.get('title'))) if v))
-        body = 'Aucun rendez-vous dans ce résultat.' if not items else f"{len(result['events'])} rendez-vous · {len(items)} affiché(s)"
+        body = 'Aucun rendez-vous dans ce résultat.' if not items else count_label(len(result['events']), 'rendez-vous', 'rendez-vous') + ' · ' + count_label(len(items), 'affiché')
     elif name == 'list_reminders' and isinstance(result.get('reminders'), list):
         kind, title = 'reminders', 'Vos rappels'
         for row in result['reminders'][:6]:
             if isinstance(row, dict):
                 items.append(' · '.join(v for v in (date_text(row.get('due_at')), plain(row.get('text'))) if v))
-        body = 'Aucun rappel en attente.' if not items else f"{len(result['reminders'])} rappel(s) · {len(items)} affiché(s)"
+        body = 'Aucun rappel en attente.' if not items else count_label(len(result['reminders']), 'rappel') + ' · ' + count_label(len(items), 'affiché')
     elif name in {'web_answer', 'search_the_web', 'summarize_url'}:
         if result.get('search_started'):
             return None
