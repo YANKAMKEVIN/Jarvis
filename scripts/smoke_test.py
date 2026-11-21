@@ -12,6 +12,9 @@ Usage:
     PYTHONPATH=src .venv/bin/python scripts/smoke_test.py
     PYTHONPATH=src .venv/bin/python scripts/smoke_test.py --group volume --group files
     PYTHONPATH=src .venv/bin/python scripts/smoke_test.py --list
+    JARVIS_PLANNER_BACKEND=gemini PYTHONPATH=src .venv/bin/python scripts/smoke_test.py --group tasks
+
+The tasks group (real goals given to the planner) only runs when named.
 """
 
 import argparse
@@ -24,6 +27,7 @@ import stat
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -57,6 +61,8 @@ class Context:
     workdir: Path
     perms: dict = field(default_factory=dict)
     results: list[StepResult] = field(default_factory=list)
+    # The live ToolRegistry behind tools: planner tool set and missions.
+    registry: object = None
 
 
 # --- macOS permissions -------------------------------------------------------
@@ -1273,6 +1279,267 @@ def group_sessions(ctx: Context, step) -> None:
     step("run_claude_task -> confirmation puis annulation (rien lance)", prepare_and_cancel)
 
 
+# --- planner tasks (phase 3c) ------------------------------------------------
+
+PLANNER_TEXT = "Jarvis tache 42"
+VOLUME_QUESTION = "Quel est le volume sonore actuel du Mac ?"
+
+
+def planner_unavailable(model) -> str | None:
+    """Why the configured planner brain cannot run, or None if it can."""
+    if hasattr(model, "api_key"):
+        return None if model.api_key else "GOOGLE_API_KEY absente"
+    url = getattr(model, "url", "")
+    tags = url.rsplit("/api/", 1)[0] + "/api/tags"
+    try:
+        import urllib.request
+        with urllib.request.urlopen(tags, timeout=3):
+            return None
+    except Exception:
+        return f"Ollama injoignable ({tags})"
+
+
+class TaskLoop:
+    """One event loop for the whole group, in a background thread.
+
+    Missions are asyncio tasks owned by the registry's TaskManager: they must
+    outlive a single tool call, which asyncio.run() per call would cancel.
+    """
+
+    def __init__(self):
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(target=self.loop.run_forever,
+                                       name="smoke-tasks", daemon=True)
+        self.thread.start()
+
+    def run(self, coro, timeout: float):
+        return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
+
+    def close(self) -> None:
+        self.loop.call_soon_threadsafe(self.loop.stop)
+        self.thread.join(timeout=10)
+        if not self.thread.is_alive():
+            self.loop.close()
+
+
+def call_on(loop: TaskLoop, ctx: Context, tool: str, timeout: float = 60, **kwargs) -> dict:
+    result = loop.run(ctx.tools[tool](**kwargs), timeout)
+    if not isinstance(result, dict):
+        raise CheckFailed(f"{tool} n'a pas renvoye un dict : {result!r}")
+    return result
+
+
+def group_tasks(ctx: Context, step) -> None:
+    """Real goals given to the planner, every outcome checked on the machine.
+
+    Uses the configured brain (JARVIS_PLANNER_BACKEND), so the pass rate is a
+    measure of that model on real tasks, not only of the plumbing. Direct
+    planner runs drive the registry's own planner tool set; missions go
+    through the voice tools run_task / task_status / cancel_task.
+    """
+    from jarvis.planner.engine import DEFAULT_MAX_SECONDS, PlannerEngine
+    from jarvis.planner.models import build_planner_model
+    from jarvis.planner.tasks import RESEARCH_TOOLS
+
+    model = build_planner_model()
+    reason = planner_unavailable(model)
+    if reason:
+        raise Skipped(f"planificateur indisponible : {reason}")
+    if ctx.registry is None:
+        raise Skipped("registre Jarvis absent (lance le script, pas la fonction seule)")
+    print(f"  planificateur : {model.name}", flush=True)
+
+    tasks_dir = ctx.workdir / "tasks"
+    tasks_dir.mkdir()
+    mission_timeout = DEFAULT_MAX_SECONDS + 60
+    loop = TaskLoop()
+    started_missions: list[str] = []
+
+    def use(tool: str, **kwargs) -> dict:
+        return call_on(loop, ctx, tool, **kwargs)
+
+    def run(goal: str):
+        # Same tools, locks, journal and pending-action store as the voice.
+        engine = PlannerEngine(model, ctx.registry.planner_tools)
+        began = time.monotonic()
+        outcome = loop.run(engine.run(goal), engine.max_seconds + 30)
+        trace = " > ".join(f"{s.tool}{'' if s.ok else '!'}" for s in outcome.steps)
+        print(f"         {outcome.status} en {time.monotonic() - began:.0f} s : "
+              f"{trace or '(aucun tool)'}", flush=True)
+        return outcome
+
+    def expect_completed(outcome) -> None:
+        expect(outcome.status == "completed", f"statut {outcome.status} : {outcome.summary}")
+
+    def start_mission(goal: str, **kwargs) -> str:
+        started = use("run_task", goal=goal, **kwargs)
+        expect(started.get("ok") is True and started.get("task_started") is True,
+               f"run_task : {started}")
+        task_id = started.get("task_id")
+        expect(isinstance(task_id, str) and bool(task_id), f"run_task sans task_id : {started}")
+        started_missions.append(task_id)
+        return task_id
+
+    def wait_mission(task_id: str, timeout: float = mission_timeout) -> dict:
+        """Poll task_status(task_id) like the voice model would, until it ends."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            status = use("task_status", task_id=task_id)
+            expect(status.get("ok") is True, f"task_status : {status}")
+            if "last_task" in status:
+                last = status["last_task"]
+                trace = " > ".join(f"{s['tool']}{'' if s.get('ok') else '!'}"
+                                   for s in last.get("steps", []))
+                print(f"         mission {status.get('state')} : {trace or '(aucun tool)'}",
+                      flush=True)
+                if last.get("pending", {}).get("token"):
+                    use("cancel_action", token=last["pending"]["token"])
+                return status
+            time.sleep(1)
+        use("cancel_task", task_id=task_id)
+        raise CheckFailed(f"la mission {task_id} n'a pas fini a temps")
+
+    def read_volume():
+        outcome = run(VOLUME_QUESTION)
+        expect_completed(outcome)
+        actual = str(system_volume())
+        expect(actual in outcome.summary, f"le resume ne donne pas {actual} : {outcome.summary}")
+
+    original_volume = system_volume()
+    target_volume = original_volume - 9 if original_volume >= 50 else original_volume + 9
+
+    def set_volume():
+        expect_completed(run(f"Regle le volume du Mac a {target_volume} %."))
+        actual = system_volume()
+        expect(abs(actual - target_volume) <= 1, f"volume {actual}, attendu {target_volume}")
+
+    original_clipboard = pbpaste()
+
+    def clipboard():
+        expect_completed(run(
+            f"Copie exactement ce texte dans le presse-papiers : {PLANNER_TEXT}"))
+        expect(pbpaste() == PLANNER_TEXT, f"pbpaste={pbpaste()!r}")
+
+    def folder_and_move():
+        (tasks_dir / "rapport.txt").write_text("rapport")
+        expect_completed(run(
+            f"Dans le dossier {tasks_dir}, cree un sous-dossier nomme archives, "
+            "puis deplace le fichier rapport.txt dedans."))
+        expect((tasks_dir / "archives" / "rapport.txt").exists()
+               and not (tasks_dir / "rapport.txt").exists(),
+               "rapport.txt n'est pas dans archives")
+
+    def find_and_rename():
+        (tasks_dir / "facture-smoke-0423.pdf").write_bytes(b"%PDF-1.4\n")
+        expect_completed(run(
+            f"Dans le dossier {tasks_dir}, trouve le fichier dont le nom contient "
+            "facture-smoke et renomme-le facture-classee.pdf."))
+        expect((tasks_dir / "facture-classee.pdf").exists()
+               and not (tasks_dir / "facture-smoke-0423.pdf").exists(),
+               "fichier non renomme")
+
+    def prepared_never_sent():
+        # SmokeTestApp does not exist: even a broken gate could send nothing.
+        outcome = run("Prepare le message « test smoke » dans l'application SmokeTestApp, "
+                      "sans destinataire. Ne l'envoie pas.")
+        pending = outcome.pending or {}
+        try:
+            expect(outcome.status == "needs_confirmation",
+                   f"statut {outcome.status} : {outcome.summary}")
+            expect(pending.get("tool") == "prepare_send_message",
+                   f"action en attente : {pending}")
+            app = (pending.get("arguments") or {}).get("app_name")
+            expect(app == "SmokeTestApp", f"application preparee : {app!r}")
+            # Nobody spoke since the preparation: the planner (or a model
+            # acting on its own) cannot confirm, and the token stays pending.
+            refused = use("confirm_action", token=pending["token"])
+            expect(refused.get("error_code") == "confirmation_needs_user_turn",
+                   f"confirm_action sans tour de l'utilisateur : {refused}")
+            cancelled = use("cancel_action", token=pending["token"])
+            expect(cancelled.get("cancelled") is True, f"annulation non effective : {cancelled}")
+            after = use("confirm_action", token=pending["token"])
+            expect(after.get("error_code") == "no_pending_action",
+                   f"confirm apres annulation devrait echouer : {after}")
+        finally:
+            if pending.get("token"):
+                use("cancel_action", token=pending["token"])
+
+    def through_voice_tools():
+        # The voice path: run_task answers at once with a task_id, the mission
+        # runs in the background and is polled with task_status(task_id). A
+        # research mission (read_only) only gets the read tools.
+        task_id = start_mission(VOLUME_QUESTION, read_only=True)
+        status = wait_mission(task_id)
+        last = status["last_task"]
+        expect(status.get("state") == "completed", f"mission : {last}")
+        used = {s["tool"] for s in last.get("steps", [])}
+        expect(used <= RESEARCH_TOOLS, f"outils hors lecture : {sorted(used - RESEARCH_TOOLS)}")
+        actual = str(system_volume())
+        expect(actual in (last.get("summary") or ""),
+               f"le resume ne donne pas {actual} : {last.get('summary')}")
+
+    def dependency_and_cancel():
+        missing = use("run_task", goal=VOLUME_QUESTION, read_only=True, after_id="inexistante")
+        expect(missing.get("error_code") == "dependency_not_found",
+               f"after_id inconnu accepte : {missing}")
+        first = start_mission(VOLUME_QUESTION, read_only=True)
+        second = start_mission("Dis-moi ensuite si le volume depasse 50 %.",
+                               read_only=True, after_id=first)
+        # The second waits for the first: cancelling it now runs nothing.
+        cancelled = use("cancel_task", task_id=second)
+        expect(cancelled.get("cancel_requested") is True, f"cancel_task : {cancelled}")
+        listing = use("task_status")
+        listed = {task.get("task_id") for task in listing.get("tasks", [])}
+        expect({first, second} <= listed, f"task_status ne liste pas les deux missions : {listing}")
+        done = wait_mission(second, timeout=30)
+        expect(done.get("state") == "cancelled", f"mission dependante : {done}")
+        expect(done["last_task"].get("step_count") == 0,
+               f"la mission annulee a agi : {done['last_task']}")
+        wait_mission(first)
+
+    def safe_mode_blocks_mission():
+        # Safe mode is read live by every guarded tool, missions included: the
+        # volume must not move, whatever the model tries.
+        before = system_volume()
+        forbidden = before - 7 if before >= 50 else before + 7
+        enabled = use("enable_safe_mode")
+        expect(enabled.get("read_only_mode") is True, f"enable_safe_mode : {enabled}")
+        try:
+            task_id = start_mission(f"Regle le volume du Mac a {forbidden} %.")
+            status = wait_mission(task_id)
+            actual = system_volume()
+            expect(abs(actual - before) <= 1,
+                   f"le volume a change en mode securite ({before} -> {actual})")
+            for record in status["last_task"].get("steps", []):
+                if record["tool"] == "set_volume":
+                    expect(record.get("error_code") == "read_only_mode",
+                           f"set_volume en mode securite : {record}")
+        finally:
+            use("disable_safe_mode")
+
+    try:
+        step("lire le volume", read_volume)
+        step(f"regler le volume a {target_volume}", set_volume)
+        step("copier un texte", clipboard)
+        step("creer un dossier puis y deplacer un fichier", folder_and_move)
+        step("trouver puis renommer un fichier", find_and_rename)
+        step("message prepare, confirmation refusee sans tour, annule", prepared_never_sent)
+        step("run_task lecture + task_status(task_id) (chemin vocal)", through_voice_tools)
+        step("after_id + cancel_task(task_id) d'une mission en attente", dependency_and_cancel)
+        step("mode securite : la mission ne change rien", safe_mode_blocks_mission)
+    finally:
+        try:
+            for task_id in started_missions:
+                use("cancel_task", task_id=task_id)
+            loop.run(ctx.registry.tasks.wait(), mission_timeout)
+            use("disable_safe_mode")
+        except Exception as error:
+            print(f"         nettoyage des missions incomplet : {error}", flush=True)
+        loop.close()
+        osascript(f"set volume output volume {original_volume}", check=False)
+        pbcopy(original_clipboard)
+
+
 GROUPS = {
     "system": group_system,
     "usage": group_usage,
@@ -1316,7 +1583,11 @@ GROUPS = {
     "planning": group_planning,
     "notes_v2": group_notes_v2,
     "document_v2": group_document_v2,
+    "tasks": group_tasks,
 }
+
+# Slow (about a minute per task) and driven by a model: run only when named.
+ON_DEMAND = {"tasks"}
 
 
 # --- runner -----------------------------------------------------------------
@@ -1400,7 +1671,7 @@ def unload_local_models() -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--group", action="append", choices=sorted(GROUPS),
-                        help="groupe a lancer (repetable) ; defaut : tous")
+                        help="groupe a lancer (repetable) ; defaut : tous sauf ceux sur demande")
     parser.add_argument("--list", action="store_true", help="liste les groupes")
     parser.add_argument("--json", type=Path, help="ecrit le rapport JSON ici")
     parser.add_argument("--keep", action="store_true",
@@ -1410,10 +1681,10 @@ def main() -> int:
 
     if args.list:
         for name in GROUPS:
-            print(name)
+            print(name + (" (sur demande : --group " + name + ")" if name in ON_DEMAND else ""))
         return 0
 
-    groups = args.group or list(GROUPS)
+    groups = args.group or [name for name in GROUPS if name not in ON_DEMAND]
 
     # Must be inside $HOME (FilesCapability refuses anything outside).
     workdir = Path.home() / f"jarvis-smoke-{time.strftime('%Y%m%d-%H%M%S')}"
@@ -1427,10 +1698,11 @@ def main() -> int:
     os.environ["JARVIS_CONTEXT_PATH"] = str(workdir / "context.db")
     os.environ["JARVIS_CHECKLISTS_PATH"] = str(workdir / "checklists.db")
 
-    from jarvis.live.registry import create_live_tools
+    from jarvis.live.registry import create_live_registry
 
-    tools = {tool.info.name: tool for tool in create_live_tools()}
-    ctx = Context(tools=tools, workdir=workdir, perms=permissions())
+    registry = create_live_registry()
+    tools = {tool.info.name: tool for tool in registry.livekit_tools()}
+    ctx = Context(tools=tools, workdir=workdir, perms=permissions(), registry=registry)
     print("Permissions : " + ", ".join(
         f"{k}={'oui' if v else 'NON'}" for k, v in ctx.perms.items()))
 
