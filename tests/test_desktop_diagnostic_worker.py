@@ -1,19 +1,19 @@
 """Test offline setup in a real Qt worker, without importing Live/audio SDKs."""
 import os
 from pathlib import Path
-import subprocess
 import sys
 import pytest
 pytest.importorskip('PySide6')
 
 
-def test_diagnostic_runs_in_background_thread_with_asyncio_loop():
+def test_diagnostic_runs_in_background_thread_with_asyncio_loop(run_after_ready):
     script = Path(__file__).parents[1] / 'scripts/diagnose_desktop_voice.py'
     code = '''
 import asyncio, importlib.util, sys, threading
 spec = importlib.util.spec_from_file_location('diagnostic', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+print('IMPORTS_DONE', flush=True)
 async def check():
     assert threading.current_thread() is not threading.main_thread()
     assert asyncio.get_running_loop().is_running()
@@ -21,14 +21,14 @@ async def check():
     return 7
 assert module.run_in_worker(check) == 7
 '''
-    result = subprocess.run([sys.executable, '-c', code, str(script)],
+    result = run_after_ready([sys.executable, '-c', code, str(script)],
         env={**os.environ, 'QT_QPA_PLATFORM': 'offscreen'},
-        capture_output=True, text=True, timeout=10)
+        marker='IMPORTS_DONE', timeout=10)
     assert result.returncode == 0, result.stderr
     assert 'WORKER_CONTEXT_OK' in result.stdout
 
 
-def test_real_google_plugin_preloads_on_main_before_worker_model_construction():
+def test_real_google_plugin_preloads_on_main_before_worker_model_construction(run_after_ready):
     pytest.importorskip('livekit.plugins.google')
     source = Path(__file__).parents[1] / 'src'
     code = '''
@@ -41,6 +41,8 @@ app = QApplication([])
 preload_live_plugins()
 from livekit.agents import Plugin
 assert any(p.package == 'livekit.plugins.google' for p in Plugin.registered_plugins)
+# The import itself is slow on a loaded machine: only what follows is timed.
+print('IMPORTS_DONE', flush=True)
 class Worker(QThread):
     ok = False
     def run(self):
@@ -60,9 +62,9 @@ worker.wait()
 assert worker.ok
 print('REAL_GOOGLE_PLUGIN_WORKER_OK')
 '''
-    result = subprocess.run([sys.executable, '-c', code],
+    result = run_after_ready([sys.executable, '-c', code],
         env={**os.environ, 'PYTHONPATH': str(source), 'QT_QPA_PLATFORM': 'offscreen'},
-        capture_output=True, text=True, timeout=20)
+        marker='IMPORTS_DONE', timeout=20)
     assert result.returncode == 0, result.stderr
     assert 'REAL_GOOGLE_PLUGIN_WORKER_OK' in result.stdout
     assert 'Plugins must be registered on the main thread' not in result.stderr
