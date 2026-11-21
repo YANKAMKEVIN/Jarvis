@@ -262,6 +262,24 @@ plan), les étapes dépendantes sont ignorées : le test ne tape jamais à
 l'aveugle. La mémoire est testée sur une base temporaire. Code de
 sortie non nul en cas d'échec ; `--json` écrit un rapport.
 
+Le groupe `tasks` confie de vraies tâches au planificateur : lire puis régler
+le volume, copier un texte, créer un dossier et y déplacer un fichier, trouver
+puis renommer un fichier, préparer un message (la confirmation est refusée tant
+que l'utilisateur n'a pas parlé, puis le message est annulé). Il passe aussi par
+le chemin vocal : `run_task` en lecture seule suivi par `task_status(task_id)`,
+une mission dépendante (`after_id`) annulée avant de démarrer avec
+`cancel_task(task_id)`, et une mission lancée en mode sécurité qui ne doit rien
+changer. Chaque résultat est vérifié sur la machine (volume système, `pbpaste`,
+disque), jamais d'après le résumé du modèle ; volume et presse-papiers sont
+restaurés. Il utilise le cerveau configuré : le taux de réussite mesure ce
+modèle. Lent (environ une minute par tâche), il ne tourne que demandé
+explicitement ; `SKIP` si le cerveau est indisponible (clé absente, Ollama
+arrêté).
+
+```bash
+JARVIS_PLANNER_BACKEND=gemini PYTHONPATH=src .venv/bin/python scripts/smoke_test.py --group tasks
+```
+
 ## Diagnostic Accessibility
 
 Outil local **en lecture seule** pour découvrir les cibles (`query` / `role`) à

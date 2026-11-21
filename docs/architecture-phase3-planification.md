@@ -1,7 +1,8 @@
 # Phase 3 — Boucle de planification
 
 > Statut : **3a et 3b faits** (moteur, modèle local Ollama, branchement à la
-> voix avec tâches en arrière-plan). 3c à venir : vraies tâches mesurées.
+> voix avec tâches en arrière-plan). 3c : groupe `tasks` du smoke test prêt,
+> taux de réussite à mesurer sur le Mac.
 > Contrainte retenue : **aucune dépense** — le cerveau est un modèle local
 > Ollama, gratuit et privé ; le moteur reste indépendant du modèle.
 
@@ -144,6 +145,29 @@ du modèle temps réel ont des délais limites). Donc :
   et les autres commandes ralentissent (un `osascript` est passé de 0,1 s à
   11 s et a dépassé le délai de Jarvis). Un modèle local de 3 milliards de
   paramètres convient aux tâches de 2 ou 3 étapes, pas au-delà.
+
+## État de la phase 3c
+
+- Groupe `tasks` du smoke test (`--group tasks`, sur demande) : 9 étapes.
+  Cinq vraies tâches confiées au planificateur avec le même jeu de tools que
+  les missions (lire et régler le volume, copier un texte, créer un dossier
+  et y déplacer un fichier, trouver puis renommer un fichier) ; un message
+  préparé dont la confirmation est refusée sans tour de l'utilisateur
+  (`confirmation_needs_user_turn`), puis annulé ; trois scénarios par les
+  tools vocaux : mission en lecture seule suivie par `task_status(task_id)`
+  (outils limités à la liste de recherche), mission dépendante (`after_id`)
+  annulée avant de démarrer, mission lancée en mode sécurité qui ne change
+  pas le volume.
+- Chaque résultat est vérifié sur la machine (volume système, `pbpaste`,
+  disque), jamais d'après le résumé du modèle. Volume et presse-papiers sont
+  restaurés, les missions restantes annulées, le mode sécurité désactivé.
+- `tests/test_smoke_script.py` vérifie partout (CI comprise) que chaque tool
+  appelé par le smoke test existe dans le registre et que le groupe est
+  ignoré proprement sans cerveau disponible.
+- `python -m jarvis.planner` respecte `JARVIS_PLANNER_BACKEND` (`--backend`
+  pour forcer).
+- À faire : lancer le groupe sur le Mac, noter le taux de réussite, puis
+  ajuster les consignes selon les échecs observés.
 
 ## Décisions qui te reviennent
 
