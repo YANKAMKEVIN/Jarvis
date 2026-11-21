@@ -60,3 +60,7 @@ Les mesures ciblées après ajout des tests donnent **94 %** sur ces trois modul
 - Suite complète finale dans le dossier de travail : **1 753 tests hors ligne et 149 sous-tests réussis**, neuf contrôles réels exclus de cette commande puis exécutés séparément avec succès. Durée : 186,74 secondes. Les neuf tests caméra déjà présents localement restent hors du commit.
 
 Les tests augmentent la capacité à détecter un défaut, sans garantir l’absence de bugs ni l’exactitude permanente d’une source distante. Les essais physiques du micro, du son, de VoiceOver et des permissions macOS restent complémentaires.
+
+## Tests en sous-processus et machine chargée
+
+Certains tests lancent un interpréteur neuf (signal Ctrl-C réel, préchargement du plugin Google Live). Sur un Mac de 8 Go chargé, `import livekit.plugins.google` prend à lui seul 18 à 27 s : un délai unique de 10 ou 20 s échouait alors au hasard. La fixture `run_after_ready` (`tests/conftest.py`) sépare les deux phases : l’enfant affiche `IMPORTS_DONE` une fois ses imports faits, le démarrage dispose d’un plafond de 120 s, et seule la suite garde le délai strict d’origine. Un blocage après le marqueur échoue donc toujours en 10 ou 20 s. Un nouveau test en sous-processus doit suivre ce modèle plutôt qu’allonger son délai.

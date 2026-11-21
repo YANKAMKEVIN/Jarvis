@@ -1,14 +1,13 @@
 """Exercise a real SIGINT in a separate Qt event loop, without macOS tools."""
 import os
 from pathlib import Path
-import subprocess
 import sys
 
 import pytest
 pytest.importorskip("PySide6")
 
 
-def test_ctrl_c_exits_even_with_reduced_motion():
+def test_ctrl_c_exits_even_with_reduced_motion(run_after_ready):
     source = Path(__file__).parents[1] / "src"
     code = '''
 import os
@@ -25,15 +24,16 @@ def show_static(self):
     original(self)
 DesktopShell.show_full = show_static
 previous = signal.getsignal(signal.SIGINT)
+print("IMPORTS_DONE", flush=True)
 QTimer.singleShot(100, lambda: os.kill(os.getpid(), signal.SIGINT))
 assert run(demo=True) == 0
 assert signal.getsignal(signal.SIGINT) is previous
 print("EXITED_CLEANLY")
 '''
-    result = subprocess.run(
+    result = run_after_ready(
         [sys.executable, "-c", code],
         env={**os.environ, "PYTHONPATH": str(source), "QT_QPA_PLATFORM": "offscreen"},
-        capture_output=True, text=True, timeout=10,
+        marker="IMPORTS_DONE", timeout=10,
     )
     assert result.returncode == 0, result.stderr
     assert "EXITED_CLEANLY" in result.stdout
