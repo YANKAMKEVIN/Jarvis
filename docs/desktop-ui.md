@@ -35,7 +35,11 @@ Les modes terminal existants restent indépendants.
   réactive le micro, **⌘1** à **⌘4** ouvrent Assistant, Cartes, Activité et Réglages.
   Échap et M agissent aussi quand le compagnon a le focus clavier.
 - **Arrêter** ferme l’audio puis nettoie la session. Les confirmations des outils
-  se font vocalement, selon le protocole existant de Gemini Live.
+  se font vocalement, selon le protocole existant de Gemini Live, ou d’un clic :
+  une action préparée (message, agenda, outil MCP…) s’affiche sous la sphère avec
+  **Confirmer** et **Annuler**. Le clic vaut accord explicite (il compte comme un
+  tour de l’utilisateur) et ne vise que le jeton de cette action ; le jeton
+  n’est jamais affiché.
 - L’onglet Activité suit les actions et les étapes du planificateur, jamais le
   contenu des phrases prononcées. Les cartes présentent seulement certains
   résultats structurés, sans recréer un fil de conversation.
@@ -223,8 +227,10 @@ Un démarrage vocal neuf le vide ; aucune reprise automatique n’est proposée.
 **Annuler la tâche** utilise l’annulation coopérative existante du planificateur.
 L’interface indique d’abord la demande, puis l’issue réelle ; une action déjà
 lancée peut finir. **Interrompre** reste réservé à la réponse audio et n’annule
-pas la tâche. Les actions en attente d’accord restent confirmées vocalement :
-aucun bouton ne contourne leur protocole. Une fin de session sans résultat laisse
+pas la tâche. Les actions en attente d’accord se confirment à la voix ou avec le
+bouton **Confirmer** de leur carte, qui passe par le même `confirm_action`
+(jeton à usage unique, expiration, journal) : aucun bouton ne contourne leur
+protocole. Une fin de session sans résultat laisse
 un état « Résultat indisponible », sans faux succès.
 
 ## Compréhension de l’écran à la demande

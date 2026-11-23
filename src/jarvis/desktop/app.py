@@ -62,6 +62,7 @@ QFrame#peek { background: rgba(36, 65, 86, 65); border: 1px solid #29465c; borde
 QFrame#peek:hover { background: rgba(46, 80, 104, 90); border-color: #517ca2; }
 QFrame#peek:focus { border-color: #83cfff; }
 QLabel#peekTitle { color: #e4f3ff; font-size: 14px; font-weight: 600; }
+QFrame#pendingCard { background: rgba(63, 106, 136, 45); border: 1px solid #3f6a88; border-radius: 14px; }
 QFrame#errorBanner { background: rgba(120, 40, 62, 70); border: 1px solid #7d4a5c; border-radius: 14px; }
 QLabel#errorIcon { color: #1b0d14; background: #ee99b9; border-radius: 11px; font-weight: 700; }
 QLabel#errorText { color: #f6ccd6; }
@@ -254,6 +255,7 @@ class Controller(QObject):
         self.hotkey_active = False
         self.hotkey_message = 'Raccourci local uniquement.'
         self.tool_notice = ""
+        self.pending_actions = []
         self.tool_timer = QTimer(self)
         self.tool_timer.setSingleShot(True)
         self.tool_timer.setInterval(6000)
@@ -372,6 +374,21 @@ class Controller(QObject):
             self.changed.emit()
         return accepted
 
+    def resolve_pending(self, token, confirm):
+        """Card buttons: a click confirms or cancels exactly this prepared action."""
+        worker = self.voice_worker
+        if worker is None or not hasattr(worker, 'resolve_pending'):
+            return False
+        accepted = worker.resolve_pending(token, confirm)
+        if accepted is not False:
+            self.pending_actions = [row for row in self.pending_actions if row.get('token') != token]
+            self.request_status = 'Accord transmis · suivez l’activité.' if confirm else 'Annulation transmise.'
+        else:
+            self.request_status = 'La file de commandes est pleine. Réessayez dans un instant.'
+        self.tool_notice = self.request_status;self.tool_timer.start()
+        self.changed.emit()
+        return accepted is not False
+
     def clear_tool_notice(self):
         self.tool_notice = ""
         self.changed.emit()
@@ -472,6 +489,9 @@ class Controller(QObject):
                 self.notice.emit({"key":"reply:"+str(self.voice_turns),"text":"Nouvelle réponse écrite disponible","destination":"experience"})
                 self.changed.emit()
             return
+        if kind == "pending_actions":
+            self.pending_actions = [row for row in event.get('actions', []) if isinstance(row, dict) and row.get('token')][:4]
+            self.changed.emit();return
         if kind == "desktop_result":
             self.request_status = event.get("message", "Résultat disponible.")[:500]
             self.tool_notice = self.request_status;self.tool_timer.start()
@@ -584,6 +604,7 @@ class Controller(QObject):
             if state in {'listening', 'muted', 'speaking', 'thinking'}:
                 self.reconnecting = False
             if state in {'off', 'error'}:
+                self.pending_actions = []
                 self.screen_operations.clear()
                 for entry in self.activity.values():
                     if entry['status'] == 'running':
@@ -770,6 +791,22 @@ class VoicePanel(QWidget):
         banner.addWidget(self.error_action, 0, Qt.AlignmentFlag.AlignVCenter)
         self.error_banner.hide()
         layout.addWidget(self.error_banner)
+        # A prepared outward action can be confirmed by a click as well as by voice.
+        self.pending_card = QFrame()
+        self.pending_card.setObjectName('pendingCard')
+        self.pending_card.setAccessibleName('Action en attente de votre accord')
+        pending = QHBoxLayout(self.pending_card)
+        pending.setContentsMargins(14, 10, 10, 10)
+        pending.setSpacing(10)
+        self.pending_text = label('', 'subtitle')
+        self.pending_text.setWordWrap(True)
+        pending.addWidget(self.pending_text, 1)
+        self.pending_confirm = button('Confirmer', lambda: self.resolve_pending(True), True)
+        self.pending_cancel = button('Annuler', lambda: self.resolve_pending(False))
+        pending.addWidget(self.pending_confirm, 0, Qt.AlignmentFlag.AlignVCenter)
+        pending.addWidget(self.pending_cancel, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.pending_card.hide()
+        layout.addWidget(self.pending_card)
         self.peek = PeekCard()
         self.peek.clicked.connect(controller.details_requested.emit)
         layout.addWidget(self.peek)
@@ -805,7 +842,7 @@ class VoicePanel(QWidget):
         """Largest orb up to `wanted` that leaves room for what is shown under it."""
         spacing = self.layout().spacing()
         used = self.appearance_button.sizeHint().height() + 12 + 2 * spacing
-        for widget in (self.status, self.hint_area, self.suggestions, self.error_banner, self.peek,
+        for widget in (self.status, self.hint_area, self.suggestions, self.error_banner, self.pending_card, self.peek,
                        self.controls, self.voice_notice, self.footnote):
             if not widget.isHidden():
                 height = widget.heightForWidth(self.width()) if widget.hasHeightForWidth() else -1
@@ -856,6 +893,20 @@ class VoicePanel(QWidget):
             shell.show_settings()
         elif self.controller.voice_worker is None:
             self.controller.start_voice()
+
+    def resolve_pending(self, confirm):
+        rows = self.controller.pending_actions
+        if rows:
+            self.controller.resolve_pending(rows[0]['token'], confirm)
+
+    def render_pending(self):
+        rows = self.controller.pending_actions if self.controller.voice_worker is not None else []
+        self.pending_card.setVisible(bool(rows))
+        if rows:
+            more = f' · {count_label(len(rows) - 1, "autre action", "autres actions")} ensuite' if len(rows) > 1 else ''
+            self.pending_text.setText(f'J’attends votre accord : {rows[0]["label"]}{more}. Dites oui ou cliquez.')
+            self.pending_confirm.setAccessibleName('Confirmer : ' + rows[0]['label'])
+            self.pending_cancel.setAccessibleName('Annuler : ' + rows[0]['label'])
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -970,6 +1021,7 @@ class VoicePanel(QWidget):
             and not (c.ptt_enabled and active))
         # A voice error gets its own banner with the fitting next step; the line
         # under the dock then only carries the reconnection countdown, if any.
+        self.render_pending()
         self.error_banner.setVisible(bool(c.voice_error))
         if c.voice_error:
             from jarvis.desktop.recovery import voice_error_action
@@ -985,7 +1037,7 @@ class VoicePanel(QWidget):
                               "GEMINI LIVE · CONNEXION…" if state == "starting" else
                               "GEMINI LIVE · DÉCONNEXION…" if state == "stopping" else
                               "GEMINI LIVE · CONNEXION INTERROMPUE" if state == "error" else
-                              "GEMINI LIVE · CONNECTÉ · CONFIRMATIONS VOCALES" if active else
+                              "GEMINI LIVE · CONNECTÉ · CONFIRMATIONS VOCALES OU CLIC" if active else
                               "GEMINI LIVE · HORS LIGNE")
         compact_orb = 140 if len(c.focus_missions()) > 1 else 180
         orb_size = (compact_orb if mission_shown else 220) if self.compact else (max(160, min(280, self.width()-340)) if beside else self.fit_orb(280 if c.cards or mission_shown or c.voice_error else 360))

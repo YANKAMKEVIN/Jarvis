@@ -307,6 +307,26 @@ def card_text(entry):
     return '\n'.join(lines).strip()
 
 
+# Prepared outward actions awaiting an accord: short labels for the card
+# buttons. Unknown actions keep a generic label, never their arguments.
+PENDING_LABELS = {
+    'send_message': 'Envoyer le message préparé', 'schedule_message': 'Programmer le message préparé',
+    'create_calendar_event': 'Créer l’événement d’agenda', 'open_file': 'Ouvrir le fichier demandé',
+    'remember_inferred': 'Enregistrer le souvenir proposé', 'clear_personal_data': 'Effacer les données demandées',
+    'call_mcp_tool': 'Lancer l’outil d’extension', 'run_claude_task': 'Lancer la tâche Claude',
+    'open_claude_session': 'Ouvrir la session Claude',
+}
+
+
+def project_pending(pending):
+    """Desktop view of PendingActionStore.pending(): token kept for the buttons, label only."""
+    rows = []
+    for token, action in list(pending)[:4]:
+        if isinstance(token, str) and token:
+            rows.append({'token': token, 'label': PENDING_LABELS.get(action, 'Action préparée')})
+    return {'type': 'pending_actions', 'actions': rows}
+
+
 def project_activity(name, raw, activity_id, phase='result'):
     result = result_dict(raw)
     if phase == 'started':

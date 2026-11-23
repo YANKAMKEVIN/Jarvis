@@ -112,6 +112,18 @@ class PendingActionStore:
 
         return self._pending.pop(token, None)
 
+    def pending(self) -> list[tuple[str, str]]:
+        """(token, action) of every live pending action, oldest first.
+
+        Only the desktop window reads it, to show Confirm / Cancel buttons; it
+        carries no message content.
+        """
+        self._prune()
+        return [
+            (item.token, item.action)
+            for item in sorted(self._pending.values(), key=lambda item: item.created_at)
+        ]
+
     def has_pending(self) -> bool:
         self._prune()
         return bool(self._pending)

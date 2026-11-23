@@ -60,6 +60,9 @@ class LiveWorker(QThread):
     def request_action(self, name, arguments):
         return self.runtime.request_action(name, arguments)
 
+    def resolve_pending(self, token, confirm):
+        return self.runtime.resolve_pending(token, confirm)
+
     def set_voice(self, voice):
         self.runtime.set_voice(voice)
 

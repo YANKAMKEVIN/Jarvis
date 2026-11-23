@@ -512,7 +512,8 @@ def test_cards_and_actions_are_shared_bounded_and_confirmation_stays_vocal(app, 
             {'ok': False, 'requires_confirmation': True, 'token': 'PRIVATE_TOKEN'}, 'message'))
         shell.full.navigate(2)
         assert any('Accord vocal attendu' in w.text() for w in shell.full.activity.findChildren(QLabel))
-        assert not any(b.text() == 'Confirmer' for b in shell.full.findChildren(QPushButton))
+        # A tool result token never becomes a button: only the runtime's pending list does.
+        assert not any(b.text() == 'Confirmer' and b.isVisibleTo(shell.full) for b in shell.full.findChildren(QPushButton))
         for i in range(50):
             controller.voice_event(project_activity('open_app', {'ok': True}, str(i)))
         assert len(controller.activity) == 30

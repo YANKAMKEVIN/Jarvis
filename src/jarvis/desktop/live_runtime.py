@@ -216,6 +216,7 @@ class LiveRuntime:
         # Mission results have no other spoken channel: they never expire.
         self.task_announcements = deque()
         self.last_task_snapshot = None
+        self.last_pending_snapshot = None
         self.input_choice = self.output_choice = None
         self.closing = False
         self.announcements = Queue(maxsize=32)
@@ -237,6 +238,12 @@ class LiveRuntime:
     def request_action(self, name, arguments):
         return self._admit(self.desktop_requests, (name, dict(arguments)))
 
+    def resolve_pending(self, token, confirm):
+        """Confirm or cancel a prepared action from its card buttons."""
+        if not isinstance(token, str) or not token or len(token) > 64:
+            return False
+        return self.request_action("confirm_pending" if confirm else "cancel_pending", {"token": token})
+
     async def _apply_profile(self):
         from jarvis.desktop.experience_core import profile_instructions
         from jarvis.live.prompts import LIVE_SYSTEM_PROMPT
@@ -255,6 +262,19 @@ class LiveRuntime:
         ticket = None
         consent_token = None
         try:
+            if name in {"confirm_pending", "cancel_pending"}:
+                registry = self.components.assistant.registry
+                if name == "confirm_pending":
+                    # The click is the user's own explicit accord: it counts as a
+                    # user turn, exactly like a spoken or typed "oui".
+                    registry.note_user_turn()
+                tool_name = "confirm_action" if name == "confirm_pending" else "cancel_action"
+                tool = next(tool for tool in self.components.assistant.jarvis_tools if tool.info.name == tool_name)
+                result = await tool(arguments.get("token"))
+                self.emit({"type":"desktop_result", "tool":tool_name, "ok":bool(result.get("ok")),
+                           "message":(("Action confirmée · " if name == "confirm_pending" else "") + result.get("message", "Résultat disponible dans l’activité."))[:500]})
+                self._pending_progress()
+                return
             if name == "undo":
                 try:ticket = self.undo_ledger.validate(arguments.get("id"))
                 except ValueError as error:raise DesktopActionError(str(error)) from None
@@ -499,6 +519,16 @@ class LiveRuntime:
                 self.last_task_snapshot = snapshot
                 self.emit(snapshot)
 
+    def _pending_progress(self):
+        from jarvis.desktop.presentation import project_pending
+        store = getattr(self.components.assistant.registry, 'pending_actions', None)
+        if store is None or not hasattr(store, 'pending'):
+            return
+        snapshot = project_pending(store.pending())
+        if snapshot != self.last_pending_snapshot:
+            self.last_pending_snapshot = snapshot
+            self.emit(snapshot)
+
     def _closed(self, event):
         if not self.closing and not self.stop_requested.is_set():
             self.failed = True
@@ -630,6 +660,7 @@ class LiveRuntime:
                             tasks.cancel(task_id) if task_id is not None else tasks.cancel()
                 if now >= next_task_poll:
                     self._task_progress()
+                    self._pending_progress()
                     next_task_poll = now + 0.25
                 if now >= next_meter:
                     incoming, outgoing = c.audio.levels() if hasattr(c.audio, "levels") else (0.0, 0.0)
@@ -743,6 +774,8 @@ class LiveRuntime:
                         await close()
                     except Exception:
                         error_message = error_message or "La session vocale n’a pas pu être fermée correctement. Vérifiez les actions en cours."
+            if self.last_pending_snapshot and self.last_pending_snapshot.get('actions'):
+                self.emit({'type': 'pending_actions', 'actions': []})
             if self.failed and not error_message:
                 error_message = "La connexion Gemini s’est interrompue. Vérifiez la clé, le modèle et Internet."
             final = {"type": "state", "state": "error" if error_message else "off",
