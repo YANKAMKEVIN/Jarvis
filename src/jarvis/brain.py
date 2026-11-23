@@ -27,8 +27,15 @@ Règles importantes :
 """
 
 
+# Conversation memory of the text brain: the system prompt plus the last
+# exchanges only. With Ollama's 8 192-token context, an unbounded history
+# would overflow the context and slow every turn.
+MAX_HISTORY_EXCHANGES = 12
+
+
 class LocalBrain:
-    def __init__(self):
+    def __init__(self, max_history_exchanges: int = MAX_HISTORY_EXCHANGES):
+        self.max_history_exchanges = max(1, int(max_history_exchanges))
         self.last_ollama_metrics = {}
         self.router = RequestRouter()
         self.messages = [
@@ -274,8 +281,17 @@ Message utilisateur :
             "role": "assistant",
             "content": answer,
         })
+        self._trim_history()
 
         return answer
+
+    def _trim_history(self) -> None:
+        """Keep the system prompt and the last N user/assistant exchanges."""
+        system = [m for m in self.messages[:1] if m.get("role") == "system"]
+        rest = self.messages[len(system):]
+        keep = 2 * self.max_history_exchanges
+        if len(rest) > keep:
+            self.messages = system + rest[-keep:]
 
     def answer_from_sources(
         self,
