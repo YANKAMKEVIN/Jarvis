@@ -19,7 +19,8 @@ def main():
     temporary=QTemporaryDir();root=Path(temporary.path())
     c=Controller(demo=True);c.reduced_motion=True
     shell=DesktopShell(app,c,QSettings(str(root/'demo.ini'),QSettings.Format.IniFormat))
-    output=Path(__file__).resolve().parents[1]/'docs/screenshots/experience';output.mkdir(parents=True,exist_ok=True)
+    import os
+    output=Path(os.environ.get('JARVIS_CAPTURE_DIR') or Path(__file__).resolve().parents[1]/'docs/screenshots')/'experience';output.mkdir(parents=True,exist_ok=True)
     dialog=None
     def save(widget,name):
         app.processEvents()

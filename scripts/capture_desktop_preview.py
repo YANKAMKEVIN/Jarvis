@@ -68,9 +68,11 @@ def main():
                 'message': 'Exemple de résultat structuré. Aucune recherche réelle n’a été effectuée pour cette démonstration.',
                 'sources': [{'title': 'Exemple de source', 'url': 'https://example.com/'}]}, 'sample-web'))
             shell.show_details()
-            header = next(w for w in shell.full.findChildren(QLabel)
-                          if w.text() == 'COMPAGNON VOCAL     /     JARVIS')
-            header.setText('DÉMONSTRATION · RÉSULTATS SIMULÉS')
+            # The header names the page since the UX update: label the sample there.
+            header = getattr(shell.full, 'page_title', None) or next(
+                (w for w in shell.full.findChildren(QLabel) if w.text() == 'COMPAGNON VOCAL     /     JARVIS'), None)
+            if header is not None:
+                header.setText('DÉMONSTRATION · RÉSULTATS SIMULÉS')
             save(shell.full, 'context-cards.png')
             controller.voice_event({'type': 'task_progress', 'id': 'sample-task',
                 'objective': 'Exemple · Préparer les informations de ma journée',

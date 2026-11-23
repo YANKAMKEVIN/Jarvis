@@ -18,7 +18,8 @@ def main():
     c = Controller(demo=True)
     c.reduced_motion = True
     shell = DesktopShell(app,c,QSettings(temporary.path()+'/demo.ini',QSettings.Format.IniFormat))
-    output = Path(__file__).resolve().parents[1]/'docs/screenshots/avatars'
+    import os
+    output = Path(os.environ.get('JARVIS_CAPTURE_DIR') or Path(__file__).resolve().parents[1]/'docs/screenshots')/'avatars'
     output.mkdir(parents=True,exist_ok=True)
     def save(name):
         app.processEvents()

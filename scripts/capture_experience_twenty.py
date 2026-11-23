@@ -18,7 +18,7 @@ def main():
     for key,name in [('JARVIS_MACROS_PATH','macros'),('JARVIS_MEMORY_PATH','memory'),('JARVIS_CONTEXT_PATH','context')]:os.environ[key]=str(root/(name+'.db'))
     c=Controller(demo=True);c.reduced_motion=True
     shell=DesktopShell(app,c,QSettings(str(root/'ui.ini'),QSettings.Format.IniFormat));e=shell.experience
-    output=Path(__file__).resolve().parents[1]/'docs/screenshots/twenty';output.mkdir(parents=True,exist_ok=True)
+    output=Path(os.environ.get('JARVIS_CAPTURE_DIR') or Path(__file__).resolve().parents[1]/'docs/screenshots')/'twenty';output.mkdir(parents=True,exist_ok=True)
     def save(widget,name):app.processEvents();assert widget.grab().save(str(output/name))
     orbs=[]
     try:

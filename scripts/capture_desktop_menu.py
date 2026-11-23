@@ -29,7 +29,9 @@ def main():
     controller = Controller(demo=True)
     shell = DesktopShell(app, controller, Settings())
     controls = TrayControls(shell, PreviewTray())
-    target = ROOT / 'docs/screenshots/menu-controls.png'
+    import os
+    target = Path(os.environ.get('JARVIS_CAPTURE_DIR') or ROOT / 'docs/screenshots') / 'menu-controls.png'
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         controls.menu.show()
