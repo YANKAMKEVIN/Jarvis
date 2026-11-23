@@ -243,6 +243,7 @@ Options (valeurs par défaut) :
 | Variable | Défaut |
 |---|---|
 | `JARVIS_GEMINI_LIVE_MODEL` | `gemini-3.1-flash-live-preview` |
+| `JARVIS_GEMINI_LIVE_FALLBACKS` | `gemini-2.5-flash-native-audio-preview-09-2025,gemini-live-2.5-flash-preview` (essayés si l'API ne connaît plus le modèle ; vide pour désactiver) |
 | `JARVIS_GEMINI_LIVE_VOICE` | `Puck` |
 | `JARVIS_GEMINI_LIVE_TEMPERATURE` | `0.8` |
 | `JARVIS_LIVE_AGENT_NAME` | `jarvis-live-poc` |

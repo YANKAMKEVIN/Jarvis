@@ -140,7 +140,22 @@ def long_session_options():
             "session_resumption": types.SessionResumptionConfig()}
 
 
-def create_components(voice=None, long_session=False):
+# Models the API refused as unknown during this run of the app: the next
+# connection (manual or automatic reconnection) tries the next fallback.
+UNAVAILABLE_MODELS = set()
+
+
+def choose_live_model(configured=None):
+    """The configured model, else the first fallback not refused yet."""
+    from jarvis.live.config import fallback_live_models, get_live_config
+    configured = configured or get_live_config().model
+    for model in (configured, *fallback_live_models()):
+        if model not in UNAVAILABLE_MODELS:
+            return model
+    return configured
+
+
+def create_components(voice=None, long_session=False, model=None):
     try:
         from livekit.agents import Agent, AgentSession
         from livekit.plugins import google
@@ -155,9 +170,11 @@ def create_components(voice=None, long_session=False):
     setup_step("logging", install_livekit_pii_log_filter)
     try:
         config = get_live_config()
+        from dataclasses import replace
         if voice is not None:
-            from dataclasses import replace
             config = replace(config, voice=voice)
+        if model is not None:
+            config = replace(config, model=model)
     except (ValueError, TypeError):
         raise VoiceSetupError("Configuration Gemini invalide. Vérifiez le modèle, la voix et la température.") from None
     audio = setup_step("audio_import", lambda: LocalAudio(asyncio.get_running_loop()))
@@ -508,6 +525,7 @@ class LiveRuntime:
         self._note_user_turn(getattr(event, "transcript", ""))
 
     def _error(self, event):
+        self.last_error = getattr(event, "error", None)
         if not self.closing and not self.stop_requested.is_set() and not getattr(event.error, "recoverable", False):
             self.failed = True
             self.stop_requested.set()
@@ -566,6 +584,19 @@ class LiveRuntime:
             self.last_pending_snapshot = snapshot
             self.emit(snapshot)
 
+    def _unknown_model_message(self):
+        from jarvis.live.config import is_unknown_model_error
+        model = getattr(self, "model", None)
+        if not model or not is_unknown_model_error(getattr(self, "last_error", None)):
+            return None
+        UNAVAILABLE_MODELS.add(model)
+        following = choose_live_model()
+        if following in UNAVAILABLE_MODELS:
+            return (f"Le modèle Gemini Live « {model} » n’existe plus et aucun modèle de secours n’a répondu. "
+                    "Choisissez-en un autre avec JARVIS_GEMINI_LIVE_MODEL.")
+        return (f"Le modèle Gemini Live « {model} » n’est plus disponible (modèle preview retiré ?). "
+                f"Reconnecter essaiera « {following} ». Pour le fixer : JARVIS_GEMINI_LIVE_MODEL.")
+
     def _closed(self, event):
         if not self.closing and not self.stop_requested.is_set():
             self.failed = True
@@ -606,6 +637,10 @@ class LiveRuntime:
                 if self.stop_requested.is_set():
                     return
             options = {}
+            self.model = choose_live_model()
+            from jarvis.live.config import get_live_config
+            if self.model != get_live_config().model:
+                options["model"] = self.model
             if self.voice_override is not None:
                 options["voice"] = self.voice_override
             if wake:
@@ -770,7 +805,8 @@ class LiveRuntime:
         except (VoiceSetupError, AudioDeviceError) as error:
             caught_audio_error=error
             error_message = str(error)
-        except Exception:
+        except Exception as error:
+            self.last_error = getattr(self, "last_error", None) or error
             error_message = {
                 "setup": "Le vocal n’a pas pu être préparé. Vérifiez les dépendances et les autorisations macOS.",
                 "connection": "Connexion Gemini impossible. Vérifiez la clé, le modèle et l’accès Internet.",
@@ -819,6 +855,9 @@ class LiveRuntime:
                         error_message = error_message or "La session vocale n’a pas pu être fermée correctement. Vérifiez les actions en cours."
             if self.last_pending_snapshot and self.last_pending_snapshot.get('actions'):
                 self.emit({'type': 'pending_actions', 'actions': []})
+            unknown = self._unknown_model_message() if phase in {"connection", "session"} and error_message else None
+            if unknown:
+                error_message = unknown
             if self.failed and not error_message:
                 error_message = "La connexion Gemini s’est interrompue. Vérifiez la clé, le modèle et Internet."
             final = {"type": "state", "state": "error" if error_message else "off",

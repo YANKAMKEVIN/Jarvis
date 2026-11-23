@@ -3,6 +3,13 @@ from dataclasses import dataclass
 
 
 DEFAULT_GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview"
+# Tried in order when the configured model is unknown to the API (a
+# "preview" model can be retired without notice). Override with
+# JARVIS_GEMINI_LIVE_FALLBACKS="model-a,model-b"; an empty value disables it.
+DEFAULT_GEMINI_LIVE_FALLBACKS = (
+    "gemini-2.5-flash-native-audio-preview-09-2025",
+    "gemini-live-2.5-flash-preview",
+)
 DEFAULT_GEMINI_LIVE_VOICE = "Puck"
 DEFAULT_LIVE_AGENT_NAME = "jarvis-live-poc"
 DEFAULT_GEMINI_LIVE_TEMPERATURE = 0.8
@@ -75,6 +82,28 @@ def get_live_config() -> LiveConfig:
             DEFAULT_LIVE_AGENT_NAME,
         ),
     )
+
+
+def fallback_live_models() -> tuple[str, ...]:
+    raw = os.environ.get("JARVIS_GEMINI_LIVE_FALLBACKS")
+    if raw is None:
+        return DEFAULT_GEMINI_LIVE_FALLBACKS
+    return tuple(name.strip() for name in raw.split(",") if name.strip())
+
+
+_UNKNOWN_MODEL_HINTS = (
+    "is not found for api version", "model not found", "unknown model", "models/",
+    "not supported for bidigeneratecontent", "is not supported", "404",
+)
+
+
+def is_unknown_model_error(error) -> bool:
+    """True when the API says the requested model does not exist (any more)."""
+    text = f"{type(error).__name__}: {error}".lower() if error is not None else ""
+    if "not found" in text and "model" in text:
+        return True
+    return any(hint in text for hint in _UNKNOWN_MODEL_HINTS[:4]) or (
+        "model" in text and any(hint in text for hint in _UNKNOWN_MODEL_HINTS[4:]))
 
 
 def get_required_runtime_env_names() -> tuple[str, ...]:
