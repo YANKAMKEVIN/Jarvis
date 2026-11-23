@@ -4,14 +4,14 @@ import urllib.request
 from datetime import date
 from typing import TYPE_CHECKING
 
-from jarvis.config import get_llm_model
+from jarvis.config import DEFAULT_OLLAMA_URL, get_llm_model, get_ollama_url
 from jarvis.routing import RequestRouter
 
 if TYPE_CHECKING:
     from jarvis.knowledge.models import SearchMode, SearchResult
 
 
-OLLAMA_URL = "http://localhost:11434/api/chat"
+OLLAMA_URL = DEFAULT_OLLAMA_URL  # default only; read with get_ollama_url()
 
 SYSTEM_PROMPT = """
 Tu es Jarvis, l'assistant personnel de l'utilisateur sur son Mac.
@@ -62,7 +62,7 @@ class LocalBrain:
         self._debug_llm_payload(payload)
 
         request = urllib.request.Request(
-            OLLAMA_URL,
+            get_ollama_url(),
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",

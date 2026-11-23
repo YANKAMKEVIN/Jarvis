@@ -90,10 +90,16 @@ def _vision() -> tuple[bool, str]:
 
 def _local_model() -> tuple[bool, str]:
     import socket
+    from urllib.parse import urlparse
 
+    from jarvis.config import get_ollama_url
+
+    parsed = urlparse(get_ollama_url())
+    host, port = parsed.hostname or "localhost", parsed.port or 11434
     try:
-        with socket.create_connection(("localhost", 11434), timeout=1.5):
-            return True, "Ollama repond sur le port 11434"
+        with socket.create_connection((host, port), timeout=1.5):
+            return True, (f"Ollama repond sur le port {port}" if host in {"localhost", "127.0.0.1"}
+                          else f"Ollama repond sur {host}:{port}")
     except Exception:
         return False, "Ollama injoignable (lance Ollama pour le planner/local)"
 

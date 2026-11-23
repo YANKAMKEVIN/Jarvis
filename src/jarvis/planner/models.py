@@ -20,6 +20,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from jarvis.config import DEFAULT_OLLAMA_URL, get_ollama_url
+
 
 @dataclass(frozen=True)
 class ToolCall:
@@ -69,7 +71,6 @@ class ScriptedModel:
         return turn(messages) if callable(turn) else turn
 
 
-DEFAULT_OLLAMA_URL = "http://localhost:11434/api/chat"
 DEFAULT_OLLAMA_PLANNER_MODEL = "granite4:3b"
 # The planner prompt (rules + ~37 tool schemas) is ~4.3k tokens; Ollama's
 # default context is smaller and would silently drop its start. 8k leaves room
@@ -94,7 +95,7 @@ class OllamaPlannerModel:
         self.name = model or os.environ.get(
             "JARVIS_PLANNER_MODEL", DEFAULT_OLLAMA_PLANNER_MODEL,
         )
-        self.url = url or os.environ.get("JARVIS_OLLAMA_URL", DEFAULT_OLLAMA_URL)
+        self.url = url or get_ollama_url()
         self.num_ctx = int(
             num_ctx or os.environ.get("JARVIS_PLANNER_NUM_CTX", DEFAULT_OLLAMA_NUM_CTX)
         )
