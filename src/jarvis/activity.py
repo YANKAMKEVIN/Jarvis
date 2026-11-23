@@ -107,6 +107,40 @@ class ActivityStore:
         finally:
             conn.close()
 
+    def query(self, kind: str | None = None, since: float = 0.0, until: float | None = None,
+              level: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+        """Events of a period, newest first, optionally one kind and one level."""
+        sql = "SELECT ts, kind, name, detail, level FROM events WHERE ts >= ? AND ts < ?"
+        params: list[Any] = [since, until if until is not None else float("inf")]
+        if kind:
+            sql += " AND kind = ?"
+            params.append(kind)
+        if level:
+            sql += " AND level = ?"
+            params.append(level)
+        sql += " ORDER BY ts DESC, id DESC LIMIT ?"
+        params.append(max(1, min(int(limit), 2000)))
+        conn = self._connect()
+        try:
+            return [dict(row) for row in conn.execute(sql, params).fetchall()]
+        finally:
+            conn.close()
+
+    def delete_range(self, since: float, until: float | None = None, kind: str | None = None) -> int:
+        """Erase the events of a period (secure_delete: the bytes go too)."""
+        sql = "DELETE FROM events WHERE ts >= ? AND ts < ?"
+        params: list[Any] = [since, until if until is not None else float("inf")]
+        if kind:
+            sql += " AND kind = ?"
+            params.append(kind)
+        conn = self._connect()
+        try:
+            removed = conn.execute(sql, params).rowcount
+            conn.commit()
+            return int(removed or 0)
+        finally:
+            conn.close()
+
     def clear(self) -> int:
         conn = self._connect()
         try:

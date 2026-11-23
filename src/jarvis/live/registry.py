@@ -480,8 +480,8 @@ class ToolRegistry:
 
         @functools.wraps(inner)
         async def wrapper(*args, **kwargs):
-            log_event("tool", name)
             if not allowed and getattr(self, "read_only_mode", False):
+                log_event("tool", name, level="refused")
                 return ToolResult.failure(
                     action=name,
                     message=(
@@ -492,7 +492,15 @@ class ToolRegistry:
                     ),
                     error_code="read_only_mode",
                 ).to_livekit_dict()
-            return await inner(*args, **kwargs)
+            outcome = "error"
+            try:
+                result = await inner(*args, **kwargs)
+                if not isinstance(result, dict) or result.get("ok") is not False:
+                    outcome = "ok"
+                return result
+            finally:
+                # Name and outcome only, never arguments: the Journal tab filters on it.
+                log_event("tool", name, level=outcome)
 
         return function_tool(name=name, description=tool.info.description)(wrapper)
 

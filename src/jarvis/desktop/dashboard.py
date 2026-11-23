@@ -29,7 +29,7 @@ from jarvis.desktop.charts import (
 DAY = 24 * 3600
 WEEK = 7 * DAY
 
-TABS = (("jarvis", "Jarvis"), ("usage", "Tokens"), ("metrics", "Machine"), ("alerts", "Alertes"))
+TABS = (("jarvis", "Jarvis"), ("usage", "Tokens"), ("metrics", "Machine"), ("alerts", "Alertes"), ("journal", "Journal"))
 
 # Mission statuses as the planner records them, in plain French.
 _MISSION_STATUS = {
@@ -325,6 +325,11 @@ class _LoadedPage(QMainWindow):
         return label
 
 
+def _journal_page():
+    from jarvis.desktop.journal_page import JournalPage
+    return JournalPage()
+
+
 class JarvisPage(_LoadedPage):
     loading_text = "Lecture de l'activité de Jarvis…"
     error_text = "Activité de Jarvis indisponible."
@@ -369,7 +374,7 @@ class DashboardWindow(QMainWindow):
         )
         self._pages: dict[str, QWidget] = {}
         self._factories = {"jarvis": JarvisPage, "usage": UsageWindow,
-                           "metrics": MetricsWindow, "alerts": AlertsPage}
+                           "metrics": MetricsWindow, "alerts": AlertsPage, "journal": _journal_page}
         for key, label in TABS:
             holder = QWidget()
             QVBoxLayout(holder).setContentsMargins(0, 0, 0, 0)
