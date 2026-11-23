@@ -171,7 +171,9 @@ def office_tools(self) -> dict:
             "d'important'. Lit le corps des messages sans les marquer comme lus, "
             "et s'appuie uniquement sur leur contenu. Necessite IMAP configure. "
             "Le resume est genere et doit etre verifie ; aucun mail n'est envoye "
-            "ni modifie. limit : nombre maximum de mails a resumer."
+            "ni modifie ; chaque ligne est rattachee a un vrai expediteur et "
+            "sujet. Si imap_not_configured, propose list_unread_emails a la "
+            "place. limit : nombre maximum de mails a resumer."
         ),
     )
     @self._journaled("summarize_unread_emails")

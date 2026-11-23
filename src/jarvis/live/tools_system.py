@@ -11,7 +11,7 @@ import asyncio
 def system_tools(self) -> dict:
     # The avatar on screen IS Jarvis: results are worded so the model says
     # "je danse", never that a command or request was sent to something else.
-    @function_tool(name="dance_avatar", description="Te fait danser toi-même, Jarvis, à l'écran pendant huit secondes, quand l'utilisateur te demande de danser ou si tu sais danser. stop=True arrête ta danse, sans couper le vocal. Aucune musique. Si les animations sont réduites ou ton apparence est abstraite, l'écran l'indique.")
+    @function_tool(name="dance_avatar", description="Te fait danser toi-même, Jarvis, à l'écran pendant huit secondes, quand l'utilisateur te demande de danser ou si tu sais danser. stop=True arrête ta danse, sans couper le vocal. Aucune musique. Si les animations sont réduites ou ton apparence est abstraite, l'écran l'indique. Pendant la danse, une phrase courte et joueuse, différente à chaque fois ; ne parle pas d'un compagnon ou d'un avatar comme de quelqu'un d'autre, ne décris pas de mouvement précis, n'invente ni musique ni jambes. Ne danse jamais sans demande.")
     async def dance_avatar(stop: bool = False) -> dict:
         observer = self.presentation_observer
         if observer is None:

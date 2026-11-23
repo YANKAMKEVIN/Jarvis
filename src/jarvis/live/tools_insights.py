@@ -17,7 +17,10 @@ def insights_tools(self) -> dict:
             "lue en local : 'combien de tokens j'ai consomme', 'ma conso cette "
             "semaine'. period : 'today', 'yesterday', '7d', '30d', '90d' ou 'all'. "
             "Donne les tokens generes, en entree et lus en cache. Aucune donnee "
-            "ne quitte la machine."
+            "ne quitte la machine. Par modele : token_usage_by_model ; par "
+            "projet : token_usage_by_project ; dans le temps : "
+            "compare_token_usage. Un cout eventuel est une estimation "
+            "equivalent API : l'abonnement n'est pas facture au token."
         ),
     )
     async def token_usage(period: str = "7d") -> dict:
@@ -179,7 +182,8 @@ def insights_tools(self) -> dict:
             "personnel). Action consequente : renvoie un token et "
             "requires_confirmation. Annonce la consigne et le dossier, puis "
             "attends l'accord avant confirm_action. Rien n'est lance sans "
-            "confirmation."
+            "confirmation, et c'est refuse en mode securite. Pour une fenetre "
+            "Terminal interactive, utilise open_claude_session."
         ),
     )
     @self._journaled("run_claude_task")
