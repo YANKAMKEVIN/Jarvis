@@ -115,6 +115,8 @@ SAFE_MODE_ALLOWED = frozenset({
     # Extensions: listing MCP tools and reading installed skills. Calling an
     # MCP tool (call_mcp_tool) stays blocked: its effect is unknown to Jarvis.
     "list_mcp_tools", "list_skills", "use_skill",
+    # MCP resources are reads (no call, no side effect): allowed.
+    "list_mcp_resources", "read_mcp_resource",
     "list_scheduled_messages", "cancel_scheduled_message", "list_timers",
     "cancel_action", "cancel_task", "pause_task", "resume_task",
     # Missions may still be launched: their own outward sub-actions run through

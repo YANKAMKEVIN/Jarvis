@@ -123,7 +123,9 @@ Les missions (`run_task`) disposent des mêmes outils, avec les mêmes confirmat
 - Les outils MCP passent par un outil générique (`call_mcp_tool`) au lieu d'être exposés
   un par un. Cela garde la liste d'outils de Gemini Live stable, mais demande un appel
   `list_mcp_tools` avant le premier usage d'un serveur.
-- Seuls les *tools* MCP sont pris en charge : ni *resources*, ni *prompts*, ni
+- Les *tools* MCP et, en lecture seule, les *resources* (`list_mcp_resources`,
+  `read_mcp_resource` : sans confirmation, permis en mode sécurité, texte borné à
+  4 000 caractères, parties binaires ignorées) sont pris en charge ; ni *prompts*, ni
   *sampling*, ni OAuth (un jeton passe par `headers` ou `env`).
 - Les skills ajoutées pendant une session apparaissent dans `list_skills`, mais la
   description de `use_skill` n'est mise à jour qu'à la session suivante.

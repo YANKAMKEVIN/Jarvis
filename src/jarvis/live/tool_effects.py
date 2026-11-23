@@ -31,7 +31,7 @@ READ = frozenset({
     "compare_token_usage", "recent_claude_sessions",
     "system_snapshot", "top_processes", "system_usage_history", "check_anomalies",
     "recent_activity", "recent_missions", "privacy_overview", "task_status",
-    "list_mcp_tools", "list_skills", "use_skill",
+    "list_mcp_tools", "list_skills", "use_skill", "list_mcp_resources", "read_mcp_resource",
 })
 
 LOCAL = frozenset({
