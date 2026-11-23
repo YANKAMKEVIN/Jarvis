@@ -51,6 +51,15 @@ class RequestRouter:
         r"^(?:recherche|cherche)\b",
         r"^(?:va|ouvre)\b.*\b(?:sur|\.com|\.fr|\.org|\.net)\b",
         r"^(?:quelle date sommes nous|nous sommes quel jour|donne moi la date)\b",
+        # Actions the executor runs through the system, media and window capabilities.
+        r"^(?:verrouille|bloque)\b.*\b(?:ecran|mac|session|ordinateur)\b",
+        r"^(?:mets|regle|baisse|monte|augmente|diminue|reduis)\b.*\bluminosite\b",
+        r"^(?:mets|met) (?:la |le |ma |mon )?(?:musique |lecture |video |podcast |morceau |chanson )?en pause\b",
+        r"^(?:pause|lecture)$",
+        r"^(?:reprends|relance) (?:la |le )?(?:musique|lecture|morceau|chanson|podcast)\b",
+        r"^(?:passe|saute|mets|remets|reviens|joue)\b.*\b(?:suivant|suivante|precedent|precedente)\b",
+        r"^(?:morceau|chanson|titre|piste) (?:suivant|suivante|precedent|precedente)$",
+        r"^(?:minimise|reduis|reduit|cache)\b.*\bfenetre\b",
     ]
 
     CONVERSATION_PATTERNS = [

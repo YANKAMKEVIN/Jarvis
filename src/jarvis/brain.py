@@ -143,6 +143,24 @@ mute
 unmute
 → réactiver le son du Mac
 
+lock_screen
+→ verrouiller l'écran du Mac
+
+set_brightness
+→ régler la luminosité de l'écran entre 0 et 100 (target = le nombre)
+
+play_pause
+→ mettre en pause ou reprendre la musique ou la vidéo
+
+next_track
+→ passer au morceau suivant
+
+previous_track
+→ revenir au morceau précédent
+
+minimize_window
+→ réduire la fenêtre (target = l'application si elle est nommée, sinon null)
+
 conversation
 → aucune action à exécuter
 
@@ -203,6 +221,26 @@ Réponse :
 Message : Remets le son
 Réponse :
 {{"action":"unmute","target":null}}
+
+Message : Verrouille l'écran
+Réponse :
+{{"action":"lock_screen","target":null}}
+
+Message : Baisse la luminosité à 40 %
+Réponse :
+{{"action":"set_brightness","target":"40"}}
+
+Message : Mets la musique en pause
+Réponse :
+{{"action":"play_pause","target":null}}
+
+Message : Passe au morceau suivant
+Réponse :
+{{"action":"next_track","target":null}}
+
+Message : Minimise la fenêtre de Safari
+Réponse :
+{{"action":"minimize_window","target":"Safari"}}
 
 Message : Comment vas-tu ?
 Réponse :

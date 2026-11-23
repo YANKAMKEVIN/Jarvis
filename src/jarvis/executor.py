@@ -10,6 +10,18 @@ from jarvis.security import SecurityManager
 from jarvis.tools.macos import MacOSTools
 
 
+# Actions run through a capability (security check, real state read back)
+# rather than a raw MacOSTools call: (capability, method, argument kind).
+CAPABILITY_ACTIONS = {
+    "lock_screen": ("system", "lock_screen", None),
+    "set_brightness": ("system", "set_brightness", "level"),
+    "play_pause": ("media", "play_pause", None),
+    "next_track": ("media", "next_track", None),
+    "previous_track": ("media", "previous_track", None),
+    "minimize_window": ("windows", "minimize_window", "app"),
+}
+
+
 @dataclass
 class ExecutionResult:
     message: str
@@ -28,7 +40,9 @@ class CommandExecutor:
         security=None,
         tools=None,
         knowledge_service=None,
+        capabilities=None,
     ):
+        self.capabilities = dict(capabilities or {})
         self.brain = brain if brain is not None else Brain()
         self.security = (
             security
@@ -113,6 +127,45 @@ class CommandExecutor:
 
         intent = create_intent(action, target)
         return self.execute_intent(intent, confirmed=confirmed)
+
+    def _capability(self, kind):
+        if kind not in self.capabilities:
+            if kind == "system":
+                from jarvis.capabilities.system import SystemCapability as factory
+            elif kind == "media":
+                from jarvis.capabilities.media import MediaCapability as factory
+            else:
+                from jarvis.capabilities.windows import WindowCapability as factory
+            self.capabilities[kind] = factory(security=self.security, macos_tools=self.tools)
+        return self.capabilities[kind]
+
+    def _run_capability_action(self, intent) -> ExecutionResult:
+        kind, method, argument = CAPABILITY_ACTIONS[intent.action]
+        if argument == "level" and not (intent.target or "").strip().isdigit():
+            return ExecutionResult(
+                "A quel niveau, entre 0 et 100 ?",
+                request_type=RequestType.ACTION,
+                intent=intent,
+            )
+        self._debug_routing(
+            "execute_system_action",
+            action=intent.action,
+            target=intent.target,
+            system_action_executed=True,
+            fallback_to_llm=False,
+        )
+        call = getattr(self._capability(kind), method)
+        if argument == "level":
+            result = call(int(intent.target))
+        elif argument == "app" and intent.target:
+            result = call(intent.target)
+        else:
+            result = call()
+        return ExecutionResult(
+            getattr(result, "message", str(result)),
+            request_type=RequestType.ACTION,
+            intent=intent,
+        )
 
     def execute_intent(self, intent, confirmed: bool = False) -> ExecutionResult:
         """Execute the exact previewed intent without asking the model again.
@@ -354,6 +407,9 @@ class CommandExecutor:
                 request_type=RequestType.ACTION,
                 intent=intent,
             )
+
+        if intent.action in CAPABILITY_ACTIONS:
+            return self._run_capability_action(intent)
 
         self._debug_routing(
             "unavailable_action",
