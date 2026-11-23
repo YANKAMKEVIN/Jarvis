@@ -36,7 +36,9 @@ Le prompt de synthèse précise aussi qu’un fait explicite peut être rapport�
 .venv/bin/python scripts/check_regression_sensitivity.py --json /tmp/jarvis-mutations.json
 ```
 
-Ce script vérifie d’abord que les tests sélectionnés passent, puis introduit cinq régressions dans une copie temporaire : suppression des reprises de recherche, consentement ignoré, son réactivé en mode discret, confirmations expirées acceptées et mode lecture seule contourné. Les cinq doivent être détectées par des assertions. Une erreur d’import ou de collecte n’est pas considérée comme une détection. Le dépôt n’est jamais modifié. Il s’agit d’un contrôle ciblé, pas d’un score de mutation global.
+Ce script vérifie d’abord que les tests sélectionnés passent, puis introduit **dix-neuf** régressions dans une copie temporaire : envois programmés non confirmés ou annulés, effacement non sûr, troncature PDF masquée, secret archivé, notes partielles, rappels consommés ou dupliqués, reprises de recherche supprimées, consentement documentaire ignoré, son réactivé en mode discret, confirmations expirées acceptées, mode lecture seule contourné, et depuis novembre : confirmation sans tour de l’utilisateur, ouverture d’un exécutable, lecture de `~/.ssh`, URL locale lue par `summarize_url`, `call_mcp_tool` permis en mode sécurité. Toutes doivent être détectées par des assertions. Une erreur d’import ou de collecte n’est pas considérée comme une détection. Le dépôt n’est jamais modifié. Il s’agit d’un contrôle ciblé, pas d’un score de mutation global.
+
+`tests/test_mutation_anchors.py` vérifie en quelques millisecondes que chaque ancre existe encore une seule fois : déplacer le code protégé casse la suite tout de suite, avec le nom de la mutation à mettre à jour dans `scripts/check_regression_sensitivity.py`.
 
 ## Exécution et CI
 
@@ -48,7 +50,7 @@ JARVIS_RUN_LIVE_TESTS=1 .venv/bin/python -m pytest tests/test_live_answer_qualit
 
 Les tests réels nécessitent le modèle Ollama configuré et Internet. Après activation explicite, une indisponibilité compte comme un échec : elle n’est pas transformée silencieusement en test ignoré. Aucun micro ni caméra ne s’ouvre. Aucun compte privé, message personnel ou document utilisateur n’est utilisé.
 
-La CI macOS lance les tests hors ligne avec couverture des branches, applique un seuil de **90 % sur le service de recherche, ses fournisseurs sans clé et son adaptateur vocal**, puis vérifie les cinq régressions injectées. Elle conserve les rapports pytest, couverture et mutations. Les essais réels sont séparés de la CI pour distinguer une panne externe d’une régression déterministe.
+La CI commence par un job Linux (audit `pip-audit` des versions figées de `constraints.txt`, `ruff check`, suite hors ligne, captures de chaque page du desktop publiées en artefact). Le job macOS ne part que s’il est vert : tests hors ligne avec couverture des branches, seuil de **90 % sur le service de recherche, ses fournisseurs sans clé et son adaptateur vocal** (et sur les rappels, les envois programmés et l’effacement), puis les dix-neuf régressions injectées. Elle conserve les rapports pytest, couverture et mutations. Les essais réels sont séparés de la CI pour distinguer une panne externe d’une régression déterministe.
 
 Les mesures ciblées après ajout des tests donnent **94 %** sur ces trois modules de recherche. Ce pourcentage ne concerne pas tout Jarvis. Les résultats de l’exécution complète figurent dans le bilan ci-dessous.
 
@@ -64,3 +66,47 @@ Les tests augmentent la capacité à détecter un défaut, sans garantir l’abs
 ## Tests en sous-processus et machine chargée
 
 Certains tests lancent un interpréteur neuf (signal Ctrl-C réel, préchargement du plugin Google Live). Sur un Mac de 8 Go chargé, `import livekit.plugins.google` prend à lui seul 18 à 27 s : un délai unique de 10 ou 20 s échouait alors au hasard. La fixture `run_after_ready` (`tests/conftest.py`) sépare les deux phases : l’enfant affiche `IMPORTS_DONE` une fois ses imports faits, le démarrage dispose d’un plafond de 120 s, et seule la suite garde le délai strict d’origine. Un blocage après le marqueur échoue donc toujours en 10 ou 20 s. Un nouveau test en sous-processus doit suivre ce modèle plutôt qu’allonger son délai.
+
+## Bilan courant (généré)
+
+Ce tableau est produit à partir d’une vraie exécution, pas écrit à la main :
+
+```bash
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -m 'not live' -q --junitxml=/tmp/tests.xml
+.venv/bin/python scripts/check_regression_sensitivity.py --json /tmp/mutations.json
+.venv/bin/python scripts/report_qa.py --junit /tmp/tests.xml --output /tmp/qa.json \
+    --mutations /tmp/mutations.json --update-doc docs/testing-quality.md
+```
+
+<!-- qa-table:start -->
+| Famille | Réussis | Échecs | Ignorés |
+|---|---:|---:|---:|
+| transverse | 494 | 0 | 0 |
+| voice_interface | 417 | 0 | 1 |
+| privacy | 218 | 0 | 0 |
+| web | 216 | 0 | 0 |
+| desktop_control | 169 | 0 | 0 |
+| messaging | 113 | 0 | 0 |
+| personal_data | 103 | 0 | 0 |
+| missions | 101 | 0 | 0 |
+| scheduling | 101 | 0 | 0 |
+| files | 50 | 0 | 0 |
+| system_media | 49 | 0 | 0 |
+| browser | 46 | 0 | 0 |
+| vision | 40 | 0 | 0 |
+| metrics | 36 | 0 | 0 |
+| clipboard_text | 32 | 0 | 0 |
+| documents | 25 | 0 | 0 |
+| calendar | 18 | 0 | 0 |
+| camera_wip | 16 | 0 | 0 |
+| claude | 13 | 0 | 0 |
+| compute | 12 | 0 | 0 |
+| **Total** | **2269** | **0** | **1** |
+
+Mutations ciblées détectées : **19 / 19**.
+
+Tableau généré le 2026-11-23 par `scripts/report_qa.py --update-doc`.
+<!-- qa-table:end -->
+
+Exécution du 23 novembre sous Linux (Qt offscreen), hors micro, Mac et services réels.
+

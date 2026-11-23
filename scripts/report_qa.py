@@ -49,13 +49,46 @@ def report(xml):
             'families': families}
 
 
+START, END = '<!-- qa-table:start -->', '<!-- qa-table:end -->'
+
+
+def markdown_table(result, mutations=None, date=''):
+    """Per-family table for docs/testing-quality.md, generated from real results."""
+    rows = sorted(result['families'].items(), key=lambda item: -item[1]['passed'])
+    lines = ['| Famille | Réussis | Échecs | Ignorés |', '|---|---:|---:|---:|']
+    lines += [f"| {name} | {row['passed']} | {row['failed']} | {row['skipped']} |" for name, row in rows]
+    total = {key: sum(row[key] for _, row in rows) for key in ('passed', 'failed', 'skipped')}
+    lines.append(f"| **Total** | **{total['passed']}** | **{total['failed']}** | **{total['skipped']}** |")
+    if mutations is not None:
+        detected = sum(1 for m in mutations.get('mutations', []) if m.get('detected'))
+        lines += ['', f"Mutations ciblées détectées : **{detected} / {len(mutations.get('mutations', []))}**."]
+    if date:
+        lines += ['', f'Tableau généré le {date} par `scripts/report_qa.py --update-doc`.']
+    return '\n'.join(lines)
+
+
+def update_doc(path, table):
+    text = path.read_text(encoding='utf-8')
+    if START not in text or END not in text:
+        raise SystemExit(f'Marqueurs {START} / {END} absents de {path}')
+    before, rest = text.split(START, 1)
+    _, after = rest.split(END, 1)
+    path.write_text(before + START + '\n' + table + '\n' + END + after, encoding='utf-8')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--junit', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--mutations', type=Path, help='JSON de check_regression_sensitivity.py, pour le tableau')
+    parser.add_argument('--update-doc', type=Path, help='réécrit le tableau entre les marqueurs qa-table de ce fichier')
     args = parser.parse_args()
     result = report(args.junit)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
+    if args.update_doc:
+        import datetime
+        mutations = json.loads(args.mutations.read_text()) if args.mutations else None
+        update_doc(args.update_doc, markdown_table(result, mutations, datetime.date.today().isoformat()))
     for name, row in result['families'].items():
         print(f"{name}: {row['passed']} passed, {row['failed']} failed, {row['skipped']} skipped")
     return int(any(row['failed'] for row in result['families'].values()) or not result['families'])
