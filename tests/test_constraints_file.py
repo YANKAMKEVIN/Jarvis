@@ -37,3 +37,11 @@ def test_every_pin_is_exact_and_inside_the_declared_range():
 def test_ci_installs_with_the_constraints():
     workflow = (ROOT / ".github/workflows/tests.yml").read_text()
     assert workflow.count("-c constraints.txt") >= 2
+
+
+def test_dependency_audit_and_update_proposals_are_configured():
+    import yaml
+    workflow = (ROOT / ".github/workflows/tests.yml").read_text()
+    assert "pip-audit -r constraints.txt" in workflow
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
+    assert {u["package-ecosystem"] for u in config["updates"]} == {"pip", "github-actions"}
