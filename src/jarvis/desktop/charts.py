@@ -24,6 +24,39 @@ from PySide6.QtWidgets import (
 )
 
 from jarvis.capabilities.usage import _human
+
+# « Taille des textes » (Jarvis au quotidien) also applies to the dashboards:
+# every font-size of their style sheets grows by this many pixels.
+TEXT_SCALE = {"delta": 0}
+_FONT_SIZE = re.compile(r"font-size:\s*(\d+)px")
+
+
+def set_text_delta(delta: int) -> None:
+    TEXT_SCALE["delta"] = max(0, min(int(delta or 0), 12))
+
+
+def scaled_style(style: str, delta: int | None = None) -> str:
+    delta = TEXT_SCALE["delta"] if delta is None else delta
+    if not delta or not style:
+        return style
+    return _FONT_SIZE.sub(lambda m: f"font-size: {int(m.group(1)) + delta}px", style)
+
+
+def apply_text_scale(root: QWidget) -> QWidget:
+    """Rescale the font sizes of `root` and its children from their original style."""
+    for widget in (root, *root.findChildren(QWidget)):
+        if not hasattr(widget, "_jarvis_unscaled_style"):
+            widget._jarvis_unscaled_style = widget.styleSheet()
+        if widget._jarvis_unscaled_style:
+            widget.setStyleSheet(scaled_style(widget._jarvis_unscaled_style))
+    return root
+
+
+class TextScaledWindow(QMainWindow):
+    """Dashboard page whose rebuilt content always follows the text size."""
+
+    def setCentralWidget(self, widget):  # noqa: N802 - Qt API
+        super().setCentralWidget(apply_text_scale(widget))
 from jarvis.insights.detector import Thresholds
 
 # Shared palette, aligned with the desktop dark theme.
@@ -774,7 +807,7 @@ class _UsageLoader(QObject):
         self.done.emit(overview, trend, models, projects, self.period, comparison)
 
 
-class UsageWindow(QMainWindow):
+class UsageWindow(TextScaledWindow):
     """Standalone token-usage dashboard window, loaded asynchronously."""
 
     def __init__(self, parent: QWidget | None = None):
@@ -846,7 +879,7 @@ class _MetricsLoader(QObject):
         self.done.emit(snapshot, cpu, mem, apps, self.period)
 
 
-class MetricsWindow(QMainWindow):
+class MetricsWindow(TextScaledWindow):
     """Standalone machine-activity dashboard window, loaded asynchronously and
     refreshed every 30 s while it is on screen."""
 

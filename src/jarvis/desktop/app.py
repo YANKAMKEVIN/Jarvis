@@ -1538,8 +1538,11 @@ class DesktopShell:
     def show_dashboard(self, tab: str = "jarvis"):
         """Open the tabbed dashboard on `tab` (jarvis, usage, metrics, alerts);
         each tab loads its data asynchronously the first time it is shown."""
+        from jarvis.desktop.charts import set_text_delta
         from jarvis.desktop.dashboard import DashboardWindow
 
+        options = getattr(getattr(self, 'experience', None), 'options', None)
+        set_text_delta(getattr(options, 'font_size', 13) - 13)
         if self.dashboard_window is None:
             self.dashboard_window = DashboardWindow(tab=tab)
         else:

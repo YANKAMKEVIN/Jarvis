@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from jarvis.capabilities.usage import _human
 from jarvis.desktop.charts import (
-    METRICS_REFRESH_MS, MetricsWindow, UsageWindow, _ACCENTS, _ALERT, _BG, _MUTED, _PANEL,
+    METRICS_REFRESH_MS, MetricsWindow, TextScaledWindow, UsageWindow, _ACCENTS, _ALERT, _BG, _MUTED, _PANEL,
     _TEXT, _UP, _cards_row, _dashboard_root, _gauges, _panel, _stat_card, _swatch,
     plain_label, updated_text,
 )
@@ -268,7 +268,7 @@ class _AlertsLoader(QObject):
         self.done.emit(alerts)
 
 
-class _LoadedPage(QMainWindow):
+class _LoadedPage(TextScaledWindow):
     """A tab whose content is read off the UI thread, refreshed every 30 s
     while it is the visible tab."""
 
