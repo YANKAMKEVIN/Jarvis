@@ -5,7 +5,7 @@ from jarvis.brain import Brain
 from jarvis.intents import create_intent
 from jarvis.knowledge.models import SourceReference
 from jarvis.knowledge.service import KnowledgeService
-from jarvis.routing import RequestType
+from jarvis.routing import RequestType, is_time_question
 from jarvis.security import SecurityManager
 from jarvis.tools.macos import MacOSTools
 
@@ -47,6 +47,10 @@ class CommandExecutor:
         command: str,
         confirmed: bool = False,
     ) -> ExecutionResult:
+        if is_time_question(command):
+            # Deterministic local answer: neither the model nor the web is asked.
+            return self.execute_intent(create_intent("get_time"), confirmed=confirmed)
+
         route = self.brain.route_request(command)
         self._debug_routing(
             "route",
@@ -251,6 +255,19 @@ class CommandExecutor:
             )
             return ExecutionResult(
                 self.tools.web_search(intent.target),
+                request_type=RequestType.ACTION,
+                intent=intent,
+            )
+
+        if intent.action == "get_time":
+            self._debug_routing(
+                "execute_system_action",
+                action=intent.action,
+                system_action_executed=True,
+                fallback_to_llm=False,
+            )
+            return ExecutionResult(
+                f"Il est {self.tools.get_time()}.",
                 request_type=RequestType.ACTION,
                 intent=intent,
             )

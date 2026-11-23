@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from jarvis.executor import CommandExecutor
 
 
@@ -53,11 +51,6 @@ def start_jarvis():
         if command.lower() in {"quit", "exit", "stop", "au revoir"}:
             print("Jarvis > A bientot.")
             break
-
-        if "heure" in command.lower():
-            current_time = datetime.now().strftime("%H:%M")
-            print(f"Jarvis > Il est {current_time}.")
-            continue
 
         try:
             message = respond(executor, command)

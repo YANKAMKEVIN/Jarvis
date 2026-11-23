@@ -101,6 +101,9 @@ class MacOSTools:
         webbrowser.open(url)
         return f"Recherche lancee pour : {query}."
 
+    def get_time(self) -> str:
+        return datetime.now().strftime("%H:%M")
+
     def get_date(self) -> str:
         return datetime.now().strftime("%d/%m/%Y")
 

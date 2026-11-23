@@ -27,6 +27,21 @@ def normalize_text(text: str) -> str:
     return " ".join(text.split())
 
 
+# A question about the local time, as a whole sentence. "ouvre Notes dans une
+# heure" or "24 heures chrono" are not: they keep their own route.
+TIME_QUESTION_PATTERNS = [
+    r"^(?:(?:dis|donne) moi |(?:tu peux|peux tu|pourrais tu|pouvez vous) me (?:dire|donner) )?"
+    r"(?:quelle heure(?: est il| il est| c est)?|l heure(?: qu il est| actuelle)?)(?: s il te plait| stp)?$",
+    r"^(?:et )?il est quelle heure(?: maintenant)?$",
+    r"^(?:tu as|t as|as tu|vous avez|avez vous) l heure$",
+]
+
+
+def is_time_question(message: str) -> bool:
+    normalized = normalize_text(message)
+    return any(re.search(pattern, normalized) for pattern in TIME_QUESTION_PATTERNS)
+
+
 class RequestRouter:
     ACTION_PATTERNS = [
         r"^(?:ouvre|lance|demarre)\b",
@@ -62,6 +77,12 @@ class RequestRouter:
             return RouteDecision(
                 RequestType.CONVERSATION,
                 "message vide ou non exploitable",
+            )
+
+        if is_time_question(normalized):
+            return RouteDecision(
+                RequestType.ACTION,
+                "heure locale (get_time)",
             )
 
         if self._matches_any(normalized, self.ACTION_PATTERNS):
