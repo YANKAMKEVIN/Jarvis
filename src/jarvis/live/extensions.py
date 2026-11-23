@@ -44,7 +44,9 @@ def _skills_description(library: SkillLibrary) -> str:
         "Charge les instructions d'une skill installee (dossier SKILL.md) quand la demande "
         "correspond a sa description, puis suis-les avec tes outils habituels. file : chemin "
         "d'un fichier de reference cite par la skill (optionnel). Jarvis n'execute jamais "
-        "les scripts d'une skill."
+        "les scripts d'une skill. Cette liste date du debut de la session : si le nom "
+        "demande n'y figure pas, appelle list_skills (a jour) ou use_skill avec ce nom, "
+        "qui relit les dossiers."
     )
     skills = sorted(library.skills().values(), key=lambda skill: skill.name)
     if not skills:

@@ -123,6 +123,10 @@ class SkillLibrary:
         action = "use_skill"
         skill = self.skills().get((name or "").strip())
         if skill is None:
+            # A skill added during the session: look at the folders again once.
+            self.reload()
+            skill = self.skills().get((name or "").strip())
+        if skill is None:
             known = ", ".join(sorted(self.skills())) or "aucune"
             return ToolResult.failure(action, f"Skill inconnue : {name}. Skills installees : {known}.", "skill_not_found")
         if file:

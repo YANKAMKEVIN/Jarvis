@@ -127,8 +127,10 @@ Les missions (`run_task`) disposent des mêmes outils, avec les mêmes confirmat
   `read_mcp_resource` : sans confirmation, permis en mode sécurité, texte borné à
   4 000 caractères, parties binaires ignorées) sont pris en charge ; ni *prompts*, ni
   *sampling*, ni OAuth (un jeton passe par `headers` ou `env`).
-- Les skills ajoutées pendant une session apparaissent dans `list_skills`, mais la
-  description de `use_skill` n'est mise à jour qu'à la session suivante.
+- Une skill ajoutée pendant une session apparaît dans `list_skills` et `use_skill`
+  la trouve (il relit les dossiers quand le nom est inconnu) ; seule la liste écrite
+  dans la description de `use_skill` attend la session suivante, et elle invite le
+  modèle à appeler `list_skills`.
 
 ## Tests
 
