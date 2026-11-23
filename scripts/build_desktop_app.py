@@ -71,6 +71,27 @@ def build_app(destination: Path, python: Path, source: Path, demo=False, update=
     return destination
 
 
+def write_app_icon(destination: Path) -> tuple[bool, str]:
+    """Contents/Resources/AppIcon.icns from app.svg, declared in Info.plist.
+
+    Best-effort like the signature: without it the Finder and Launchpad show
+    a generic icon, nothing else changes.
+    """
+    try:
+        from jarvis.desktop.app_icon import write_icns
+        contents = destination / "Contents"
+        write_icns(contents / "Resources" / "AppIcon.icns")
+        info_path = contents / "Info.plist"
+        with info_path.open("rb") as stream:
+            info = plistlib.load(stream)
+        info["CFBundleIconFile"] = "AppIcon"
+        with info_path.open("wb") as stream:
+            plistlib.dump(info, stream)
+        return True, "AppIcon.icns"
+    except Exception as error:  # noqa: BLE001 - optional cosmetic step
+        return False, str(error)
+
+
 def sign_app(destination: Path, identity: str = "-") -> tuple[bool, str]:
     """Code-sign the bundle so macOS keeps a STABLE TCC identity for it.
 
@@ -117,10 +138,13 @@ def main():
     source = Path(__file__).resolve().parents[1] / "src"
     try:
         from PySide6 import QtWidgets  # noqa: F401
+        sys.path.insert(0, str(source))
         path = build_app(args.destination, Path(sys.executable), source, args.demo, args.update)
     except (ImportError, ValueError, OSError) as error:
         parser.exit(1, f"Impossible de créer le lanceur : {error}\n")
     print(f"Application créée : {path}")
+    icon_ok, icon_detail = write_app_icon(path)
+    print("Icône Finder : AppIcon.icns." if icon_ok else f"Icône Finder non générée ({icon_detail}) : icône générique.")
     if args.no_sign:
         print("Lanceur non signé (--no-sign). Les autorisations macOS peuvent être redemandées à chaque reconstruction.")
     else:

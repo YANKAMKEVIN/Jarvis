@@ -84,3 +84,28 @@ def test_sign_app_adhoc_signs_and_is_stable_across_rebuilds(tmp_path):
     launcher.build_app(app, Path(sys.executable), tmp_path, update=True)
     launcher.sign_app(app)
     assert cdhash() == first
+
+
+def test_app_icon_is_a_valid_icns_declared_in_info_plist(tmp_path):
+    from jarvis.desktop.app_icon import ICNS_ENTRIES, read_icns
+    app = launcher.build_app(tmp_path / "Jarvis.app", Path('/python'), tmp_path)
+    ok, detail = launcher.write_app_icon(app)
+    assert ok, detail
+    entries = read_icns((app / "Contents/Resources/AppIcon.icns").read_bytes())
+    assert set(entries) == {kind for kind, _ in ICNS_ENTRIES}
+    for kind, size in ICNS_ENTRIES:
+        png = entries[kind]
+        assert png[:8] == b"\x89PNG\r\n\x1a\n"
+        assert int.from_bytes(png[16:20], "big") == size == int.from_bytes(png[20:24], "big")
+    with (app / "Contents/Info.plist").open("rb") as stream:
+        info = plistlib.load(stream)
+    assert info["CFBundleIconFile"] == "AppIcon" and info["CFBundleExecutable"] == "Jarvis"
+    # Rebuilding with --update keeps the icon and its declaration.
+    launcher.build_app(app, Path('/python'), tmp_path, update=True)
+    with (app / "Contents/Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleIconFile"] == "AppIcon"
+
+
+def test_icon_failure_is_reported_not_raised(tmp_path):
+    ok, detail = launcher.write_app_icon(tmp_path / "missing.app")
+    assert ok is False and detail
