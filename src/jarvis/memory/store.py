@@ -326,6 +326,12 @@ class MemoryStore:
                 ).fetchall()
             return [self._from_row(row) for row in rows]
 
+    def all_memories(self) -> list[Memory]:
+        """Every memory, for an explicit export (no limit, oldest kind order)."""
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM memories ORDER BY kind, subject_key").fetchall()
+            return [self._from_row(row) for row in rows]
+
     def delete(self, memory_id: int) -> Memory | None:
         with self._connect() as conn:
             memory = self._get(conn, memory_id)

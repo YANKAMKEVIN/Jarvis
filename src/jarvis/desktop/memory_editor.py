@@ -1,7 +1,7 @@
 """Explicit local memory review; contents are never sent to the model on open."""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QComboBox,QListWidget,
-    QListWidgetItem,QLineEdit,QPlainTextEdit,QPushButton,QLabel,QFormLayout)
+    QListWidgetItem,QLineEdit,QPlainTextEdit,QPushButton,QLabel,QFormLayout,QFileDialog)
 from jarvis.memory.store import MemoryStore
 from jarvis.context_store import ContextStore
 from jarvis.memory.guard import contains_secret
@@ -19,7 +19,11 @@ class MemoryEditor(QDialog):
         actions=QHBoxLayout()
         for title,callback in [('Nouveau',self.new),('Enregistrer',self.save),('Supprimer la sélection',self.delete),('Actualiser',self.reload)]:
             b=QPushButton(title);b.clicked.connect(callback);actions.addWidget(b)
-        layout.addLayout(actions);self.status=QLabel();self.status.setWordWrap(True);layout.addWidget(self.status)
+        layout.addLayout(actions)
+        transfer=QHBoxLayout()
+        for title,callback in [('Exporter la mémoire…',self.export_file),('Importer et fusionner…',self.import_file)]:
+            b=QPushButton(title);b.clicked.connect(callback);transfer.addWidget(b)
+        layout.addLayout(transfer);self.status=QLabel();self.status.setWordWrap(True);layout.addWidget(self.status)
         close=QPushButton('Fermer');close.clicked.connect(self.close);layout.addWidget(close)
         self.list.currentItemChanged.connect(self.select);self.kind.currentIndexChanged.connect(self.reload);self.reload()
     def current(self):
@@ -47,6 +51,24 @@ class MemoryEditor(QDialog):
             else:self.context.add(content)
             self.reload();self.status.setText('Mémoire mise à jour localement.')
         except Exception:self.status.setText('Enregistrement impossible : vérifiez le sujet et la longueur du contenu.')
+    def export_file(self,path=None):
+        from jarvis.memory.transfer import write_export
+        if path is None:
+            path,_=QFileDialog.getSaveFileName(self,'Exporter la mémoire','memoire-jarvis.json','JSON (*.json)')
+        if not path:return None
+        try:count=write_export(self.memory,path)
+        except Exception:self.status.setText('Export impossible : vérifiez le dossier choisi.');return None
+        self.status.setText(f'{count} souvenir(s) exporté(s), sans secret. Gardez ce fichier en lieu sûr.');return count
+    def import_file(self,path=None):
+        from jarvis.memory.transfer import read_import
+        if path is None:
+            path,_=QFileDialog.getOpenFileName(self,'Importer une mémoire','','JSON (*.json)')
+        if not path:return None
+        try:counts=read_import(self.memory,path)
+        except Exception as error:self.status.setText('Import refusé : '+getattr(error,'message','fichier illisible.'));return None
+        self.reload()
+        self.status.setText(f"Import : {counts['created']} ajouté(s), {counts['updated']} mis à jour, {counts['unchanged']} identique(s), {counts['skipped']} ignoré(s).")
+        return counts
     def delete(self):
         row=self.current()
         if not row:return
