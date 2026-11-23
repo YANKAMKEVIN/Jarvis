@@ -85,12 +85,49 @@ class CarbonBackend:
         return not self.handler.value and not self.hotkey.value
 
 
+# Carbon modifier masks. Every Jarvis global shortcut is a modifier pair + Space.
+CMD, SHIFT, OPTION, CONTROL = 1 << 8, 1 << 9, 1 << 11, 1 << 12
+SPACE_COMBOS = {
+    "cmd_shift": (CMD | SHIFT, "⌘⇧Espace"),
+    "cmd_option": (CMD | OPTION, "⌘⌥Espace"),
+    "ctrl_option": (CONTROL | OPTION, "⌃⌥Espace"),
+    "ctrl_shift": (CONTROL | SHIFT, "⌃⇧Espace"),
+    "option_shift": (OPTION | SHIFT, "⌥⇧Espace"),
+    "ctrl_cmd": (CONTROL | CMD, "⌃⌘Espace"),
+}
+DEFAULT_SHOW_COMBO, DEFAULT_HOLD_COMBO = "cmd_shift", "cmd_option"
+# Known users of a combination outside Jarvis: a warning, never a refusal
+# (the user may have turned the macOS shortcut off).
+KNOWN_CONFLICTS = {
+    "cmd_option": "macOS : fenêtre de recherche du Finder, si ce raccourci est activé",
+    "ctrl_option": "macOS : source de saisie suivante, si ce raccourci est activé",
+    "ctrl_cmd": "macOS : visualiseur d’émojis et symboles",
+    "ctrl_shift": "éditeurs de code : aide sur les paramètres (VS Code, JetBrains)",
+}
+
+
+def combo(key, default):
+    return key if key in SPACE_COMBOS else default
+
+
+def combo_conflicts(key, other_key=None):
+    """Messages about a chosen combination; the first one blocks (same as Jarvis' other shortcut)."""
+    messages = []
+    if other_key is not None and key == other_key:
+        messages.append("déjà utilisé par l’autre raccourci de Jarvis")
+    if key in KNOWN_CONFLICTS:
+        messages.append(KNOWN_CONFLICTS[key])
+    return messages
+
+
 class GlobalHotkey(QObject):
     activated = Signal()
     changed = Signal()
 
-    def __init__(self, callback, parent=None, backend_factory=CarbonBackend, platform=None, demo=False):
+    def __init__(self, callback, parent=None, backend_factory=CarbonBackend, platform=None, demo=False,
+                 combo_key=DEFAULT_SHOW_COMBO):
         super().__init__(parent)
+        self.combo_key = combo(combo_key, DEFAULT_SHOW_COMBO)
         self.platform = platform or sys.platform
         self.demo = demo
         self.factory = backend_factory
@@ -117,15 +154,17 @@ class GlobalHotkey(QObject):
             self.message = 'Raccourci global disponible sur macOS uniquement.'
         else:
             try:
-                self.backend = self.factory()
+                mask, label = SPACE_COMBOS[self.combo_key]
+                self.backend = self.factory(modifiers=mask) if self.factory is CarbonBackend else self.factory()
                 self.active = bool(self.backend.start(self.activated.emit))
             except Exception:
                 self.active = False
+            label = SPACE_COMBOS[self.combo_key][1]
             if self.active:
-                self.message = '⌘⇧Espace actif depuis les autres applications.'
+                self.message = f'{label} actif depuis les autres applications.'
             else:
                 self.close()
-                self.message = '⌘⇧Espace indisponible. Vérifiez les raccourcis macOS ou d’autres applications, puis réessayez.'
+                self.message = f'{label} indisponible. Vérifiez les raccourcis macOS ou d’autres applications, puis réessayez.'
         self.changed.emit()
 
     def close(self):
@@ -143,9 +182,10 @@ class GlobalHotkey(QObject):
 class HoldHotkey(QObject):
     transition=Signal(int,bool)
     changed=Signal()
-    def __init__(self,begin,end,parent=None,backend_factory=None,platform=None,demo=False):
+    def __init__(self,begin,end,parent=None,backend_factory=None,platform=None,demo=False,combo_key=DEFAULT_HOLD_COMBO):
         super().__init__(parent)
-        self.factory=backend_factory or (lambda:CarbonBackend(modifiers=(1<<8)|(1<<11),identifier=2))
+        self.combo_key=combo(combo_key,DEFAULT_HOLD_COMBO)
+        self.factory=backend_factory or (lambda:CarbonBackend(modifiers=SPACE_COMBOS[self.combo_key][0],identifier=2))
         self.platform=platform or sys.platform;self.demo=demo
         self.backend=None;self.active=False;self.begin=begin;self.end=end;self.generation=0
         self.message='Maintien pour parler désactivé.'
@@ -164,7 +204,8 @@ class HoldHotkey(QObject):
                 generation=self.generation
                 self.active=bool(self.backend.start(lambda:self.transition.emit(generation,True),lambda:self.transition.emit(generation,False)))
             except Exception:self.active=False
-            self.message='Maintenir ⌘⌥Espace pour parler.' if self.active else '⌘⌥Espace indisponible · Espace sur le compagnon reste disponible.'
+            label=SPACE_COMBOS[self.combo_key][1]
+            self.message=f'Maintenir {label} pour parler.' if self.active else f'{label} indisponible · Espace sur le compagnon reste disponible.'
             if not self.active:self.close()
         self.changed.emit()
     def close(self):

@@ -11,7 +11,7 @@ from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPoint, QPropertyAnima
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QBoxLayout, QCheckBox, QFrame, QHBoxLayout, QLabel, QMainWindow,
-    QGraphicsOpacityEffect, QLineEdit, QPushButton, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
+    QGraphicsOpacityEffect, QLineEdit, QPushButton, QComboBox, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
 from jarvis.desktop.audio_settings import AudioSettings
@@ -1208,7 +1208,7 @@ class DesktopWindow(QMainWindow):
             audio.addWidget(self.audio_settings)
 
             keys = section("RACCOURCIS", settings_layout)
-            self.hotkey_check = QCheckBox('Activer le raccourci global ⌘⇧Espace')
+            self.hotkey_check = QCheckBox('Activer le raccourci global pour afficher Jarvis')
             self.hotkey_check.setChecked(controller.hotkey_enabled)
             self.hotkey_check.setEnabled(not controller.demo)
             self.hotkey_check.toggled.connect(shell.set_global_hotkey)
@@ -1221,6 +1221,24 @@ class DesktopWindow(QMainWindow):
                 self.hotkey_status.setText(controller.hotkey_message)
                 self.hotkey_retry.setEnabled(controller.hotkey_enabled and not controller.hotkey_active and not controller.demo)
             controller.changed.connect(render_hotkey)
+            from jarvis.desktop.hotkey import SPACE_COMBOS
+            self.combo_boxes = {}
+            for kind, title in (("show", "Ouvrir le compagnon"), ("hold", "Maintenir pour parler")):
+                choice = QComboBox()
+                choice.setAccessibleName(f"Raccourci global : {title.lower()}")
+                for key, (_, text) in SPACE_COMBOS.items():
+                    choice.addItem(text, key)
+                choice.setCurrentIndex(choice.findData(shell.hotkey_combo(kind)))
+                choice.setEnabled(not controller.demo)
+                choice.currentIndexChanged.connect(lambda _=0, kind=kind, choice=choice: shell.set_hotkey_combo(kind, choice.currentData()))
+                line = QHBoxLayout()
+                line.addWidget(label(title, 'subtitle'), 1)
+                line.addWidget(choice)
+                keys.addLayout(line)
+                self.combo_boxes[kind] = choice
+            self.combo_warning = label('', 'subtitle')
+            self.combo_warning.setWordWrap(True)
+            keys.addWidget(self.combo_warning)
             keys.addWidget(button("Palette de commandes · ⌘K", lambda: shell.experience.palette()))
 
             look = section("COMPAGNON ET APPARENCE", settings_layout)
@@ -1406,13 +1424,14 @@ class DesktopShell:
             self.tray.show()
         app.setQuitOnLastWindowClosed(False)
         self.hotkey = GlobalHotkey(self.show_compact, parent=controller,
-                                   demo=controller.demo or app.platformName() == 'offscreen')
+                                   demo=controller.demo or app.platformName() == 'offscreen',
+                                   combo_key=self.hotkey_combo('show'))
         self.hotkey.changed.connect(self.hotkey_changed)
         self.hotkey.set_enabled(controller.hotkey_enabled)
         app.aboutToQuit.connect(self.hotkey.close)
         from jarvis.desktop.hotkey import HoldHotkey
         self.hold_hotkey=HoldHotkey(controller.begin_push_to_talk,controller.end_push_to_talk,parent=controller,
-                                   demo=controller.demo or app.platformName()=='offscreen')
+                                   demo=controller.demo or app.platformName()=='offscreen',combo_key=self.hotkey_combo('hold'))
         self.hold_hotkey.changed.connect(self.hold_hotkey_changed)
         self.hold_hotkey.set_enabled(controller.ptt_enabled)
         app.aboutToQuit.connect(self.hold_hotkey.close)
@@ -1588,6 +1607,36 @@ class DesktopShell:
         c = self.controller
         if enabled and not c.voice_worker and not c.demo and c.audio_worker is None:
             c.start_voice()
+
+    def hotkey_combo(self, kind):
+        from jarvis.desktop.hotkey import DEFAULT_HOLD_COMBO, DEFAULT_SHOW_COMBO, combo
+        default = DEFAULT_SHOW_COMBO if kind == 'show' else DEFAULT_HOLD_COMBO
+        return combo(self.settings.value(f'input/{kind}_combo', default), default)
+
+    def set_hotkey_combo(self, kind, key):
+        """Change one global shortcut (modifiers + Space); never two identical ones."""
+        from jarvis.desktop.hotkey import SPACE_COMBOS, combo_conflicts
+        other = self.hotkey_combo('hold' if kind == 'show' else 'show')
+        conflicts = combo_conflicts(key, other)
+        window = self.full
+        if key not in SPACE_COMBOS or (conflicts and conflicts[0].startswith('déjà')):
+            if hasattr(window, 'combo_warning'):
+                window.combo_warning.setText('Refusé : ' + (conflicts[0] if conflicts else 'raccourci inconnu') + '.')
+                box = window.combo_boxes[kind]
+                box.blockSignals(True);box.setCurrentIndex(box.findData(self.hotkey_combo(kind)));box.blockSignals(False)
+            return False
+        self.settings.setValue(f'input/{kind}_combo', key)
+        if kind == 'show':
+            self.hotkey.combo_key = key
+            self.hotkey.set_enabled(self.controller.hotkey_enabled)
+        else:
+            self.hold_hotkey.combo_key = key
+            self.hold_hotkey.set_enabled(self.controller.ptt_enabled)
+            self.controller.ptt_hotkey_message = f"Maintenez {SPACE_COMBOS[key][1]}, ou Espace lorsque le compagnon a le focus."
+        if hasattr(window, 'combo_warning'):
+            window.combo_warning.setText(('Attention : ' + conflicts[0] + '.') if conflicts else '')
+        self.controller.changed.emit()
+        return True
 
     def set_global_hotkey(self, enabled):
         self.controller.hotkey_enabled = enabled

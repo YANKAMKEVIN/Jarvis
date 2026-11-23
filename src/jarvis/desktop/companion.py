@@ -281,7 +281,7 @@ class CompanionWindow(OrbWindow):
                    'Reconnecter' if c.can_reconnect else 'Démarrer Jarvis')
             if c.ptt_enabled:
                 registered=getattr(getattr(self.shell,'hold_hotkey',None),'active',False)
-                label='Maintenir pour parler · ⌘⌥Espace' if registered else 'Maintenir ce bouton pour parler · Espace sur le compagnon'
+                label='Maintenir pour parler · '+self.hold_label() if registered else 'Maintenir ce bouton pour parler · Espace sur le compagnon'
             self.voice_button.setText('■' if c.voice_state=='speaking' else '●' if c.voice_mic_open else '▶')
             key=(' · Échap' if label=='Interrompre la réponse' else ' · M' if label in {'Couper le micro','Réactiver le micro'} else '')
             self.voice_button.setAccessibleName(label);self.voice_button.setToolTip(label+key)
@@ -292,6 +292,11 @@ class CompanionWindow(OrbWindow):
             if self.discreet and c.voice_state in {'listening','speaking','thinking','error'}:self.wake_companion()
         if getattr(self, 'menu', None) is not None:
             self.update_menu(self.menu)
+
+    def hold_label(self):
+        from jarvis.desktop.hotkey import DEFAULT_HOLD_COMBO, SPACE_COMBOS
+        key=getattr(getattr(self.shell,'hold_hotkey',None),'combo_key',DEFAULT_HOLD_COMBO)
+        return SPACE_COMBOS.get(key,SPACE_COMBOS[DEFAULT_HOLD_COMBO])[1]
 
     def make_menu(self):
         menu = QMenu(self)
@@ -328,7 +333,7 @@ class CompanionWindow(OrbWindow):
         action('settings', 'Réglages', self.shell.show_settings)
         recovery=action('recovery','Reconnecter automatiquement après coupure');recovery.setCheckable(True);recovery.setChecked(self.shell.recovery.enabled)
         recovery.triggered.connect(self.shell.set_auto_reconnect)
-        hold=action('ptt','Maintenir pour parler · ⌘⌥Espace');hold.setCheckable(True);hold.setChecked(self.controller.ptt_enabled)
+        hold=action('ptt','Maintenir pour parler · '+self.hold_label());hold.setCheckable(True);hold.setChecked(self.controller.ptt_enabled)
         hold.triggered.connect(self.shell.set_push_to_talk)
         wake=action('wake','Réveil par « Jarvis »');wake.setCheckable(True);wake.setChecked(self.controller.wake_enabled)
         wake.triggered.connect(self.shell.set_wake_word)
