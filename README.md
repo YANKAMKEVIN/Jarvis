@@ -193,6 +193,13 @@ Mode texte :
 PYTHONPATH=src .venv/bin/python -m jarvis.main
 ```
 
+Mode texte avec tous les outils (mémoire, notes, rappels, fichiers, web…) via le
+planificateur, sans micro ni Gemini Live ; les envois demandent un « oui » tapé :
+
+```bash
+PYTHONPATH=src .venv/bin/python -m jarvis.main --outils
+```
+
 Mode vocal :
 
 ```bash

@@ -63,5 +63,21 @@ def start_jarvis():
             print()
 
 
+def cli(argv=None):
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Jarvis en mode texte.")
+    parser.add_argument(
+        "--outils", action="store_true",
+        help="utiliser le planificateur et tous les outils de Jarvis (memoire, notes, rappels...)",
+    )
+    args = parser.parse_args(argv)
+    if args.outils:
+        from jarvis.text_agent import start_text_agent
+        start_text_agent()
+    else:
+        start_jarvis()
+
+
 if __name__ == "__main__":
-    start_jarvis()
+    cli()
