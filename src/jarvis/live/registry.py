@@ -360,11 +360,15 @@ class ToolRegistry:
         # Defaults off and does not persist across restarts (see docs).
         self.read_only_mode = False
 
+    def _timer_to_reminder(self, label: str, due_at: float) -> None:
+        """A timer still running at shutdown survives as a short reminder."""
+        self.reminder_store.add(f"Minuteur « {label} » termine", due_at)
+
     async def aclose(self):
         """Stop session-owned background work cooperatively before shutdown."""
         self.task_notifier = None
         if hasattr(self, "timers"):
-            await self.timers.aclose()
+            await self.timers.aclose(handoff=self._timer_to_reminder)
         if self.tasks is not None:
             self.tasks.cancel_all()
         pending = [task for task in (self._web_task, self._briefing_task)

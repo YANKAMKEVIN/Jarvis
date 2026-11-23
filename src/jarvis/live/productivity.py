@@ -27,7 +27,7 @@ def timer_service(registry):
 
 
 def productivity_tools(r):
-    @function_tool(name='start_timer', description='Lance un minuteur vocal pour cette session : seconds entre 1 et 86400, label court. Plusieurs minuteurs possibles. Fermer Jarvis les annule ; ce ne sont pas des rappels persistants.')
+    @function_tool(name='start_timer', description='Lance un minuteur vocal pour cette session : seconds entre 1 et 86400, label court. Plusieurs minuteurs possibles. S’ils tournent encore quand Jarvis se ferme, ils deviennent des rappels (notification à l’heure prévue).')
     @r._journaled('start_timer')
     async def start_timer(seconds: int, label: str = 'Minuteur') -> dict:
         return timer_service(r).start(seconds, label).to_livekit_dict()
