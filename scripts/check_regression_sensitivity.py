@@ -61,6 +61,22 @@ MUTATIONS=[
     ('read_only_guard_bypassed','jarvis/live/registry.py',
      'if not allowed and getattr(self, "read_only_mode", False):','if False:',
      'tests/test_read_only_mode.py::ReadOnlyModeTests::test_blocked_tool_refuses_and_runs_nothing_in_safe_mode'),
+    # November protections.
+    ('confirmation_without_user_turn','jarvis/live/confirmation.py',
+     'if self._user_turn <= pending.user_turn:','if False:',
+     'tests/test_confirmation.py::PendingActionStoreTest::test_confirm_without_user_turn_is_refused_and_keeps_the_token'),
+    ('executable_open_allowed','jarvis/tools/filesystem.py',
+     'if suffix in EXECUTABLE_SUFFIXES or runnable:','if False:',
+     'tests/test_filesystem_tools.py::FileSystemToolsTest::test_open_file_refuses_executable_types_without_running_open'),
+    ('ssh_folder_readable','jarvis/tools/filesystem.py',
+     'if any(part in SENSITIVE_DIRECTORIES for part in lowered[:-1]):','if False:',
+     'tests/test_filesystem_tools.py::FileSystemToolsTest::test_read_text_refuses_credential_files'),
+    ('local_url_summarized','jarvis/knowledge/keyless.py',
+     'if not _is_public_host(parsed.hostname, self._resolve):','if False:',
+     'tests/test_webread.py::FetchTextPrivateAddressTests::test_rejects_names_resolving_to_a_local_address'),
+    ('mcp_call_allowed_in_safe_mode','jarvis/live/registry.py',
+     'SAFE_MODE_ALLOWED = frozenset({','SAFE_MODE_ALLOWED = frozenset({"call_mcp_tool",',
+     'tests/test_mcp_skills.py::test_safe_mode_blocks_mcp_calls_but_not_listing'),
 ]
 
 
