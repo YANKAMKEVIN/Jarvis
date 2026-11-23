@@ -146,7 +146,7 @@ def make_jarvis_dashboard(
         layout.addWidget(_rows_panel("Envois programmés", [(
             _ALERT, "Agent d'envoi absent : les rappels et messages programmés ne partiront pas",
             "à installer",
-            f"Dans un Terminal, dans le dossier de Jarvis : {INSTALL_HINT}, puis suivez les deux commandes affichées.",
+            f"Dans un Terminal, dans le dossier de Jarvis : {INSTALL_HINT}, puis la commande launchctl bootstrap affichée ; python -m jarvis.schedule status pour vérifier.",
         )], "", legend=f"Installer : {INSTALL_HINT}"))
     layout.addWidget(_cards_row([
         _stat_card("Missions", str(len(week)), rate, tone),
