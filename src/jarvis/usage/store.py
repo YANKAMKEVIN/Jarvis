@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable
-from jarvis.storage_privacy import private_deletes
+from jarvis.storage_privacy import open_private_db
 
 # Only lines that contain this token carry a usage block; checking the raw bytes
 # first lets us skip the ~75% of lines (user turns, tool results) cheaply.
@@ -486,14 +486,7 @@ class UsageStore:
     def _connect(self) -> sqlite3.Connection:
         path = self.path
         initialized = self._initialized_path == path and path.exists()
-        if not initialized:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            os.chmod(path.parent, 0o700)
-            if not path.exists():
-                path.touch(mode=0o600)
-            os.chmod(path, 0o600)
-        conn = private_deletes(sqlite3.connect(path, timeout=5))
-        conn.row_factory = sqlite3.Row
+        conn = open_private_db(path, prepare=not initialized)
         if not initialized:
             conn.executescript(_SCHEMA)
             if conn.execute("PRAGMA user_version").fetchone()[0] < _LABEL_VERSION:

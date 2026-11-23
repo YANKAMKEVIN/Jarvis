@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from jarvis.storage_privacy import private_deletes, checkpoint_erasure
+from jarvis.storage_privacy import checkpoint_erasure, open_private_db
 import time
 from contextlib import closing
 from pathlib import Path
@@ -102,13 +102,6 @@ class ContextStore:
 
     def _connect(self) -> sqlite3.Connection:
         path = self.path
-        existed = path.exists()
-        if not existed:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            os.chmod(path.parent, 0o700)
-            path.touch(mode=0o600)
-            os.chmod(path, 0o600)
-        conn = private_deletes(sqlite3.connect(path, timeout=5))
-        conn.row_factory = sqlite3.Row
+        conn = open_private_db(path, prepare=not path.exists())
         conn.executescript(_SCHEMA)
         return conn

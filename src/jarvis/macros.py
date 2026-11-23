@@ -14,7 +14,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 from typing import Any, Callable
-from jarvis.storage_privacy import private_deletes
+from jarvis.storage_privacy import open_private_db
 
 
 MAX_NAME_LENGTH = 80
@@ -105,16 +105,6 @@ class MacroStore:
 
     def _connect(self) -> sqlite3.Connection:
         path = self.path
-        if not (path.exists()):
-            path.parent.mkdir(parents=True, exist_ok=True)
-            os.chmod(path.parent, 0o700)
-            path.touch(mode=0o600)
-            os.chmod(path, 0o600)
-            conn = private_deletes(sqlite3.connect(path, timeout=5))
-            conn.row_factory = sqlite3.Row
-            conn.executescript(_SCHEMA)
-            return conn
-        conn = private_deletes(sqlite3.connect(path, timeout=5))
-        conn.row_factory = sqlite3.Row
+        conn = open_private_db(path, prepare=not path.exists())
         conn.executescript(_SCHEMA)
         return conn

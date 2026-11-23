@@ -1,7 +1,7 @@
 """Small persistent checklists. IDs are explicit; SQL values are parameterized."""
 import os
 import sqlite3
-from jarvis.storage_privacy import private_deletes, checkpoint_erasure
+from jarvis.storage_privacy import checkpoint_erasure, open_private_db
 from contextlib import closing
 from pathlib import Path
 from jarvis.capabilities.results import ToolResult
@@ -14,10 +14,7 @@ class ChecklistsCapability:
         self.path = Path(path).expanduser() if path else Path.home() / 'Library/Application Support/Jarvis/checklists.db'
 
     def _connect(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = private_deletes(sqlite3.connect(self.path, timeout=5))
-        os.chmod(self.path, 0o600)
-        connection.row_factory = sqlite3.Row
+        connection = open_private_db(self.path)
         connection.execute('PRAGMA foreign_keys=ON')
         connection.executescript('CREATE TABLE IF NOT EXISTS lists(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL);'
                                  'CREATE TABLE IF NOT EXISTS items(id INTEGER PRIMARY KEY AUTOINCREMENT,list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,text TEXT NOT NULL,done INTEGER NOT NULL DEFAULT 0);')
