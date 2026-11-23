@@ -1231,6 +1231,7 @@ class DesktopWindow(QMainWindow):
             look.addWidget(button("Apparence de Jarvis…", shell.show_appearances))
             look.addWidget(button("Jarvis au quotidien…", lambda: shell.experience.open()))
             look.addWidget(button("Configurer les routines vocales…", shell.show_routines))
+            look.addWidget(button("Serveurs MCP…", shell.show_mcp))
 
             privacy = section("CONFIDENTIALITÉ", settings_layout)
             privacy.addWidget(label("Cette interface n’affiche et n’enregistre aucun texte de transcription."))
@@ -1609,6 +1610,13 @@ class DesktopShell:
         self.controller.selected_voice = self.voice_preferences.load(self.controller.appearance)
         self.controller.appearance_changed.emit(self.controller.appearance)
         self.controller.changed.emit()
+
+    def show_mcp(self):
+        from jarvis.desktop.mcp_dialog import MCPDialog
+        if getattr(self, 'mcp_dialog', None) is not None:
+            self.mcp_dialog.close();self.mcp_dialog.deleteLater()
+        self.mcp_dialog = MCPDialog(self.visible_window())
+        self.mcp_dialog.show()
 
     def show_routines(self):
         from jarvis.desktop.routines import RoutineDialog

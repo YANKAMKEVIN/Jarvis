@@ -54,6 +54,15 @@ de Jarvis. Quand l'app est lancée depuis le Finder, son `PATH` est minimal : Ja
 cherche alors `npx` et `uvx` aussi dans `/opt/homebrew/bin`, `/usr/local/bin` et
 `~/.local/bin`.
 
+### Depuis l'interface
+
+**Réglages → Serveurs MCP…** liste les serveurs du fichier, les teste (connexion et
+liste des outils), coche les outils pré-approuvés (`autoApprove`), désactive, ajoute
+(commande ou URL) ou retire un serveur. Les valeurs de `env` et `headers` ne sont jamais
+affichées : seuls leurs noms le sont. Chaque enregistrement est validé comme au
+démarrage, puis écrit d'un coup en `0600` ; les autres clés du fichier sont gardées.
+Les changements valent pour la session vocale suivante.
+
 ## Ajouter une skill
 
 Créer un dossier dans `~/Library/Application Support/Jarvis/skills/` (ou dans un
@@ -118,7 +127,6 @@ Les missions (`run_task`) disposent des mêmes outils, avec les mêmes confirmat
   *sampling*, ni OAuth (un jeton passe par `headers` ou `env`).
 - Les skills ajoutées pendant une session apparaissent dans `list_skills`, mais la
   description de `use_skill` n'est mise à jour qu'à la session suivante.
-- Pas encore d'éditeur de `mcp.json` dans l'interface desktop.
 
 ## Tests
 
