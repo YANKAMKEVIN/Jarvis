@@ -9,6 +9,7 @@ cancelled between steps.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 import time
@@ -70,6 +71,14 @@ PLANNER_TOOL_NAMES = (
 DEFAULT_MAX_STEPS = 25
 DEFAULT_MAX_SECONDS = 180.0
 DEFAULT_MAX_CONSECUTIVE_FAILURES = 3
+# One stuck tool (an osascript taking 11 s instead of 0.1 s on a swapping Mac)
+# must not eat the whole mission: each call has its own limit, counted as a
+# failed step. Slow-by-design tools (web, documents) get more.
+DEFAULT_STEP_TIMEOUT = 45.0
+SLOW_TOOL_TIMEOUTS = {
+    "web_answer": 150.0, "compare_documents": 150.0, "extract_document_actions": 150.0,
+    "send_prompt_to_app": 90.0, "browse_open_url": 60.0, "browse_search_web": 60.0,
+}
 # Keeps several steps inside a small local context window.
 MAX_TOOL_RESULT_CHARS = 1200
 
@@ -157,6 +166,8 @@ class PlannerEngine:
         max_consecutive_failures: int = DEFAULT_MAX_CONSECUTIVE_FAILURES,
         clock: Callable[[], float] | None = None,
         system_prompt: str = PLANNER_SYSTEM_PROMPT,
+        step_timeout: float = DEFAULT_STEP_TIMEOUT,
+        tool_timeouts: dict[str, float] | None = None,
     ):
         self.model = model
         allowed_set = set(allowed)
@@ -174,6 +185,8 @@ class PlannerEngine:
         self.max_consecutive_failures = max(1, int(max_consecutive_failures))
         self.clock = clock if clock is not None else time.monotonic
         self.system_prompt = system_prompt
+        self.step_timeout = float(step_timeout)
+        self.tool_timeouts = dict(SLOW_TOOL_TIMEOUTS if tool_timeouts is None else tool_timeouts)
         self.on_action = None
 
     async def run(
@@ -327,8 +340,16 @@ class PlannerEngine:
                 "error_code": "invalid_arguments",
                 "message": "Les arguments ne sont pas du JSON valide.",
             }
+        limit = self.tool_timeouts.get(call.name, self.step_timeout)
         try:
-            result = await tool(**call.arguments)
+            result = await asyncio.wait_for(tool(**call.arguments), limit)
+        except asyncio.TimeoutError:
+            return {
+                "ok": False,
+                "error_code": "tool_timeout",
+                "message": (f"{call.name} n'a pas repondu en {limit:g} s : etape comptee comme un echec, "
+                            "son effet est inconnu. Verifie l'etat avant de continuer."),
+            }
         except TypeError as error:
             return {
                 "ok": False,
