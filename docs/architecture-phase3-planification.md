@@ -193,3 +193,8 @@ remontent. Ça te va ?
 actions réversibles et met en pause uniquement sur les actions sortantes
 (messages) — c'est ma proposition. Tu préfères qu'il annonce son plan et
 attende ton feu vert avant de commencer ?
+
+   *Option disponible (23/11)* : `JARVIS_PLAN_FIRST=1` fait annoncer le plan
+   (3 à 7 étapes, rien n'est exécuté) ; la mission ne démarre qu'après un oui
+   (`confirm_action`) ou le bouton **Confirmer** de la carte. Désactivée par
+   défaut ; les recherches en lecture seule (`read_only`) ne l'attendent jamais.

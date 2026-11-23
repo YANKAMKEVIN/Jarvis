@@ -9,6 +9,34 @@ from jarvis.live.config import debug_live
 from jarvis.macros import MacroError
 from livekit.agents import function_tool
 import asyncio
+import os
+
+PLAN_PROMPT = (
+    "Tu prepares une mission pour Jarvis, sur le Mac de l'utilisateur. Ecris seulement le plan : "
+    "3 a 7 etapes numerotees, courtes, en francais, sans rien executer et sans inventer de resultat. "
+    "Signale les etapes qui envoient ou modifient quelque chose."
+)
+MAX_PLAN_CHARS = 900
+
+
+def plan_first_enabled(registry) -> bool:
+    """Option « montre-moi le plan avant d'agir » (JARVIS_PLAN_FIRST=1, off by default)."""
+    value = getattr(registry, "plan_first", None)
+    if value is None:
+        value = os.environ.get("JARVIS_PLAN_FIRST", "").strip().lower() in {"1", "true", "oui", "yes"}
+    return bool(value)
+
+
+async def preview_plan(registry, goal: str) -> str:
+    from jarvis.planner.models import build_planner_model
+    model = registry.planner_model or build_planner_model()
+    try:
+        turn = await asyncio.to_thread(model.complete, [
+            {"role": "system", "content": PLAN_PROMPT}, {"role": "user", "content": goal.strip()}], [])
+        plan = (turn.text or "").strip()
+    except Exception as error:  # noqa: BLE001 - the user still decides, with the reason shown
+        plan = f"(plan indisponible : {getattr(error, 'message', type(error).__name__)})"
+    return (plan or "(le planificateur n'a pas propose de plan)")[:MAX_PLAN_CHARS]
 
 
 def missions_tools(self) -> dict:
@@ -34,7 +62,31 @@ def missions_tools(self) -> dict:
             tool="run_task",
             goal_length=len(goal) if isinstance(goal, str) else None,
         )
-        return self.tasks.start(goal, read_only=read_only, after_id=after_id)
+        if read_only or not plan_first_enabled(self) or not isinstance(goal, str) or not goal.strip():
+            return self.tasks.start(goal, read_only=read_only, after_id=after_id)
+        # Plan first: nothing runs before a « oui » (or the card's Confirmer).
+        plan = await preview_plan(self, goal)
+        loop = asyncio.get_running_loop()
+
+        def _executor():
+            async def start():
+                return self.tasks.start(goal, read_only=read_only, after_id=after_id)
+            # confirm_action runs executors in a worker thread; missions live on the loop.
+            started = asyncio.run_coroutine_threadsafe(start(), loop).result(timeout=15)
+            if started.get("ok"):
+                return ToolResult.success("run_task", started.get("message", "Mission lancée."),
+                                          **{k: v for k, v in started.items() if k not in {"ok", "message"}})
+            return ToolResult.failure("run_task", started.get("message", "Mission non lancée."),
+                                      started.get("error_code", "task_not_started"))
+
+        async with self.confirmation_lock:
+            token = self.pending_actions.register("run_task", _executor)
+        return ToolResult.success(
+            "run_task",
+            "Plan à valider avant d'agir. Lis-le brièvement à l'utilisateur, puis lance la mission "
+            "avec confirm_action seulement sur un oui clair (ou son clic sur Confirmer) ; sinon cancel_action.",
+            requires_confirmation=True, token=token, plan=plan,
+        ).to_livekit_dict()
 
     @function_tool(
         name="task_status",

@@ -319,7 +319,7 @@ PENDING_LABELS = {
     'create_calendar_event': 'Créer l’événement d’agenda', 'open_file': 'Ouvrir le fichier demandé',
     'remember_inferred': 'Enregistrer le souvenir proposé', 'clear_personal_data': 'Effacer les données demandées',
     'call_mcp_tool': 'Lancer l’outil d’extension', 'run_claude_task': 'Lancer la tâche Claude',
-    'open_claude_session': 'Ouvrir la session Claude',
+    'open_claude_session': 'Ouvrir la session Claude', 'run_task': 'Lancer la mission selon le plan annoncé',
 }
 
 
