@@ -13,6 +13,7 @@ import sqlite3
 import time
 from pathlib import Path
 from typing import Any, Callable
+from jarvis.storage_privacy import private_deletes
 
 METRICS_RETENTION_SECONDS = 14 * 24 * 3600
 
@@ -147,7 +148,7 @@ class MetricsStore:
             if not path.exists():
                 path.touch(mode=0o600)
             os.chmod(path, 0o600)
-        conn = sqlite3.connect(path, timeout=5)
+        conn = private_deletes(sqlite3.connect(path, timeout=5))
         conn.row_factory = sqlite3.Row
         if not initialized:
             conn.executescript(_SCHEMA)

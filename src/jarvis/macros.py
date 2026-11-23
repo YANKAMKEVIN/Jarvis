@@ -14,6 +14,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 from typing import Any, Callable
+from jarvis.storage_privacy import private_deletes
 
 
 MAX_NAME_LENGTH = 80
@@ -109,11 +110,11 @@ class MacroStore:
             os.chmod(path.parent, 0o700)
             path.touch(mode=0o600)
             os.chmod(path, 0o600)
-            conn = sqlite3.connect(path, timeout=5)
+            conn = private_deletes(sqlite3.connect(path, timeout=5))
             conn.row_factory = sqlite3.Row
             conn.executescript(_SCHEMA)
             return conn
-        conn = sqlite3.connect(path, timeout=5)
+        conn = private_deletes(sqlite3.connect(path, timeout=5))
         conn.row_factory = sqlite3.Row
         conn.executescript(_SCHEMA)
         return conn
