@@ -7,8 +7,10 @@ happens on a dedicated thread so capture never blocks.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from array import array
+from pathlib import Path
 from queue import Empty, Full, Queue
 from threading import Event, Lock, Thread
 from time import monotonic
@@ -19,6 +21,15 @@ DEFAULT_THRESHOLD = 0.5
 DEFAULT_IDLE_SECONDS = 45
 REFRACTORY_SECONDS = 2.0
 QUEUE_BLOCKS = 50  # One second of 20 ms capture blocks.
+# SHA-256 of the ONNX files openWakeWord 0.6 downloads from its v0.5.1 GitHub
+# release (computed 2026-11-23). A file that differs is refused: the detector
+# decides when the microphone reaches Gemini. The models are CC BY-NC-SA 4.0,
+# so they are verified, not shipped in this repository.
+MODEL_SHA256 = {
+    "hey_jarvis_v0.1.onnx": "94a13cfe60075b132f6a472e7e462e8123ee70861bc3fb58434a73712ee0d2cb",
+    "melspectrogram.onnx": "ba2b0e0f8b7b875369a2c89cb13360ff53bac436f2895cced9f479fa65eb176f",
+    "embedding_model.onnx": "70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f",
+}
 
 
 class WakeWordUnavailable(Exception):
@@ -86,7 +97,33 @@ class OpenWakeWordEngine:
         self.model.reset()
 
 
-def load_engine(download=True):
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def check_models(directory, expected=None):
+    """Names of missing model files; raises if a present one was modified."""
+    missing = []
+    for name, sha256 in (MODEL_SHA256 if expected is None else expected).items():
+        path = Path(directory) / name
+        if not path.is_file():
+            missing.append(name)
+        elif file_sha256(path) != sha256:
+            raise WakeWordUnavailable(f"Le modèle local « {name} » ne correspond pas à la version vérifiée. "
+                                      "Supprimez-le puis relancez Jarvis avec Internet pour le retélécharger.")
+    return missing
+
+
+def models_directory():
+    import openwakeword
+    return Path(openwakeword.__file__).resolve().parent / "resources" / "models"
+
+
+def load_engine(download=True, directory=None):
     try:
         import numpy
         import openwakeword  # noqa: F401 - availability check
@@ -98,16 +135,26 @@ def load_engine(download=True):
     def build():
         return Model(wakeword_models=[WAKE_MODEL], inference_framework="onnx")
 
-    try:
-        return OpenWakeWordEngine(build(), numpy)
-    except Exception:
-        if not download:
-            raise WakeWordUnavailable("Modèle « hey_jarvis » introuvable. Lancez Jarvis une fois "
-                                      "avec Internet pour le télécharger.") from None
+    directory = directory or models_directory()
+    # Checked before anything is loaded: a modified file never runs.
+    if not check_models(directory):
+        try:
+            return OpenWakeWordEngine(build(), numpy)
+        except Exception:
+            pass
+    if not download:
+        raise WakeWordUnavailable("Modèle « hey_jarvis » introuvable. Lancez Jarvis une fois "
+                                  "avec Internet pour le télécharger.")
     try:
         # Model files only (a few MB from the openWakeWord GitHub release).
         from openwakeword.utils import download_models
-        download_models(model_names=[WAKE_MODEL])
+        download_models(model_names=[WAKE_MODEL], target_directory=str(directory))
+    except Exception:
+        raise WakeWordUnavailable("Le modèle local du mot d’éveil n’a pas pu être chargé. "
+                                  "Vérifiez Internet pour le premier téléchargement, puis réessayez.") from None
+    if check_models(directory):
+        raise WakeWordUnavailable("Téléchargement du modèle du mot d’éveil incomplet. Réessayez avec Internet.")
+    try:
         return OpenWakeWordEngine(build(), numpy)
     except Exception:
         raise WakeWordUnavailable("Le modèle local du mot d’éveil n’a pas pu être chargé. "

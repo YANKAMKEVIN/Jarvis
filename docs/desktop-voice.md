@@ -252,6 +252,10 @@ python -m pip install -e '.[desktop,live,wake]'
 Au premier démarrage du mode, openWakeWord télécharge ses modèles (quelques Mo,
 depuis la page des versions GitHub d’openWakeWord). Ce téléchargement porte sur
 des fichiers de modèle, jamais sur de l’audio. Ensuite tout fonctionne hors ligne.
+Les trois fichiers ONNX (`hey_jarvis_v0.1`, `melspectrogram`, `embedding_model`) sont
+vérifiés par empreinte SHA-256 (`MODEL_SHA256` dans `desktop/wake_word.py`) avant
+chaque chargement : un fichier modifié est refusé et le mot d’éveil reste fermé. Les
+modèles sont sous licence CC BY-NC-SA 4.0 : ils ne sont pas copiés dans le dépôt.
 
 ### Fonctionnement
 
