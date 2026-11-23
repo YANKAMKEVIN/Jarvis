@@ -1254,7 +1254,7 @@ class DesktopWindow(QMainWindow):
             self.privacy_details.hide()
             privacy.addWidget(self.privacy_details)
             from jarvis.version import jarvis_version
-            self.version_label = label(f"Jarvis {jarvis_version()}", "eyebrow")
+            self.version_label = label(f"Version {jarvis_version()}", "eyebrow")
             self.version_label.setAccessibleName(f"Version de Jarvis : {jarvis_version()}")
             settings_layout.addWidget(self.version_label)
             settings_layout.addStretch()
