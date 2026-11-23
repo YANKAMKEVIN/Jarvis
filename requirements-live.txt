@@ -1,10 +1,13 @@
-livekit-agents[google]~=1.5
+# The dependency list lives in pyproject.toml; this file only mirrors it for
+# `pip install -r requirements-live.txt` (run from the repository root).
+# Prefer: pip install -e '.[desktop,live]'
+-e .[live]
+
+# Optional: PDF text extraction for ask_about_document (same range as the
+# desktop extra). Without it, PDFs report pdf_unsupported.
+pypdf>=6,<7
 
 # Optional: native, fast calendar reads via EventKit. Jarvis degrades to the
 # AppleScript reader if absent. Calendar access (TCC) only prompts from a
 # packaged .app with NSCalendarsUsageDescription, not a bare interpreter.
-pyobjc-framework-EventKit>=10.0
-
-# Optional: PDF text extraction for ask_about_document. Without it, PDFs report
-# pdf_unsupported and text files still work.
-pypdf>=4.0
+pyobjc-framework-EventKit>=11,<13; sys_platform == 'darwin'

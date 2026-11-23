@@ -175,11 +175,13 @@ Python 3.13+ requis.
 ```bash
 python3.13 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-live.txt   # uniquement pour le POC Live
+pip install -e '.[desktop,live]'   # fenêtre desktop + vocal Gemini Live
 ```
 
-> Le paquet n'est pas installé en editable ; les commandes ci-dessous utilisent
-> `PYTHONPATH=src`. Vous pouvez aussi `pip install -e .`.
+Les dépendances sont définies dans `pyproject.toml` (extras `desktop`, `live`,
+`mcp`, `wake`, `test`…). `requirements-live.txt` et `requirements-desktop.txt`
+ne font que pointer vers ces extras. Les commandes ci-dessous utilisent
+`PYTHONPATH=src`, qui marche aussi sans installation editable.
 
 **Autorisation macOS** : accordez l'accès **Accessibilité** au terminal (ou à
 l'app qui lance Jarvis) dans *Réglages Système → Confidentialité et sécurité →
