@@ -204,10 +204,14 @@ class VoiceMode:
                 self._speak("Action annulée.")
                 return
 
-            result = self.executor.execute(
-                command,
-                confirmed=True,
-            )
+            intent = getattr(result, "intent", None)
+
+            if intent is None:
+                self._speak("Action annulée.")
+                return
+
+            # Exact previewed intent: the model does not reread the sentence.
+            result = self.executor.execute_intent(intent, confirmed=True)
 
         # Reponse finale.
         self._speak(result.message)

@@ -3,6 +3,34 @@ from datetime import datetime
 from jarvis.executor import CommandExecutor
 
 
+CONFIRMATION_PROMPT = (
+    "Jarvis > Cette action necessite votre confirmation. "
+    "Continuer ? (oui/non) "
+)
+
+
+def respond(executor, command: str, ask=input) -> str:
+    """One REPL turn: run the command, ask for confirmation if needed.
+
+    After a "oui", the exact previewed intent is executed: the model never
+    reads the sentence again, so it cannot pick another action.
+    """
+    result = executor.execute(command)
+
+    if result.needs_confirmation:
+        confirmation = ask(CONFIRMATION_PROMPT).strip().lower()
+
+        if confirmation not in {"oui", "o", "yes", "y"}:
+            return "Action annulee."
+
+        if result.intent is None:
+            return "Action annulee : aucune action precise a confirmer."
+
+        result = executor.execute_intent(result.intent, confirmed=True)
+
+    return result.message
+
+
 def start_jarvis():
     print()
     print("=" * 45)
@@ -32,24 +60,8 @@ def start_jarvis():
             continue
 
         try:
-            result = executor.execute(command)
-
-            if result.needs_confirmation:
-                confirmation = input(
-                    "Jarvis > Cette action necessite votre confirmation. "
-                    "Continuer ? (oui/non) "
-                ).strip().lower()
-
-                if confirmation not in {"oui", "o", "yes", "y"}:
-                    print("Jarvis > Action annulee.")
-                    continue
-
-                result = executor.execute(
-                    command,
-                    confirmed=True,
-                )
-
-            print(f"\nJarvis > {result.message}\n")
+            message = respond(executor, command)
+            print(f"\nJarvis > {message}\n")
 
         except Exception as error:
             print()
