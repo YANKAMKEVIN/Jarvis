@@ -1,16 +1,32 @@
 # Jarvis
 
-Assistant personnel **local** pour macOS. Jarvis comprend des demandes en
-langage naturel et les traduit en actions réelles sur la machine (applications,
-fenêtres, fichiers, clavier, souris, presse-papiers, son, média…), via une
-couche d'accessibilité native et un ensemble de *capabilities* composables.
+Assistant personnel **local** pour macOS, à qui l'on parle : **Jarvis Desktop**
+(`jarvis-desktop`) ouvre une fenêtre avec un avatar, se connecte à **Gemini
+Live** et agit réellement sur le Mac (applications, fenêtres, fichiers,
+clavier, souris, presse-papiers, son, média…) à travers plus de 140 *tools* vérifiés,
+avec confirmation avant tout envoi.
 
-Il inclut un POC temps réel **Gemini Live + LiveKit**, isolé du mode texte et du
-mode vocal, qui expose ces mêmes capacités comme *tools* à un modèle conversant.
+![Jarvis Desktop : l'assistant, une mission en cours à côté de l'avatar](docs/screenshots/assistant-mission.png)
 
-- **Langage** : Python ≥ 3.13
-- **Plateforme** : macOS (API Accessibility / ApplicationServices)
-- **État** : 0.9.0 — en développement actif
+- **Missions** : une demande longue devient un plan exécuté en arrière-plan
+  (planificateur local Ollama ou Gemini), suivi étape par étape à l'écran.
+- **Rappels et messages programmés** : notifications macOS et envois
+  WhatsApp / Telegram à l'heure dite, après votre accord.
+- **Mémoire locale** : préférences, personnes et contexte dans une base
+  privée (SQLite lisible par votre seul compte, effacement sûr).
+- **Extensions** : serveurs **MCP** et *skills* locales, en lecture ou après
+  confirmation ; mode sécurité (lecture seule) à la voix.
+- **Python ≥ 3.13**, macOS (API Accessibility / ApplicationServices) ;
+  version **0.9.0**, en développement actif.
+
+| Mode | Lancement | Pour quoi faire |
+|---|---|---|
+| **Desktop** (principal) | `jarvis-desktop` | Voix Gemini Live, avatar, cartes, missions, champ texte |
+| Démonstration | `jarvis-desktop --demo` | Découvrir l'interface sans micro ni action réelle |
+| Texte avec outils | `python -m jarvis.main --outils` | Tous les tools au clavier, via le planificateur |
+| Texte simple | `python -m jarvis.main` | REPL historique, une quarantaine d'actions |
+| Vocal local | `python -m jarvis.voice_mode` | Mot d'activation et voix sans Gemini Live |
+| Agent LiveKit | `python -m jarvis.live.agent` | Même cerveau Live, piloté par la CLI LiveKit |
 
 ---
 
@@ -21,7 +37,8 @@ mode vocal, qui expose ces mêmes capacités comme *tools* à un modèle convers
 - [Les trois modes d'exécution](#les-trois-modes-dexécution)
 - [Installation](#installation)
 - [Lancer Jarvis](#lancer-jarvis)
-- [Le POC Gemini Live](#le-poc-gemini-live)
+- [Gemini Live sans la fenêtre](#gemini-live-sans-la-fenêtre-agent-livekit)
+- [Interface de bureau](#interface-de-bureau-première-version)
 - [Tests](#tests)
 - [Diagnostic Accessibility](#diagnostic-accessibility)
 - [Principes de conception](#principes-de-conception)
@@ -47,7 +64,8 @@ src/jarvis/
 ├── knowledge/         # Recherche externe (SearXNG) + benchmark
 ├── memory/            # Mémoire durable locale (SQLite + FTS5, filtre à secrets)
 ├── planner/           # Planification : tâches longues en arrière-plan (Ollama local)
-└── live/              # POC Gemini Live + LiveKit (isolé)
+├── desktop/           # Jarvis Desktop (PySide6) : fenêtre, avatar, cartes
+└── live/              # Gemini Live : registre des tools (tools_*.py), prompts
 ```
 
 Deux niveaux séparent clairement l'intention et l'exécution :
@@ -165,8 +183,9 @@ En mode Live : tools `remember`, `propose_memory`, `recall`, `list_memories`,
    sensibles, et exécute.
 2. **Vocal** (`voice_mode.py`) — écoute un mot d'activation puis traite la
    commande parlée.
-3. **Live** (`live/`) — POC Gemini Live + LiveKit : un modèle temps réel
-   converse et appelle les capacités exposées comme *tools*.
+3. **Live** (`live/`) — Gemini Live : un modèle temps réel converse et appelle
+   les capacités exposées comme *tools*. C'est le cœur de Jarvis Desktop ;
+   `jarvis.live.agent` le lance aussi seul, par la CLI LiveKit.
 
 ## Installation
 
@@ -208,7 +227,7 @@ Mode vocal :
 PYTHONPATH=src .venv/bin/python -m jarvis.voice_mode
 ```
 
-## Le POC Gemini Live
+## Gemini Live sans la fenêtre (agent LiveKit)
 
 Variables d'environnement requises :
 
