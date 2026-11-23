@@ -51,7 +51,7 @@ and loaded from that target. All 16 packaged WebPs decoded across six states
 Real Qt widget captures are in [screenshots/avatars](screenshots/avatars/):
 NovaBot, selector, Kitsune, Aura Light, two missions, compact and floating modes.
 These are offscreen renders of the application in demo mode, not concepts or
-composited mockups. The GIF contains 60 captured application frames, with
+composited mockups. The animated WebP (demo-animation.webp) contains 60 captured application frames, with
 simulated state/audio events and no microphone capture. Static screenshots use
 reduced motion. Reproduce them with:
 
@@ -111,7 +111,7 @@ exactly neutral transform and omits decorative animation layers.
 | Arc Reactor | Audio pulse and segmented charge crown |
 
 The comparison [PNG](screenshots/avatars/distinct-motion.png) and
-[GIF](screenshots/avatars/distinct-motion.gif) capture the actual Qt avatar
+[animated WebP](screenshots/avatars/distinct-motion.webp) capture the actual Qt avatar
 widgets in a gallery. Listening, thinking, speaking and audio levels are
 simulated; no microphone or model is started. Capture the PNG frames with:
 
@@ -143,8 +143,8 @@ stop their timer. State and audio continue to come from the same controller in
 all three modes. Character choreography and voice/session logic are unchanged.
 
 The new [idle PNG](screenshots/avatars/abstract-idle.png) and
-[interaction GIF](screenshots/avatars/abstract-life.gif) capture real Qt widgets;
-the GIF covers idle, listening, thinking, speaking, success and error, with
+[interaction WebP](screenshots/avatars/abstract-life.webp) capture real Qt widgets;
+the animation covers idle, listening, thinking, speaking, success and error, with
 simulated events/audio and no microphone. Reproduce raw frames with:
 
 ```sh

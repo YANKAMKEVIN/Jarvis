@@ -45,4 +45,4 @@ Le 22 octobre 2026 : 59 tests ciblés, 14 tests de l’interface macOS native et
 
 Aperçu du mode articulé, capturé directement depuis Qt :
 
-![Danse du compagnon articulé](screenshots/twenty/articulated-dance.gif)
+![Danse du compagnon articulé](screenshots/twenty/articulated-dance.webp)

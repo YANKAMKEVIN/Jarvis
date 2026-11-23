@@ -206,11 +206,11 @@ compagnon, changer son apparence ou ses préférences interrompt la danse. Les
 animations réduites et les apparences abstraites désactivent cette commande.
 Les missions déléguées ne disposent pas de cet outil de présentation.
 
-![Danse 2D : véritable capture Qt, sans micro](screenshots/experience/avatar-dance.gif)
+![Danse 2D : véritable capture Qt, sans micro](screenshots/experience/avatar-dance.webp)
 
 `QT_QPA_PLATFORM=offscreen python scripts/capture_avatar_dance.py` produit les
 81 images PNG de cet aperçu dans un dossier temporaire affiché en sortie. Elles
-peuvent être assemblées en GIF avec Pillow, sans dépendance supplémentaire pour
+peuvent être assemblées en WebP animé avec Pillow (`save_all=True`, qualité 60 à 80), sans dépendance supplémentaire pour
 l'application. `tests/test_desktop_dance.py` vérifie les limites, l'arrêt, le
 retour, la persistance, la conservation des missions et les refus ; le test du
 runtime vérifie le branchement et le nettoyage de la commande vocale sans appel
