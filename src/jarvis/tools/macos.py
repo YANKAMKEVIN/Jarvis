@@ -7,6 +7,7 @@ import urllib.parse
 import webbrowser
 from ctypes import util
 from datetime import datetime
+from jarvis.tools.applescript import escape_applescript
 
 
 SUPPORTED_MEDIA_APPS = ("Music", "Spotify")
@@ -43,7 +44,7 @@ class MacOSTools:
         if not app_name or not app_name.strip():
             raise ValueError("Nom d'application manquant.")
 
-        safe_name = app_name.replace("\\", "\\\\").replace('"', '\\"')
+        safe_name = escape_applescript(app_name)
         script = f'tell application "{safe_name}" to quit'
 
         result = subprocess.run(
@@ -63,7 +64,7 @@ class MacOSTools:
         if not app_name or not app_name.strip():
             raise ValueError("Nom d'application manquant.")
 
-        safe_name = app_name.replace("\\", "\\\\").replace('"', '\\"')
+        safe_name = escape_applescript(app_name)
         script = f'application "{safe_name}" is running'
 
         result = subprocess.run(
@@ -1348,7 +1349,7 @@ class MacOSTools:
 
     @staticmethod
     def _escape_applescript(value: str) -> str:
-        return value.replace("\\", "\\\\").replace('"', '\\"')
+        return escape_applescript(value)
 
     @staticmethod
     def _run_osascript(script: str):

@@ -5,6 +5,7 @@ import subprocess
 import time
 from typing import Any, Callable
 from urllib.parse import quote_plus, urlparse
+from jarvis.tools.applescript import escape_applescript
 
 
 SUPPORTED_BROWSERS = ("Safari", "Google Chrome")
@@ -496,7 +497,7 @@ class BrowserTools:
 
     @staticmethod
     def _escape(value: str) -> str:
-        return value.replace("\\", "\\\\").replace('"', '\\"')
+        return escape_applescript(value)
 
     @staticmethod
     def _default_runner(script: str) -> tuple[int, str, str]:

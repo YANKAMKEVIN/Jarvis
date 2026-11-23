@@ -4,6 +4,7 @@ import subprocess
 import unicodedata
 from dataclasses import dataclass
 from typing import Any, Callable
+from jarvis.tools.applescript import quote_applescript
 
 
 MAX_TYPE_TEXT_CHARS = 1000
@@ -442,8 +443,7 @@ class KeyboardTools:
 
     @staticmethod
     def _applescript_string(value: str) -> str:
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{escaped}"'
+        return quote_applescript(value)
 
     @staticmethod
     def _error_code_from_output(output: str) -> str:

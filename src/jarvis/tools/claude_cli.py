@@ -12,6 +12,7 @@ import shlex
 import shutil
 import subprocess
 from typing import Callable
+from jarvis.tools.applescript import quote_applescript
 
 
 class ClaudeCliError(Exception):
@@ -94,4 +95,4 @@ class ClaudeCli:
 
 def _osa_quote(text: str) -> str:
     """Quote a string as an AppleScript string literal."""
-    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return quote_applescript(text)
