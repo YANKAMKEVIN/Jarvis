@@ -157,6 +157,7 @@ class MissionPanel(QFrame):
         layout.addWidget(self.guidance)
         self.summary = QPushButton()
         self.summary.setObjectName('missionSummary')
+        self.summary.setAccessibleName('Bilan de la mission · ouvrir les détails')
         self.summary.clicked.connect(self.open_details)
         layout.addWidget(self.summary)
         buttons = QHBoxLayout()

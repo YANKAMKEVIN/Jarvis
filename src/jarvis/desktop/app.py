@@ -151,6 +151,7 @@ class PeekCard(QFrame):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.setToolTip('Ouvrir cette carte')
+        self.setAccessibleName('Dernière carte · ouvrir les cartes')
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 10, 16, 11)
         layout.setSpacing(3)
