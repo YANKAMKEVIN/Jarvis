@@ -11,6 +11,16 @@ import subprocess
 import sys
 
 
+def app_version() -> str:
+    """The version written once in pyproject.toml (installed metadata first)."""
+    try:
+        from jarvis.version import jarvis_version
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+        from jarvis.version import jarvis_version
+    return jarvis_version()
+
+
 def build_app(destination: Path, python: Path, source: Path, demo=False, update=False) -> Path:
     destination = destination.expanduser()
     if destination.is_symlink():
@@ -42,7 +52,7 @@ def build_app(destination: Path, python: Path, source: Path, demo=False, update=
             "CFBundleName": "Jarvis",
             "CFBundleDisplayName": "Jarvis",
             "CFBundlePackageType": "APPL",
-            "CFBundleShortVersionString": "0.9.0",
+            "CFBundleShortVersionString": app_version(),
             "NSHighResolutionCapable": True,
             # Menu-bar / orb companion: no Dock icon.
             "LSUIElement": True,

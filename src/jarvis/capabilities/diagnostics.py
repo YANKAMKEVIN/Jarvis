@@ -40,9 +40,12 @@ class DiagnosticsCapability:
         else:
             message = f"Tout est operationnel ({len(available)} verifications OK)."
 
+        from jarvis.version import jarvis_version
+
         return ToolResult.success(
             action="self_check",
-            message=message,
+            message=f"Jarvis {jarvis_version()}. " + message,
+            version=jarvis_version(),
             checks=results,
             available=available,
             missing=missing,

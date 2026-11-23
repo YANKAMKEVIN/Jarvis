@@ -1244,7 +1244,7 @@ class DesktopWindow(QMainWindow):
             details.setSpacing(10)
             for title, body in (
                     ("VOTRE VOIX, VOTRE COMMANDE",
-                     "Gemini Live écoute uniquement après activation. Les confirmations des outils restent vocales."),
+                     "Gemini Live écoute uniquement après activation. Les actions préparées se confirment à la voix ou d’un clic sur Confirmer."),
                     ("ÉCOUTE ET RÉPONSE",
                      "L’écoute est suspendue pendant la lecture de la voix de Jarvis pour éviter qu’il se réponde à lui-même. Appuyez sur Échap ou cliquez sur Interrompre pour reprendre la parole."),
                     ("SESSION ET OUTILS",
@@ -1253,6 +1253,10 @@ class DesktopWindow(QMainWindow):
                 details.addWidget(label(body, "subtitle"))
             self.privacy_details.hide()
             privacy.addWidget(self.privacy_details)
+            from jarvis.version import jarvis_version
+            self.version_label = label(f"Jarvis {jarvis_version()}", "eyebrow")
+            self.version_label.setAccessibleName(f"Version de Jarvis : {jarvis_version()}")
+            settings_layout.addWidget(self.version_label)
             settings_layout.addStretch()
             settings_scroll = QScrollArea()
             settings_scroll.setWidgetResizable(True)

@@ -21,13 +21,16 @@ ICNS_ENTRIES = (
 
 def render_png(svg_path: Path, size: int) -> bytes:
     from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt
-    from PySide6.QtGui import QGuiApplication, QImage, QPainter
+    from PySide6.QtGui import QImage, QPainter
     from PySide6.QtSvg import QSvgRenderer
+    from PySide6.QtWidgets import QApplication
 
-    if QGuiApplication.instance() is None:
+    if QApplication.instance() is None:
         import os
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-        render_png.app = QGuiApplication([])  # kept alive for later renders
+        # A full QApplication (not QGuiApplication): widgets created later in
+        # the same process still work.
+        render_png.app = QApplication([])
     renderer = QSvgRenderer(str(svg_path))
     if not renderer.isValid():
         raise ValueError(f"SVG illisible : {svg_path}")
