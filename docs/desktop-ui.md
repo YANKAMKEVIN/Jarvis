@@ -40,6 +40,10 @@ Les modes terminal existants restent indépendants.
   **Confirmer** et **Annuler**. Le clic vaut accord explicite (il compte comme un
   tour de l’utilisateur) et ne vise que le jeton de cette action ; le jeton
   n’est jamais affiché.
+- Une ligne **Écrire à Jarvis…** apparaît sous les commandes pendant une session :
+  Entrée envoie le texte à la session Gemini Live (2 000 caractères au plus),
+  comme une phrase prononcée. Il compte comme un tour de l’utilisateur et n’est
+  ni affiché ni conservé par la fenêtre. La démonstration n’a pas de champ texte.
 - L’onglet Activité suit les actions et les étapes du planificateur, jamais le
   contenu des phrases prononcées. Les cartes présentent seulement certains
   résultats structurés, sans recréer un fil de conversation.

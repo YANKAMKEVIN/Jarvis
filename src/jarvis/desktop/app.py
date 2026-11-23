@@ -11,7 +11,7 @@ from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPoint, QPropertyAnima
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QBoxLayout, QCheckBox, QFrame, QHBoxLayout, QLabel, QMainWindow,
-    QGraphicsOpacityEffect, QPushButton, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
+    QGraphicsOpacityEffect, QLineEdit, QPushButton, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
 from jarvis.desktop.audio_settings import AudioSettings
@@ -373,6 +373,18 @@ class Controller(QObject):
             self.tool_notice = "Annulation non transmise : file pleine ou session arrêtée. Réessayez."
             self.changed.emit()
         return accepted
+
+    def send_text(self, text):
+        """Typed message for the Live session, for places where one cannot speak."""
+        worker = self.voice_worker
+        if self.demo or worker is None or not hasattr(worker, 'send_text'):
+            return False
+        accepted = worker.send_text(text)
+        if accepted is False:
+            self.request_status = 'Message non envoyé : texte vide, trop long ou file pleine.'
+            self.tool_notice = self.request_status;self.tool_timer.start()
+        self.changed.emit()
+        return accepted is not False
 
     def resolve_pending(self, token, confirm):
         """Card buttons: a click confirms or cancels exactly this prepared action."""
@@ -826,6 +838,17 @@ class VoicePanel(QWidget):
         self.interrupt_button.setToolTip("Couper la réponse orale pour reprendre la parole (touche Échap). Les actions système déjà lancées peuvent continuer.")
         controls.addWidget(self.interrupt_button)
         layout.addWidget(self.controls)
+        # Typing replaces the microphone where one cannot speak. The demo keeps
+        # no text input at all: it never reaches a session.
+        self.text_input = None
+        if not controller.demo:
+            self.text_input = QLineEdit()
+            self.text_input.setObjectName('typedMessage')
+            self.text_input.setPlaceholderText('Écrire à Jarvis… (Entrée pour envoyer)')
+            self.text_input.setAccessibleName('Écrire un message à Jarvis')
+            self.text_input.setMaxLength(2000)
+            self.text_input.returnPressed.connect(self.send_typed)
+            layout.addWidget(self.text_input)
         self.voice_notice = label("", "subtitle")
         self.voice_notice.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.voice_notice)
@@ -843,7 +866,7 @@ class VoicePanel(QWidget):
         spacing = self.layout().spacing()
         used = self.appearance_button.sizeHint().height() + 12 + 2 * spacing
         for widget in (self.status, self.hint_area, self.suggestions, self.error_banner, self.pending_card, self.peek,
-                       self.controls, self.voice_notice, self.footnote):
+                       self.controls, *([self.text_input] if self.text_input is not None else []), self.voice_notice, self.footnote):
             if not widget.isHidden():
                 height = widget.heightForWidth(self.width()) if widget.hasHeightForWidth() else -1
                 used += (height if height > 0 else widget.sizeHint().height()) + spacing
@@ -893,6 +916,11 @@ class VoicePanel(QWidget):
             shell.show_settings()
         elif self.controller.voice_worker is None:
             self.controller.start_voice()
+
+    def send_typed(self):
+        text = self.text_input.text().strip() if self.text_input is not None else ''
+        if text and self.controller.send_text(text):
+            self.text_input.clear()
 
     def resolve_pending(self, confirm):
         rows = self.controller.pending_actions
@@ -952,7 +980,7 @@ class VoicePanel(QWidget):
         if c.wake_standby and state == "muted":
             self.status.setText("En veille")
         self.hint.setText("Appuyez sur Échap ou cliquez sur Interrompre pour reprendre la parole." if state == "speaking" else
-                          "Parlez naturellement, vos demandes restent vocales." if active else
+                          "Parlez naturellement, ou écrivez votre demande ci-dessous." if active else
                           "Une question, une idée, une action. Dites-le à Jarvis.")
         if c.wake_standby and state == "muted":
             self.hint.setText("Dites « Jarvis » pour parler.")
@@ -975,6 +1003,9 @@ class VoicePanel(QWidget):
                                   'Arrêt en cours…' if state == 'stopping' else 'Arrêter' if active else
                                   'Reconnecter' if c.can_reconnect else 'Réessayer' if state == 'error' else 'Démarrer Jarvis')
         self.voice_button.setEnabled(not c.demo and c.audio_worker is None and state not in {"starting", "stopping"} and not (state == "error" and active))
+        if self.text_input is not None:
+            self.text_input.setVisible(active)
+            self.text_input.setEnabled(active and state not in {"starting", "stopping", "error"})
         for control in (self.mic_button, self.interrupt_button):
             control.setVisible(active and not (control is self.mic_button and c.ptt_enabled))
             control.setEnabled(active and state not in {"starting", "stopping", "error"})

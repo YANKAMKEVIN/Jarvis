@@ -175,6 +175,7 @@ def create_components(voice=None, long_session=False):
 
 
 ANNOUNCEMENT_MAX_AGE = 120.0
+MAX_TYPED_CHARS = 2000
 ANNOUNCEMENT_GAP = 5.0  # lets the agent state leave "listening" before the next one
 
 
@@ -221,6 +222,7 @@ class LiveRuntime:
         self.closing = False
         self.announcements = Queue(maxsize=32)
         self.routine_requests=Queue(maxsize=10)
+        self.typed_messages = Queue(maxsize=5)
 
     def _admit(self, queue, value):
         if self.stop_requested.is_set() or self.closing:
@@ -237,6 +239,26 @@ class LiveRuntime:
 
     def request_action(self, name, arguments):
         return self._admit(self.desktop_requests, (name, dict(arguments)))
+
+    def send_text(self, text):
+        """Queue a typed message for the Live session (no microphone needed)."""
+        if not isinstance(text, str):
+            return False
+        text = text.strip()
+        if not text or len(text) > MAX_TYPED_CHARS:
+            return False
+        return self._admit(self.typed_messages, text)
+
+    def _deliver_typed(self, session):
+        try:
+            text = self.typed_messages.get_nowait()
+        except Empty:
+            return False
+        # Typing is a user turn, like speaking: it can answer a confirmation.
+        self._note_user_turn(text)
+        self.emit(self.turn_progress.received())
+        session.generate_reply(user_input=text)
+        return True
 
     def resolve_pending(self, token, confirm):
         """Confirm or cancel a prepared action from its card buttons."""
@@ -643,6 +665,8 @@ class LiveRuntime:
                     if not sounds:
                         c.audio.clear_cue()
                 now = asyncio.get_running_loop().time()
+                if self.ready:
+                    self._deliver_typed(c.session)
                 try:routine=self.routine_requests.get_nowait()
                 except Empty:pass
                 else:await self._launch_routine(routine)
