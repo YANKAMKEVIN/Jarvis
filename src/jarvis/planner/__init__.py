@@ -5,6 +5,7 @@ from jarvis.planner.engine import (
     TaskOutcome,
 )
 from jarvis.planner.models import (
+    AnthropicPlannerModel,
     ModelTurn,
     OllamaPlannerModel,
     OpenAIChatPlannerModel,
@@ -16,6 +17,7 @@ from jarvis.planner.models import (
 )
 
 __all__ = [
+    "AnthropicPlannerModel",
     "PLANNER_TOOL_NAMES",
     "ModelTurn",
     "OllamaPlannerModel",

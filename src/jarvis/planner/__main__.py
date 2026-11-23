@@ -24,7 +24,7 @@ from jarvis.planner.models import OllamaPlannerModel, build_planner_model
 def main() -> int:
     parser = argparse.ArgumentParser(description="Lance une tache du planificateur Jarvis.")
     parser.add_argument("goal", help="objectif en langage naturel")
-    parser.add_argument("--backend", choices=("ollama", "gemini"),
+    parser.add_argument("--backend", choices=("ollama", "gemini", "claude"),
                         help="cerveau (defaut : JARVIS_PLANNER_BACKEND ou ollama)")
     parser.add_argument("--model", help="modele Ollama (defaut : JARVIS_PLANNER_MODEL ou granite4:3b)")
     parser.add_argument("--max-steps", type=int, default=12)
