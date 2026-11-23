@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
-from PySide6.QtCore import QSettings,QTemporaryDir,Qt
+from PySide6.QtCore import QSettings,QTemporaryDir
 from PySide6.QtGui import QColor,QPainter,QPixmap
 from PySide6.QtWidgets import QApplication
 from jarvis.desktop.app import Controller,DesktopShell,STYLE

@@ -19,10 +19,10 @@ import os
 import sqlite3
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 from jarvis.storage_privacy import open_private_db
 
 # Only lines that contain this token carry a usage block; checking the raw bytes

@@ -1632,7 +1632,8 @@ def run_group(ctx: Context, name: str) -> None:
     try:
         GROUPS[name](ctx, step)
     except Exception as error:
-        step("(setup)", lambda: (_ for _ in ()).throw(error))
+        failure = error  # `error` is unbound once the except block ends
+        step("(setup)", lambda: (_ for _ in ()).throw(failure))
 
 
 def unload_local_models() -> None:

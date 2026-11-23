@@ -1,5 +1,4 @@
 """Boundary cases selected from the branch-coverage report."""
-import json
 from types import SimpleNamespace
 import pytest
 from jarvis.desktop.experience_storage import load_triggers,save_trigger

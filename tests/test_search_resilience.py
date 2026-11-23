@@ -1,14 +1,12 @@
 """User-facing search contracts, including the reported WNBA false refusal."""
 import asyncio
-from datetime import date
 from types import SimpleNamespace
-from unittest.mock import Mock
 import urllib.error
 
 import pytest
 
 from jarvis.capabilities.knowledge import KnowledgeCapability, web_announcement_for
-from jarvis.knowledge.keyless import KeylessWebProvider, FallbackProvider
+from jarvis.knowledge.keyless import KeylessWebProvider
 from jarvis.knowledge.models import SearchMode, SearchResult
 from jarvis.knowledge.searxng import SearXNGError
 from jarvis.knowledge.service import KnowledgeService

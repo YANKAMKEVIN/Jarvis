@@ -1,7 +1,6 @@
 """Erasure is checked in actual database files, not only through list()."""
 import asyncio
 from contextlib import closing
-from pathlib import Path
 import sqlite3
 import time
 from types import SimpleNamespace as NS

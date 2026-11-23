@@ -1,4 +1,3 @@
-from pathlib import Path
 import sqlite3
 import time
 from types import SimpleNamespace as NS

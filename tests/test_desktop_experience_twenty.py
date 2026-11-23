@@ -3,7 +3,7 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import asyncio
 from concurrent.futures import Future
 from types import SimpleNamespace as NS
-from unittest.mock import Mock,AsyncMock
+from unittest.mock import Mock
 import json
 from datetime import datetime
 import pytest
@@ -12,7 +12,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication,QPushButton
 from jarvis.desktop.app import Controller,DesktopShell,STYLE
 from jarvis.desktop.experience_storage import save_trigger,load_triggers
-from jarvis.desktop.document_drop import dropped_files,DocumentDropDialog
+from jarvis.desktop.document_drop import dropped_files
 from jarvis.desktop.memory_editor import MemoryEditor
 from jarvis.memory.store import MemoryStore
 from jarvis.context_store import ContextStore

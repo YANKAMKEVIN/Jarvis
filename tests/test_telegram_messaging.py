@@ -4,7 +4,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from jarvis.capabilities.messaging import MessagingCapability
-from jarvis.capabilities.results import ToolResult
 from jarvis.capabilities.telegram import TelegramMessaging
 from jarvis.schedule.runner import deliver_due
 from jarvis.schedule.store import ScheduledMessageStore

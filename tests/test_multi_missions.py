@@ -1,6 +1,5 @@
 """Concurrency/resource tests: real planner loops, no native tools/network."""
 import asyncio
-from types import SimpleNamespace
 from livekit.agents import function_tool
 from jarvis.live.registry import ToolRegistry
 from jarvis.planner import ModelTurn, PlannerEngine, ScriptedModel, ToolCall

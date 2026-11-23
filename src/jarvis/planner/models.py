@@ -20,7 +20,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from jarvis.config import DEFAULT_OLLAMA_URL, get_ollama_url
+from jarvis.config import DEFAULT_OLLAMA_URL as DEFAULT_OLLAMA_URL, get_ollama_url  # re-exported
 
 
 @dataclass(frozen=True)

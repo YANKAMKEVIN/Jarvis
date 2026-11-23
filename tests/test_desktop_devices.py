@@ -4,7 +4,7 @@ import asyncio
 from types import SimpleNamespace as NS
 import pytest
 from PySide6.QtWidgets import QApplication
-from jarvis.desktop.devices import AudioDeviceError, catalog, resolve_device
+from jarvis.desktop.devices import AudioDeviceError, resolve_device
 from jarvis.desktop.audio_settings import AudioJob
 from jarvis.desktop.live_audio import LocalAudio
 

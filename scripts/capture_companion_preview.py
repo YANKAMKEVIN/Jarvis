@@ -5,7 +5,7 @@ QT_QPA_PLATFORM=offscreen python scripts/capture_companion_preview.py
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
-from PySide6.QtCore import QEvent, QPointF, QSettings, QTemporaryDir
+from PySide6.QtCore import QPointF, QSettings, QTemporaryDir
 from PySide6.QtGui import QEnterEvent, QPixmap, QPainter, QColor
 from PySide6.QtWidgets import QApplication
 from jarvis.desktop.app import Controller, DesktopShell, STYLE

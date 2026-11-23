@@ -9,7 +9,6 @@ cancelled between steps.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import threading
 import time

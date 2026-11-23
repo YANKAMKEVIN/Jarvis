@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
 
 from jarvis.capabilities.results import ToolResult
 from jarvis.intents import create_intent

@@ -1,7 +1,5 @@
 """Cross-tool safety contracts: observable side effects, consent and file identity."""
 import asyncio
-import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 

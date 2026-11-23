@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from jarvis.capabilities.results import ToolResult
 from jarvis.live.registry import SAFE_MODE_ALLOWED, create_live_registry
 from jarvis.mcp import MCPConfigError, MCPHub, MCPServerSpec, load_mcp_config
 from jarvis.skills import SkillLibrary, parse_skill

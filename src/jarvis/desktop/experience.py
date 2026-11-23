@@ -4,7 +4,6 @@ import json
 import re
 import time
 from collections import deque
-from pathlib import Path
 from PySide6.QtCore import QObject,QEvent,QTimer,Qt
 from PySide6.QtGui import QColor,QKeySequence,QShortcut,QAccessible,QAccessibleAnnouncementEvent
 from PySide6.QtWidgets import QDialog,QPushButton,QInputDialog,QMessageBox

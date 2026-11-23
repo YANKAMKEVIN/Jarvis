@@ -1,8 +1,6 @@
 """Document completeness and archive leakage: synthetic files/data only."""
-from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import patch
-import zipfile
 
 from jarvis.tools.filesystem import FileSystemTools,PathResolver
 from jarvis.capabilities.document import DocumentCapability

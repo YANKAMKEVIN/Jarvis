@@ -7,10 +7,9 @@ into voice-friendly ToolResults plus structured series for the charts panel.
 from __future__ import annotations
 
 import time
-from typing import Any
 
 from jarvis.capabilities.results import ToolResult
-from jarvis.usage.store import UsageStore, estimate_cost
+from jarvis.usage.store import UsageStore
 
 # Named periods the user can ask for by voice, resolved to a lookback in days
 # (None = all history). Day-boundary periods ("today"/"yesterday") are handled

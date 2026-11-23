@@ -1,5 +1,4 @@
 """Typed messages to the Live session from the Assistant window (idea 3)."""
-import asyncio
 import os
 from types import SimpleNamespace as NS
 

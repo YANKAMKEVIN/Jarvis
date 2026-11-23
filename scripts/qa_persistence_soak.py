@@ -8,7 +8,6 @@ from collections import deque
 from contextlib import closing
 import json
 import math
-import os
 from pathlib import Path
 import statistics
 import sys

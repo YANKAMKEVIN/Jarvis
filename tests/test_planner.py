@@ -7,7 +7,6 @@ import urllib.error
 
 from livekit.agents import function_tool
 
-from jarvis.live.registry import create_live_tools
 import os
 from unittest.mock import patch
 

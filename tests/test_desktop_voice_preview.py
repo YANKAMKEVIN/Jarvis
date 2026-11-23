@@ -8,7 +8,7 @@ import pytest
 from jarvis.desktop.voice_preview import (MAX_BYTES, PREVIEW_TEXT, VoicePreview,
     collect_preview, generate_preview, play_preview)
 from jarvis.desktop.voices import VOICES, VOICE_IDS
-from test_desktop_voices import shell
+from test_desktop_voices import shell  # noqa: F401 - pytest fixture
 
 
 def response(data=b'\x01\x00'*40, mime='audio/pcm;rate=24000', complete=True):

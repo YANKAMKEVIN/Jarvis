@@ -1,7 +1,6 @@
 """Search session results and durable mission metadata; replay is always explicit."""
-import json
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QLineEdit,QComboBox,
+from PySide6.QtWidgets import (QDialog,QVBoxLayout,QLineEdit,QComboBox,
     QListWidget,QListWidgetItem,QPlainTextEdit,QPushButton,QLabel,QInputDialog,QFileDialog,QGridLayout)
 from jarvis.memory.store import MemoryStore
 

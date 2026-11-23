@@ -1,5 +1,5 @@
 """Small, draggable voice presence. Clicking never starts a microphone."""
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
 from jarvis.desktop.presentation import count_label

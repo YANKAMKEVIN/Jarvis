@@ -2,12 +2,11 @@
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
-from datetime import date
 from hypothesis import given, settings, strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, rule, invariant, initialize
 import pytest
 from jarvis.live.confirmation import PendingActionStore
-from jarvis.knowledge.models import SearchMode, SearchResult
+from jarvis.knowledge.models import SearchResult
 from jarvis.knowledge.service import KnowledgeService
 from jarvis.capabilities.notes import NotesCapability
 from jarvis.desktop.experience_storage import load_triggers

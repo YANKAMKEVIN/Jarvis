@@ -6,10 +6,9 @@ background sampler fills. All local, read-only.
 from __future__ import annotations
 
 import time
-from typing import Any
 
 from jarvis.capabilities.results import ToolResult
-from jarvis.metrics.store import GAUGE_METRICS, MetricsStore
+from jarvis.metrics.store import MetricsStore
 from jarvis.tools.system_metrics import SystemMetricsProbe
 
 # Named periods -> lookback in seconds.

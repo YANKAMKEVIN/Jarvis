@@ -1,6 +1,6 @@
 """Keyboard-first command palette, daily cockpit, trigger editor and setup guide."""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QLabel,QLineEdit,
+from PySide6.QtWidgets import (QDialog,QVBoxLayout,QLabel,QLineEdit,
     QListWidget,QListWidgetItem,QPushButton,QFormLayout,QComboBox,QCheckBox,QPlainTextEdit,
     QTabWidget,QWidget,QInputDialog,QScrollArea)
 from jarvis.desktop.experience_storage import load_triggers,save_trigger

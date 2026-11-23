@@ -5,7 +5,7 @@ from jarvis.live.config import (
     get_live_config,
 )
 from jarvis.live.logging import install_livekit_pii_log_filter
-from jarvis.live.prompts import LIVE_SESSION_GREETING, LIVE_SYSTEM_PROMPT
+from jarvis.live.prompts import LIVE_SESSION_GREETING
 from jarvis.live.factory import create_assistant_class, create_realtime_model
 
 

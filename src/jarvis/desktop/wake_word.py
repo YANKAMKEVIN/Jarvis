@@ -89,7 +89,7 @@ class OpenWakeWordEngine:
 def load_engine(download=True):
     try:
         import numpy
-        import openwakeword
+        import openwakeword  # noqa: F401 - availability check
         from openwakeword.model import Model
     except (ImportError, OSError):
         raise WakeWordUnavailable("Mot d’éveil indisponible. Installez-le : "
