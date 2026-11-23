@@ -159,6 +159,7 @@ class ToolRegistry:
         context_store=None,
         pending_actions=None,
         planner_model=None,
+        scheduler_agent_missing=None,
     ):
         self.audio = (
             audio_capability
@@ -315,6 +316,9 @@ class ToolRegistry:
             if document_capability is not None
             else DocumentCapability(self.files.filesystem_tools, model=planner_model)
         )
+        if scheduler_agent_missing is None:
+            from jarvis.schedule.agent import scheduler_agent_missing
+        self.scheduler_agent_missing = scheduler_agent_missing
         self.pending_actions = (
             pending_actions
             if pending_actions is not None
@@ -404,6 +408,17 @@ class ToolRegistry:
 
     def set_task_notifier(self, notifier) -> None:
         self.task_notifier = notifier
+
+    def _scheduler_agent_warning(self) -> dict:
+        """Extra result fields when the launchd delivery agent is missing."""
+        try:
+            missing = bool(self.scheduler_agent_missing())
+        except Exception:
+            missing = False
+        if not missing:
+            return {}
+        from jarvis.schedule.agent import MISSING_MESSAGE
+        return {"scheduler_agent_missing": True, "warning": MISSING_MESSAGE}
 
     def note_user_turn(self) -> None:
         """The user spoke or typed: prepared actions may now be confirmed."""
@@ -3588,6 +3603,7 @@ class ToolRegistry:
                     due_at=row["due_at"],
                     app=row["app"],
                     recurrence=row["recurrence"],
+                    **self._scheduler_agent_warning(),
                 )
 
             async with self.confirmation_lock:
@@ -3710,6 +3726,7 @@ class ToolRegistry:
                 reminder_id=row["id"],
                 due_at=row["due_at"],
                 recurrence=row["recurrence"],
+                **self._scheduler_agent_warning(),
             ).to_livekit_dict()
 
         @function_tool(
@@ -4356,6 +4373,7 @@ def create_live_registry(
     macro_store=None,
     context_store=None,
     planner_model=None,
+    scheduler_agent_missing=None,
 ) -> "ToolRegistry":
     if audio_capability is None:
         audio_capability = AudioCapability(
@@ -4476,6 +4494,7 @@ def create_live_registry(
         macro_store=macro_store,
         context_store=context_store,
         planner_model=planner_model,
+        scheduler_agent_missing=scheduler_agent_missing,
     )
 
 

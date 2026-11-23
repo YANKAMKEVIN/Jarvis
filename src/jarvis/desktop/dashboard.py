@@ -141,6 +141,13 @@ def make_jarvis_dashboard(
         tone = _ACCENTS[1] if done == len(week) else None
     else:
         rate, tone = "aucune cette semaine", None
+    if counts.get("scheduler_missing"):
+        from jarvis.schedule.agent import INSTALL_HINT
+        layout.addWidget(_rows_panel("Envois programmés", [(
+            _ALERT, "Agent d'envoi absent : les rappels et messages programmés ne partiront pas",
+            "à installer",
+            f"Dans un Terminal, dans le dossier de Jarvis : {INSTALL_HINT}, puis suivez les deux commandes affichées.",
+        )], "", legend=f"Installer : {INSTALL_HINT}"))
     layout.addWidget(_cards_row([
         _stat_card("Missions", str(len(week)), rate, tone),
         _stat_card("Outils appelés", _human(counts.get("tools_week", 0)),
@@ -234,6 +241,8 @@ class _JarvisLoader(QObject):
                 "wakes_week": journal.count("wake", since=now - WEEK),
                 "alerts_week": journal.count("alert", since=now - WEEK),
             }
+            from jarvis.schedule.agent import scheduler_agent_missing
+            counts["scheduler_missing"] = int(scheduler_agent_missing())
             try:
                 sessions = UsageCapability().recent_sessions(6).data.get("sessions", [])
             except Exception:
