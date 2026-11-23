@@ -207,7 +207,7 @@ def insights_tools(self) -> dict:
             token = self.pending_actions.register("run_claude_task", _executor)
         return ToolResult.success(
             "run_claude_task",
-            "Tache Claude a confirmer. Annonce la consigne et le dossier, "
+            "Tâche Claude à confirmer. Annonce la consigne et le dossier, "
             "puis attends la confirmation avant confirm_action.",
             requires_confirmation=True, token=token,
             prompt=prompt.strip()[:160],
@@ -241,7 +241,7 @@ def insights_tools(self) -> dict:
             token = self.pending_actions.register("open_claude_session", _executor)
         return ToolResult.success(
             "open_claude_session",
-            "Ouverture de session Claude a confirmer. Annonce le dossier puis "
+            "Ouverture de session Claude à confirmer. Annonce le dossier puis "
             "attends la confirmation avant confirm_action.",
             requires_confirmation=True, token=token,
             directory=self.claude_sessions.resolve_directory(directory),

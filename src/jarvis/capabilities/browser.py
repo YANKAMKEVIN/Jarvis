@@ -125,7 +125,7 @@ class BrowserCapability:
             if coerced is None:
                 return ToolResult.failure(
                     action="activate_tab",
-                    message="L'index d'onglet doit etre un entier positif.",
+                    message="L'index d'onglet doit être un entier positif.",
                     error_code="invalid_index",
                 )
 
@@ -150,7 +150,7 @@ class BrowserCapability:
         if not matches:
             return ToolResult.failure(
                 action="activate_tab",
-                message="Aucun onglet ne correspond a cette recherche.",
+                message="Aucun onglet ne correspond à cette recherche.",
                 error_code="tab_not_found",
             )
 
@@ -158,7 +158,7 @@ class BrowserCapability:
             return ToolResult.failure(
                 action="activate_tab",
                 message=(
-                    "Plusieurs onglets correspondent. Precise lequel activer."
+                    "Plusieurs onglets correspondent. Précise lequel activer."
                 ),
                 error_code="ambiguous_tab",
             )
@@ -193,7 +193,7 @@ class BrowserCapability:
 
         return ToolResult.success(
             action="activate_tab",
-            message=f"L'onglet a ete active dans {state['browser']}.",
+            message=f"L'onglet a été activé dans {state['browser']}.",
             query_length=self._safe_len(query),
             **state,
         )
@@ -244,7 +244,7 @@ class BrowserCapability:
     def _system_error(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message=f"Echec du controle du navigateur : {error}",
+            message=f"Échec du contrôle du navigateur : {error}",
             error_code="system_error",
         )
 

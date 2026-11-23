@@ -89,7 +89,7 @@ class NotesCapability:
 
         return ToolResult.success(
             action="save_note",
-            message=f"Note enregistree ({path.name}).",
+            message=f"Note enregistrée ({path.name}).",
             path=str(path),
             title=heading,
             char_count=len(text.strip()),
@@ -99,14 +99,14 @@ class NotesCapability:
         directory = self.notes_dir
         if not directory.exists():
             return ToolResult.success(
-                action="list_notes", message="Aucune note enregistree.", notes=[], count=0,
+                action="list_notes", message="Aucune note enregistrée.", notes=[], count=0,
             )
         files = sorted(directory.glob("*.md"), key=lambda p: p.name, reverse=True)
         limit = max(1, min(int(limit), 100))
         notes = [{"name": f.name, "path": str(f)} for f in files[:limit]]
         return ToolResult.success(
             action="list_notes",
-            message=f"{len(notes)} note(s) recente(s).",
+            message=f"{len(notes)} note(s) récente(s).",
             notes=notes,
             count=len(notes),
         )
@@ -141,7 +141,7 @@ class NotesCapability:
                 result = self.read_note(file.name)
                 if result.ok and query.casefold() in (file.name + ' ' + result.data['text']).casefold():
                     matches.append({'note_id': file.name, 'title': (result.data['text'].splitlines() or [file.stem])[0].lstrip('# ')[:100]})
-            return ToolResult.success('search_notes', f'{len(matches)} note(s) trouvee(s) dans les 200 notes recentes.',
+            return ToolResult.success('search_notes', f'{len(matches)} note(s) trouvée(s) dans les 200 notes récentes.',
                 notes=matches[:20], count=len(matches), scanned=len(files), search_limited=True)
         except OSError:
             return ToolResult.failure('search_notes', 'Recherche de notes indisponible.', 'read_failed')
@@ -176,7 +176,7 @@ class NotesCapability:
                         raise
                 finally:
                     os.close(descriptor)
-            return ToolResult.success('append_note', 'Texte ajoute a la note, contenu precedent conserve.',
+            return ToolResult.success('append_note', 'Texte ajouté à la note, contenu précédent conserve.',
                                       note_id=note_id, char_count=len(text.strip()), state_confirmed=True)
         except (ValueError, OSError):
             return ToolResult.failure('append_note', 'Ajout impossible. La note doit exister dans Jarvis Notes.', 'note_unavailable')

@@ -30,8 +30,8 @@ class UIAccessibilityCapability:
         return ToolResult.success(
             action="inspect_ui",
             message=(
-                f"{state['count']} element(s) Accessibility exploitable(s) "
-                "ont ete trouves dans la fenetre actuelle."
+                f"{state['count']} élément(s) Accessibility exploitable(s) "
+                "ont été trouvés dans la fenêtre actuelle."
             ),
             **state,
         )
@@ -60,7 +60,7 @@ class UIAccessibilityCapability:
 
         return ToolResult.success(
             action="find_ui_elements",
-            message="Un element Accessibility correspond a cette recherche.",
+            message="Un élément Accessibility correspond à cette recherche.",
             **state,
         )
 
@@ -152,7 +152,7 @@ class UIAccessibilityCapability:
             return self._accessibility_failure("locate", error)
         except Exception as error:
             return self._system_error_result("locate", error)
-        return ToolResult.success(action="locate", message="Element localise.", **state)
+        return ToolResult.success(action="locate", message="Élément localise.", **state)
 
     def read_value(self, query: str, role: str | None = None) -> ToolResult:
         try:
@@ -164,7 +164,7 @@ class UIAccessibilityCapability:
 
         return ToolResult.success(
             action="read_value",
-            message="Valeur de l'element lue.",
+            message="Valeur de l'élément lue.",
             **state,
         )
 
@@ -178,7 +178,7 @@ class UIAccessibilityCapability:
         if not decision.allowed:
             return ToolResult.failure(
                 action=action,
-                message="Jarvis n'est pas autorise a agir sur cet element UI.",
+                message="Jarvis n'est pas autorisé à agir sur cet élément UI.",
                 error_code="security_denied",
                 reason=decision.reason,
             )
@@ -187,7 +187,7 @@ class UIAccessibilityCapability:
             return ToolResult.failure(
                 action=action,
                 message=(
-                    "Cette action necessite une confirmation non disponible "
+                    "Cette action nécessite une confirmation non disponible "
                     "en mode Live."
                 ),
                 error_code="confirmation_required",
@@ -211,6 +211,6 @@ class UIAccessibilityCapability:
     def _system_error_result(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message=f"Echec Accessibility : {error}",
+            message=f"Échec Accessibility : {error}",
             error_code="system_error",
         )

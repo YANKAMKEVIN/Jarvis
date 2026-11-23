@@ -84,8 +84,8 @@ class ScreenshotCapability:
             return ToolResult.failure(
                 action="capture_window",
                 message=(
-                    "La fenetre active ne correspond pas a l'application demandee. "
-                    "La capture a ete arretee."
+                    "La fenêtre active ne correspond pas à l'application demandée. "
+                    "La capture a été arrêtée."
                 ),
                 error_code="active_window_mismatch",
             )
@@ -95,7 +95,7 @@ class ScreenshotCapability:
         if bounds is None:
             return ToolResult.failure(
                 action="capture_window",
-                message="Les dimensions de la fenetre active n'ont pas pu etre lues.",
+                message="Les dimensions de la fenêtre active n'ont pas pu être lues.",
                 error_code="window_bounds_unavailable",
             )
 
@@ -163,7 +163,7 @@ class ScreenshotCapability:
         return ToolResult.failure(
             action=action,
             message=(
-                f"L'etape {step} a echoue, la capture n'a pas ete lancee : "
+                f"L'étape {step} a échoué, la capture n'a pas été lancée : "
                 f"{result.message}"
             ),
             error_code=result.error_code or "dependency_failed",
@@ -183,6 +183,6 @@ class ScreenshotCapability:
     def _system_error(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message=f"Echec de la capture d'ecran : {error}",
+            message=f"Échec de la capture d'écran : {error}",
             error_code="system_error",
         )

@@ -104,7 +104,7 @@ class ClipboardCapability:
         if not decision.allowed:
             return ToolResult.failure(
                 action=action,
-                message="Jarvis n'est pas autorise a modifier le presse-papiers.",
+                message="Jarvis n'est pas autorisé à modifier le presse-papiers.",
                 error_code="security_denied",
                 reason=decision.reason,
             )
@@ -113,7 +113,7 @@ class ClipboardCapability:
             return ToolResult.failure(
                 action=action,
                 message=(
-                    "Cette action necessite une confirmation non disponible "
+                    "Cette action nécessite une confirmation non disponible "
                     "en mode Live."
                 ),
                 error_code="confirmation_required",
@@ -135,6 +135,6 @@ class ClipboardCapability:
     def _system_error_result(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message=f"Echec de l'operation presse-papiers : {error}",
+            message=f"Échec de l'opération presse-papiers : {error}",
             error_code="system_error",
         )

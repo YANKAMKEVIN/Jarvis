@@ -67,13 +67,13 @@ class WebReadCapability:
             turn = self._get_model().complete(messages, [])
         except Exception as error:
             return ToolResult.failure(
-                action="summarize_url", message=f"La synthese a echoue : {error}",
+                action="summarize_url", message=f"La synthese a échoué : {error}",
                 error_code="model_error",
             )
         answer = (turn.text or "").strip()
         if not answer:
             return ToolResult.failure(
-                action="summarize_url", message="Le modele n'a pas renvoye de reponse.",
+                action="summarize_url", message="Le modèle n'a pas renvoyé de réponse.",
                 error_code="empty_result",
             )
         return ToolResult.success(action="summarize_url", message=answer, url=url.strip())

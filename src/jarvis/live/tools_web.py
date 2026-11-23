@@ -422,7 +422,7 @@ def web_tools(self) -> dict:
         if self._web_running():
             return ToolResult.failure(
                 action="search_the_web",
-                message="Une recherche web est deja en cours ; attends son resultat.",
+                message="Une recherche web est déjà en cours ; attends son résultat.",
                 error_code="web_search_running",
             ).to_livekit_dict()
         self._web_task = asyncio.get_running_loop().create_task(
@@ -431,8 +431,8 @@ def web_tools(self) -> dict:
         return ToolResult.success(
             action="search_the_web",
             message=(
-                "Recherche lancee. Dis simplement a l'utilisateur que tu regardes ; "
-                "le resultat sera annonce dans un instant."
+                "Recherche lancée. Dis simplement à l'utilisateur que tu regardes ; "
+                "le résultat sera annonce dans un instant."
             ),
             search_started=True,
         ).to_livekit_dict()
@@ -472,7 +472,7 @@ def web_tools(self) -> dict:
         if self._briefing_running():
             return ToolResult.failure(
                 action="morning_briefing",
-                message="Un briefing est deja en cours de preparation.",
+                message="Un briefing est déjà en cours de préparation.",
                 error_code="briefing_running",
             ).to_livekit_dict()
         self._briefing_task = asyncio.get_running_loop().create_task(
@@ -481,8 +481,8 @@ def web_tools(self) -> dict:
         return ToolResult.success(
             action="morning_briefing",
             message=(
-                "Briefing en preparation. Dis a l'utilisateur que tu prepares le "
-                "point du jour ; le resultat sera annonce dans un instant."
+                "Briefing en préparation. Dis à l'utilisateur que tu prepares le "
+                "point du jour ; le résultat sera annonce dans un instant."
             ),
             briefing_started=True,
         ).to_livekit_dict()

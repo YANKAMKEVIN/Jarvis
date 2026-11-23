@@ -126,7 +126,7 @@ class AppCapability:
     def _security_denied_result(action: str, reason: str) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message="Jarvis n'est pas autorise a controler cette application.",
+            message="Jarvis n'est pas autorisé à contrôler cette application.",
             error_code="security_denied",
             reason=reason,
         )
@@ -136,7 +136,7 @@ class AppCapability:
         return ToolResult.failure(
             action=action,
             message=(
-                "Cette action necessite une confirmation non disponible "
+                "Cette action nécessite une confirmation non disponible "
                 "en mode Live."
             ),
             error_code="confirmation_required",
@@ -148,6 +148,6 @@ class AppCapability:
     def _system_error_result(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message=f"Echec du controle de l'application : {error}",
+            message=f"Échec du contrôle de l'application : {error}",
             error_code="system_error",
         )

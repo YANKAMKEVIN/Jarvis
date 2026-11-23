@@ -117,7 +117,7 @@ def files_tools(self) -> dict:
             token = self.pending_actions.register("open_file", _executor)
         return ToolResult.success(
             "open_file",
-            "Ce fichier est un script qui pourrait s'executer. Annonce-le a "
+            "Ce fichier est un script qui pourrait s'exécuter. Annonce-le a "
             "l'utilisateur puis attends sa confirmation avant confirm_action.",
             requires_confirmation=True,
             token=token,

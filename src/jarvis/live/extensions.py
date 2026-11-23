@@ -94,7 +94,7 @@ def extension_tools(r):
             token = r.pending_actions.register("call_mcp_tool", _executor)
         return ToolResult.success(
             "call_mcp_tool",
-            "Appel MCP a confirmer. Dis en une phrase quel outil de quel serveur sera "
+            "Appel MCP à confirmer. Dis en une phrase quel outil de quel serveur sera "
             "appele et avec quels arguments, puis attends un oui clair avant confirm_action.",
             requires_confirmation=True, token=token, server=server, tool=tool,
             arguments_preview=json.dumps(arguments, ensure_ascii=False)[:300],

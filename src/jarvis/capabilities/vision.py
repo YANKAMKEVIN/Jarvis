@@ -73,7 +73,7 @@ class VisionCapability:
         if not isinstance(question, str) or not question.strip():
             return ToolResult.failure(
                 action="ask_about_screen",
-                message="La question sur l'ecran est obligatoire.",
+                message="La question sur l'écran est obligatoire.",
                 error_code="invalid_question",
             )
 
@@ -104,7 +104,7 @@ class VisionCapability:
         if resolved is None:
             return ToolResult.failure(
                 action=action,
-                message="La cible doit etre 'screen' ou 'window'.",
+                message="La cible doit être 'screen' ou 'window'.",
                 error_code="invalid_target",
             )
 
@@ -116,7 +116,7 @@ class VisionCapability:
             return ToolResult.failure(
                 action=action,
                 message=(
-                    "La capture a echoue, aucune analyse n'a ete lancee : "
+                    "La capture a échoué, aucune analyse n'a été lancée : "
                     f"{capture.message}"
                 ),
                 error_code=capture.error_code or "capture_failed",
@@ -126,8 +126,8 @@ class VisionCapability:
             return ToolResult.failure(
                 action=action,
                 message=(
-                    "La capture n'a pas pu etre confirmee ; aucune analyse "
-                    "visuelle n'a ete lancee."
+                    "La capture n'a pas pu être confirmée ; aucune analyse "
+                    "visuelle n'a été lancée."
                 ),
                 error_code="capture_not_confirmed",
             )
@@ -141,7 +141,7 @@ class VisionCapability:
         except Exception as error:
             return ToolResult.failure(
                 action=action,
-                message=f"Echec de l'analyse visuelle : {error}",
+                message=f"Échec de l'analyse visuelle : {error}",
                 error_code="system_error",
             )
 

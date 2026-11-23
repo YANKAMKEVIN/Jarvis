@@ -47,7 +47,7 @@ class MemoryCapability:
         return ToolResult.success(
             action="remember",
             message=(
-                "Souvenir enregistre." if created else "Souvenir existant mis a jour."
+                "Souvenir enregistré." if created else "Souvenir existant mis à jour."
             ),
             memory=memory.to_dict(),
             created=created,
@@ -61,8 +61,8 @@ class MemoryCapability:
             return ToolResult.failure(
                 action=action,
                 message=(
-                    "Je ne garde jamais de mot de passe, code, numero de carte, "
-                    "IBAN ou cle d'acces en memoire. Rien n'a ete enregistre."
+                    "Je ne garde jamais de mot de passe, code, numéro de carte, "
+                    "IBAN ou cle d'accès en mémoire. Rien n'a été enregistré."
                 ),
                 error_code="secret_refused",
             )
@@ -109,7 +109,7 @@ class MemoryCapability:
         return ToolResult.success(
             action="list_memories",
             message=(
-                f"{len(memories)} souvenir(s)." if memories else "Aucun souvenir enregistre."
+                f"{len(memories)} souvenir(s)." if memories else "Aucun souvenir enregistré."
             ),
             memories=[memory.to_dict() for memory in memories],
             count=len(memories),
@@ -137,14 +137,14 @@ class MemoryCapability:
             else:
                 return ToolResult.failure(
                     action="forget",
-                    message="Indique le souvenir a oublier (memory_id ou query).",
+                    message="Indique le souvenir à oublier (memory_id ou query).",
                     error_code="invalid_forget_target",
                 )
 
             if target is None:
                 return ToolResult.failure(
                     action="forget",
-                    message="Aucun souvenir correspondant, rien n'a ete oublie.",
+                    message="Aucun souvenir correspondant, rien n'a été oublié.",
                     error_code="memory_not_found",
                 )
 
@@ -157,7 +157,7 @@ class MemoryCapability:
 
         return ToolResult.success(
             action="forget",
-            message="Souvenir oublie." if not still_there else "Suppression non confirmee.",
+            message="Souvenir oublié." if not still_there else "Suppression non confirmée.",
             forgotten=target.to_dict(),
             command_executed=True,
             state_confirmed=not still_there,
@@ -181,9 +181,9 @@ class MemoryCapability:
         return ToolResult.success(
             action="recent_activity",
             message=(
-                f"{len(episodes)} action(s) recente(s), de la plus recente a la plus ancienne."
+                f"{len(episodes)} action(s) récente(s), de la plus récente à la plus ancienne."
                 if episodes
-                else "Aucune action enregistree dans le journal."
+                else "Aucune action enregistrée dans le journal."
             ),
             episodes=[episode.to_dict() for episode in episodes],
             count=len(episodes),
@@ -205,9 +205,9 @@ class MemoryCapability:
         return ToolResult.success(
             action="recent_missions",
             message=(
-                f"{len(missions)} mission(s) recente(s), de la plus recente a la plus ancienne."
+                f"{len(missions)} mission(s) récente(s), de la plus récente à la plus ancienne."
                 if missions
-                else "Aucune mission enregistree."
+                else "Aucune mission enregistrée."
             ),
             missions=[mission.to_dict() for mission in missions],
             count=len(missions),
@@ -283,7 +283,7 @@ class MemoryCapability:
         if not isinstance(name, str) or not name.strip():
             return ToolResult.failure(
                 action="save_procedure",
-                message="Le nom de la procedure est obligatoire.",
+                message="Le nom de la procédure est obligatoire.",
                 error_code="invalid_subject",
             )
 
@@ -291,7 +291,7 @@ class MemoryCapability:
         if not clean_steps:
             return ToolResult.failure(
                 action="save_procedure",
-                message="La procedure ne contient aucune etape exploitable.",
+                message="La procédure ne contient aucune étape exploitable.",
                 error_code="invalid_procedure",
             )
 
@@ -310,7 +310,7 @@ class MemoryCapability:
 
         return ToolResult.success(
             action="save_procedure",
-            message=("Procedure enregistree." if created else "Procedure mise a jour."),
+            message=("Procédure enregistrée." if created else "Procédure mise à jour."),
             procedure={"id": memory.id, "name": memory.subject, "steps": clean_steps},
             created=created,
             command_executed=True,
@@ -322,7 +322,7 @@ class MemoryCapability:
         if not isinstance(name, str) or not name.strip():
             return ToolResult.failure(
                 action="get_procedure",
-                message="Le nom de la procedure est obligatoire.",
+                message="Le nom de la procédure est obligatoire.",
                 error_code="invalid_subject",
             )
 
@@ -334,14 +334,14 @@ class MemoryCapability:
         if memory is None:
             return ToolResult.failure(
                 action="get_procedure",
-                message="Aucune procedure enregistree sous ce nom.",
+                message="Aucune procédure enregistrée sous ce nom.",
                 error_code="memory_not_found",
             )
 
         steps = self._parse_steps(memory.content)
         return ToolResult.success(
             action="get_procedure",
-            message=f"Procedure '{memory.subject}' : {len(steps)} etape(s).",
+            message=f"Procédure '{memory.subject}' : {len(steps)} étape(s).",
             procedure={"id": memory.id, "name": memory.subject, "steps": steps},
             count=len(steps),
         )
@@ -385,6 +385,6 @@ class MemoryCapability:
     def _system_error_result(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message=f"Echec de l'acces a la memoire : {error}",
+            message=f"Échec de l'accès à la mémoire : {error}",
             error_code="memory_unavailable",
         )

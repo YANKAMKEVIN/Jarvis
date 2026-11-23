@@ -98,7 +98,7 @@ class MouseCapability:
         return ToolResult.success(
             action="scroll",
             message=(
-                "La commande de scroll a ete envoyee, mais Jarvis ne peut "
+                "La commande de scroll a été envoyée, mais Jarvis ne peut "
                 "pas confirmer son effet dans l'application active."
             ),
             **state,
@@ -120,7 +120,7 @@ class MouseCapability:
         return ToolResult.success(
             action=action,
             message=(
-                "La commande de clic a ete envoyee, mais Jarvis ne peut "
+                "La commande de clic a été envoyée, mais Jarvis ne peut "
                 "pas confirmer son effet dans l'application active."
             ),
             **state,
@@ -132,7 +132,7 @@ class MouseCapability:
         if not decision.allowed:
             return ToolResult.failure(
                 action=action,
-                message="Jarvis n'est pas autorise a envoyer cette action souris.",
+                message="Jarvis n'est pas autorisé à envoyer cette action souris.",
                 error_code="security_denied",
                 reason=decision.reason,
             )
@@ -141,7 +141,7 @@ class MouseCapability:
             return ToolResult.failure(
                 action=action,
                 message=(
-                    "Cette action necessite une confirmation non disponible "
+                    "Cette action nécessite une confirmation non disponible "
                     "en mode Live."
                 ),
                 error_code="confirmation_required",
@@ -165,6 +165,6 @@ class MouseCapability:
     def _system_error_result(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message=f"Echec de l'action souris : {error}",
+            message=f"Échec de l'action souris : {error}",
             error_code="system_error",
         )

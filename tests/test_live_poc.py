@@ -1517,7 +1517,7 @@ class LiveSetVolumeToolTest(unittest.TestCase):
         result = asyncio.run(tool(40))
 
         self.assertFalse(result["ok"])
-        self.assertIn("pas autorise", result["message"])
+        self.assertIn("pas autorisé", result["message"])
         self.assertEqual(len(security.intents), 1)
         self.assertEqual(macos_tools.calls, [])
 
@@ -1529,7 +1529,7 @@ class LiveSetVolumeToolTest(unittest.TestCase):
         result = asyncio.run(tool(40))
 
         self.assertFalse(result["ok"])
-        self.assertIn("Echec", result["message"])
+        self.assertIn("Échec", result["message"])
         self.assertIn("osascript failed", result["message"])
         self.assertEqual(macos_tools.calls, [40])
 
@@ -1587,7 +1587,7 @@ class LiveGetVolumeToolTest(unittest.TestCase):
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["action"], "get_volume")
-        self.assertIn("Echec", result["message"])
+        self.assertIn("Échec", result["message"])
         self.assertIn("osascript failed", result["message"])
         self.assertNotIn("volume", result)
 
@@ -1713,7 +1713,7 @@ class LiveAppToolTest(unittest.TestCase):
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["action"], "open_app")
-        self.assertIn("pas autorise", result["message"])
+        self.assertIn("pas autorisé", result["message"])
         self.assertEqual(macos_tools.open_calls, [])
 
     def test_open_app_macos_failure_returns_explicit_failure(self):
@@ -2211,7 +2211,7 @@ class LiveWindowToolTest(unittest.TestCase):
         result = asyncio.run(tool("top", "Safari"))
 
         self.assertFalse(result["ok"])
-        self.assertEqual(result["message"], "La position doit etre left, right, center ou fullscreen.")
+        self.assertEqual(result["message"], "La position doit être left, right, center ou fullscreen.")
         self.assertEqual(security.intents, [])
         self.assertEqual(macos_tools.move_window_calls, [])
 

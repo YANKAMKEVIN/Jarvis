@@ -65,7 +65,7 @@ def memory_tools(self) -> dict:
         return ToolResult.success(
             action="propose_memory",
             message=(
-                "Rien n'est enregistre. Demande a l'utilisateur s'il veut que "
+                "Rien n'est enregistré. Demande à l'utilisateur s'il veut que "
                 "tu retiennes cette information, puis confirm_action ou "
                 "cancel_action."
             ),

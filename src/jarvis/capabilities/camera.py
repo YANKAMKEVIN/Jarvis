@@ -48,7 +48,7 @@ class CameraCapability:
             return ToolResult.failure(action, error.message,
                                       error_code=error.code or "vision_failed")
         except Exception as error:
-            return ToolResult.failure(action, f"Echec de l'analyse visuelle : {error}",
+            return ToolResult.failure(action, f"Échec de l'analyse visuelle : {error}",
                                       error_code="system_error")
         finally:
             Path(path).unlink(missing_ok=True)

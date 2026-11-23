@@ -26,7 +26,7 @@ class CalendarPlanning:
             if operation == 'free' and (type(duration_minutes) is not int or not 1 <= duration_minutes <= 1440):
                 raise ValueError('invalid_duration')
         except (ValueError, TypeError, OverflowError):
-            return ToolResult.failure(action, 'Dates ISO avec fuseau obligatoire, intervalle de sept jours maximum et duree valide.', 'invalid_range')
+            return ToolResult.failure(action, 'Dates ISO avec fuseau obligatoire, intervalle de sept jours maximum et durée valide.', 'invalid_range')
         result = self.calendar.read_interval(lower, upper)
         if not result.ok:
             return ToolResult.failure(action, result.message, result.error_code)
@@ -42,7 +42,7 @@ class CalendarPlanning:
                 if begin < upper and finish > lower:
                     events.append((max(begin, lower), min(finish, upper), str(event.get('title', 'Evenement'))[:200], index))
         except (KeyError, ValueError, TypeError, OverflowError):
-            return ToolResult.failure(action, 'Des horaires sont incomplets ou illisibles ; aucune disponibilite fiable ne peut etre calculee.', 'incomplete_calendar')
+            return ToolResult.failure(action, 'Des horaires sont incomplets ou illisibles ; aucune disponibilité fiable ne peut être calculée.', 'incomplete_calendar')
         events.sort()
         iso = lambda epoch: datetime.fromtimestamp(epoch, left.tzinfo).isoformat(timespec='minutes')
         rows = []

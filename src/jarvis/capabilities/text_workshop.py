@@ -47,14 +47,14 @@ class TextWorkshopCapability:
         if not got.data.get("has_text"):
             return ToolResult.failure(
                 action="rewrite_clipboard",
-                message="Le presse-papiers ne contient pas de texte a transformer.",
+                message="Le presse-papiers ne contient pas de texte à transformer.",
                 error_code="empty_clipboard",
             )
         if got.data.get("truncated"):
             # Rewriting only the visible start would drop the rest on paste.
             return ToolResult.failure(
                 action="rewrite_clipboard",
-                message="Le texte copie est trop long pour etre transforme en une fois.",
+                message="Le texte copié est trop long pour être transformé en une fois.",
                 error_code="clipboard_too_long",
             )
 
@@ -68,7 +68,7 @@ class TextWorkshopCapability:
         except Exception as error:
             return ToolResult.failure(
                 action="rewrite_clipboard",
-                message=f"La transformation du texte a echoue : {error}",
+                message=f"La transformation du texte a échoué : {error}",
                 error_code="model_error",
             )
 
@@ -76,7 +76,7 @@ class TextWorkshopCapability:
         if not transformed:
             return ToolResult.failure(
                 action="rewrite_clipboard",
-                message="Le modele n'a pas renvoye de texte transforme.",
+                message="Le modèle n'a pas renvoyé de texte transformé.",
                 error_code="empty_result",
             )
 
@@ -86,7 +86,7 @@ class TextWorkshopCapability:
 
         return ToolResult.success(
             action="rewrite_clipboard",
-            message="Texte transforme et copie dans le presse-papiers ; tu peux le coller.",
+            message="Texte transformé et copie dans le presse-papiers ; tu peux le coller.",
             transformed_length=len(transformed),
             state_confirmed=written.data.get("state_confirmed"),
         )

@@ -80,7 +80,7 @@ class CalendarCapability:
         if not isinstance(title, str) or not title.strip():
             return ToolResult.failure(
                 action="create_calendar_event",
-                message="Le titre de l'evenement est obligatoire.",
+                message="Le titre de l'événement est obligatoire.",
                 error_code="invalid_title",
             )
         try:
@@ -89,13 +89,13 @@ class CalendarCapability:
         except ValueError:
             return ToolResult.failure(
                 action="create_calendar_event",
-                message="Les dates doivent etre au format ISO 8601.",
+                message="Les dates doivent être au format ISO 8601.",
                 error_code="invalid_datetime",
             )
         if end_dt <= start_dt:
             return ToolResult.failure(
                 action="create_calendar_event",
-                message="La fin de l'evenement doit etre apres son debut.",
+                message="La fin de l'événement doit être après son début.",
                 error_code="invalid_range",
             )
 
@@ -108,7 +108,7 @@ class CalendarCapability:
 
         return ToolResult.success(
             action="create_calendar_event",
-            message=f"Evenement « {title.strip()} » cree dans l'agenda.",
+            message=f"Événement « {title.strip()} » créé dans l'agenda.",
             **state,
         )
 
@@ -121,7 +121,7 @@ class CalendarCapability:
     @staticmethod
     def _system_error(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
-            action=action, message=f"Echec de l'agenda : {error}", error_code="system_error",
+            action=action, message=f"Échec de l'agenda : {error}", error_code="system_error",
         )
 
 

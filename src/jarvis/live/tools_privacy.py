@@ -50,9 +50,9 @@ def privacy_tools(self) -> dict:
             message=(
                 f"Je garde {memory_count} souvenir(s), {len(scheduled)} message(s) "
                 f"planifie(s) et {len(reminders)} rappel(s) en attente ; "
-                f"{activity_count} action(s) recente(s) au journal ; "
+                f"{activity_count} action(s) récente(s) au journal ; "
                 f"{mission_count} mission(s) dans l'historique ; {checklists_count} checklist(s) locale(s) ; "
-                f"{tool_calls} appel(s) d'outil au journal d'activite (noms seulement)."
+                f"{tool_calls} appel(s) d'outil au journal d'activité (noms seulement)."
             ),
             memory_count=memory_count,
             activity_count=activity_count,
@@ -84,7 +84,7 @@ def privacy_tools(self) -> dict:
         if choice not in ("context", "reminders", "scheduled", "checklists", "missions", "activity", "all"):
             return ToolResult.failure(
                 action="clear_personal_data",
-                message="scope doit etre context, reminders, scheduled, checklists, missions, activity ou all.",
+                message="scope doit être context, reminders, scheduled, checklists, missions, activity ou all.",
                 error_code="invalid_scope",
             ).to_livekit_dict()
 
@@ -96,7 +96,7 @@ def privacy_tools(self) -> dict:
         return ToolResult.success(
             action="clear_personal_data",
             message=(
-                f"Effacement a confirmer ({choice}). Annonce ce qui sera efface, "
+                f"Effacement à confirmer ({choice}). Annonce ce qui sera effacé, "
                 "puis attends la confirmation avant confirm_action."
             ),
             requires_confirmation=True,
@@ -126,8 +126,8 @@ def privacy_tools(self) -> dict:
         return ToolResult.success(
             action="enable_safe_mode",
             message=(
-                "Mode securite deja actif." if already else
-                "Mode securite active : je reste en lecture seule et ne "
+                "Mode sécurité déjà actif." if already else
+                "Mode sécurité activé : je reste en lecture seule et ne "
                 "modifie rien ni n'envoie rien tant qu'il est actif."
             ),
             read_only_mode=True,
@@ -152,9 +152,9 @@ def privacy_tools(self) -> dict:
         return ToolResult.success(
             action="disable_safe_mode",
             message=(
-                "Le mode securite n'etait pas actif." if already else
-                "Mode securite desactive : je peux de nouveau agir sur le Mac "
-                "et preparer des envois, toujours avec les confirmations "
+                "Le mode sécurité n'était pas actif." if already else
+                "Mode sécurité désactivé : je peux de nouveau agir sur le Mac "
+                "et préparer des envois, toujours avec les confirmations "
                 "habituelles."
             ),
             read_only_mode=False,

@@ -71,7 +71,7 @@ class ComputeCapability:
         pretty = _format_number(value)
         return ToolResult.success(
             action="calculate",
-            message=f"Le resultat est {pretty}.",
+            message=f"Le résultat est {pretty}.",
             expression=expression.strip(),
             result=value,
             result_text=pretty,
@@ -82,7 +82,7 @@ class ComputeCapability:
             number = float(value)
         except (TypeError, ValueError):
             return ToolResult.failure(
-                action="convert_units", message="La valeur a convertir est invalide.",
+                action="convert_units", message="La valeur à convertir est invalide.",
                 error_code="invalid_value",
             )
         src = _normalize_unit(from_unit)

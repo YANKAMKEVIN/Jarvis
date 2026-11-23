@@ -22,13 +22,13 @@ class ChecklistsCapability:
 
     def manage(self, operation, list_id=None, text=None, item_id=None, done=True):
         if operation not in {'create', 'list', 'show', 'add', 'check'}:
-            return ToolResult.failure('manage_checklist', 'Operation inconnue.', 'invalid_operation')
+            return ToolResult.failure('manage_checklist', 'Opération inconnue.', 'invalid_operation')
         if operation in {'create', 'add'} and (not isinstance(text, str) or not text.strip() or len(text) > 300):
-            return ToolResult.failure('manage_checklist', 'Texte obligatoire, 300 caracteres maximum.', 'invalid_text')
+            return ToolResult.failure('manage_checklist', 'Texte obligatoire, 300 caractères maximum.', 'invalid_text')
         if operation in {'show', 'add', 'check'} and (type(list_id) is not int or list_id <= 0):
             return ToolResult.failure('manage_checklist', 'Identifiant de liste obligatoire.', 'invalid_id')
         if operation == 'check' and (type(item_id) is not int or item_id <= 0 or type(done) is not bool):
-            return ToolResult.failure('manage_checklist', 'Element ou etat invalide.', 'invalid_id')
+            return ToolResult.failure('manage_checklist', 'Élément ou état invalide.', 'invalid_id')
         try:
             with closing(self._connect()) as conn, conn:
                 if operation != 'list':
@@ -45,14 +45,14 @@ class ChecklistsCapability:
                     return ToolResult.failure('manage_checklist', 'Liste introuvable.', 'list_not_found')
                 if operation == 'add':
                     if conn.execute('SELECT COUNT(*) FROM items WHERE list_id=?', (list_id,)).fetchone()[0] >= 100:
-                        return ToolResult.failure('manage_checklist', 'Limite de 100 elements atteinte.', 'limit_reached')
+                        return ToolResult.failure('manage_checklist', 'Limite de 100 éléments atteinte.', 'limit_reached')
                     conn.execute('INSERT INTO items(list_id,text) VALUES (?,?)', (list_id, text.strip()))
                 if operation == 'check':
                     cursor = conn.execute('UPDATE items SET done=? WHERE id=? AND list_id=?', (int(done), item_id, list_id))
                     if not cursor.rowcount:
-                        return ToolResult.failure('manage_checklist', 'Element introuvable dans cette liste.', 'item_not_found')
+                        return ToolResult.failure('manage_checklist', 'Élément introuvable dans cette liste.', 'item_not_found')
                 items = [dict(row) for row in conn.execute('SELECT id,text,done FROM items WHERE list_id=? ORDER BY id', (list_id,))]
-                return ToolResult.success('manage_checklist', 'Liste mise a jour.' if operation != 'show' else 'Voici la liste.',
+                return ToolResult.success('manage_checklist', 'Liste mise à jour.' if operation != 'show' else 'Voici la liste.',
                     list_id=list_id, title=record['title'], items=items, state_confirmed=True)
         except (OSError, sqlite3.Error):
             return ToolResult.failure('manage_checklist', 'Les checklists sont indisponibles.', 'storage_error')

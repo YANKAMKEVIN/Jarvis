@@ -82,7 +82,7 @@ def missions_tools(self) -> dict:
         if last is None:
             return ToolResult.failure(
                 action="save_task_procedure",
-                message="Aucune tache recente reussie a retenir comme procedure.",
+                message="Aucune tâche récente reussie à retenir comme procédure.",
                 error_code="no_completed_task",
             ).to_livekit_dict()
         _goal, tool_names = last
@@ -143,7 +143,7 @@ def missions_tools(self) -> dict:
                 action="save_macro", message=error.message, error_code=error.code,
             ).to_livekit_dict()
         return ToolResult.success(
-            action="save_macro", message=f"Macro « {row['name']} » enregistree.",
+            action="save_macro", message=f"Macro « {row['name']} » enregistrée.",
             name=row["name"],
         ).to_livekit_dict()
 
@@ -163,7 +163,7 @@ def missions_tools(self) -> dict:
         if macro is None:
             return ToolResult.failure(
                 action="run_macro",
-                message=f"Aucune macro nommee « {name} ».",
+                message=f"Aucune macro nommée « {name} ».",
                 error_code="macro_not_found",
             ).to_livekit_dict()
         return self.tasks.start(macro["goal"])
@@ -178,7 +178,7 @@ def missions_tools(self) -> dict:
         rows = await asyncio.to_thread(self.macro_store.list)
         macros = [{"name": r["name"], "goal": r["goal"]} for r in rows]
         return ToolResult.success(
-            action="list_macros", message=f"{len(macros)} macro(s) enregistree(s).",
+            action="list_macros", message=f"{len(macros)} macro(s) enregistrée(s).",
             macros=macros, count=len(macros),
         ).to_livekit_dict()
 
@@ -193,11 +193,11 @@ def missions_tools(self) -> dict:
         deleted = await asyncio.to_thread(self.macro_store.delete, name)
         if not deleted:
             return ToolResult.failure(
-                action="delete_macro", message=f"Aucune macro nommee « {name} ».",
+                action="delete_macro", message=f"Aucune macro nommée « {name} ».",
                 error_code="macro_not_found",
             ).to_livekit_dict()
         return ToolResult.success(
-            action="delete_macro", message=f"Macro « {name} » supprimee.", name=name,
+            action="delete_macro", message=f"Macro « {name} » supprimée.", name=name,
         ).to_livekit_dict()
 
     @function_tool(

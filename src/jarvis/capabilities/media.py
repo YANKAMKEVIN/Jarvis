@@ -186,7 +186,7 @@ class MediaCapability:
     def _security_denied_result(action: str, reason: str) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message="Jarvis n'est pas autorise a controler la lecture media.",
+            message="Jarvis n'est pas autorisé à contrôler la lecture media.",
             error_code="security_denied",
             reason=reason,
         )
@@ -196,7 +196,7 @@ class MediaCapability:
         return ToolResult.failure(
             action=action,
             message=(
-                "Cette action necessite une confirmation non disponible "
+                "Cette action nécessite une confirmation non disponible "
                 "en mode Live."
             ),
             error_code="confirmation_required",
@@ -208,6 +208,6 @@ class MediaCapability:
     def _system_error_result(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message=f"Echec du controle media : {error}",
+            message=f"Échec du contrôle media : {error}",
             error_code="system_error",
         )

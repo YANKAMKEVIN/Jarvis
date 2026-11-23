@@ -313,8 +313,8 @@ def input_tools(self) -> dict:
             return ToolResult.failure(
                 action="click_element",
                 message=(
-                    "Cet element n'expose ni action ni position via Accessibility ; "
-                    "je ne clique pas a l'aveugle."
+                    "Cet élément n'expose ni action ni position via Accessibility ; "
+                    "je ne clique pas à l'aveugle."
                 ),
                 error_code="no_grounded_target",
             ).to_livekit_dict()
@@ -326,15 +326,15 @@ def input_tools(self) -> dict:
             if not move.ok or move.data.get("state_confirmed") is not True:
                 return ToolResult.failure(
                     action="click_element",
-                    message="Impossible de positionner le pointeur sur l'element.",
+                    message="Impossible de positionner le pointeur sur l'élément.",
                     error_code="move_failed",
                 ).to_livekit_dict()
             await asyncio.to_thread(self.mouse.click)
         return ToolResult.success(
             action="click_element",
             message=(
-                "Clic envoye au centre de l'element (coordonnees Accessibility). "
-                "L'effet applicatif n'est pas confirme."
+                "Clic envoyé au centre de l'élément (coordonnées Accessibility). "
+                "L'effet applicatif n'est pas confirmé."
             ),
             command_executed=True,
             state_confirmed=False,

@@ -102,7 +102,7 @@ class SystemCapability:
 
         return ToolResult.success(
             action="get_brightness",
-            message=f"La luminosite actuelle est de {brightness} %.",
+            message=f"La luminosité actuelle est de {brightness} %.",
             brightness=brightness,
         )
 
@@ -112,14 +112,14 @@ class SystemCapability:
         except (TypeError, ValueError):
             return ToolResult.failure(
                 action="set_brightness",
-                message="La luminosite doit etre un nombre entier entre 0 et 100.",
+                message="La luminosité doit être un nombre entier entre 0 et 100.",
                 error_code="invalid_brightness",
             )
 
         if not 0 <= requested <= 100:
             return ToolResult.failure(
                 action="set_brightness",
-                message="La luminosite doit etre comprise entre 0 et 100.",
+                message="La luminosité doit être comprise entre 0 et 100.",
                 error_code="brightness_out_of_range",
             )
 
@@ -148,7 +148,7 @@ class SystemCapability:
 
         return ToolResult.success(
             action="set_brightness",
-            message=f"La luminosite est maintenant observee a {observed} %.",
+            message=f"La luminosité est maintenant observée a {observed} %.",
             **state,
         )
 
@@ -192,7 +192,7 @@ class SystemCapability:
     def _security_denied_result(action: str, reason: str) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message="Jarvis n'est pas autorise a modifier cet etat systeme.",
+            message="Jarvis n'est pas autorisé à modifier cet état système.",
             error_code="security_denied",
             reason=reason,
         )
@@ -202,7 +202,7 @@ class SystemCapability:
         return ToolResult.failure(
             action=action,
             message=(
-                "Cette action necessite une confirmation non disponible "
+                "Cette action nécessite une confirmation non disponible "
                 "en mode Live."
             ),
             error_code="confirmation_required",
@@ -214,6 +214,6 @@ class SystemCapability:
     def _system_error_result(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message=f"Echec de la lecture ou action systeme : {error}",
+            message=f"Échec de la lecture ou action système : {error}",
             error_code="system_error",
         )

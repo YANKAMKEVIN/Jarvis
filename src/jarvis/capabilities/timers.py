@@ -24,11 +24,11 @@ class TimerService:
         if self.closed:
             return ToolResult.failure('start_timer', 'La session se ferme.', 'session_stopping')
         if type(seconds) not in (int, float) or not math.isfinite(seconds) or not 1 <= seconds <= 86400:
-            return ToolResult.failure('start_timer', 'Duree entre 1 seconde et 24 heures.', 'invalid_duration')
+            return ToolResult.failure('start_timer', 'Durée entre 1 seconde et 24 heures.', 'invalid_duration')
         if not isinstance(label, str) or not label.strip() or len(label) > 100:
             return ToolResult.failure('start_timer', 'Nom de minuteur invalide.', 'invalid_label')
         if sum(t['state'] == 'running' for t in self.timers.values()) >= 10:
-            return ToolResult.failure('start_timer', 'Dix minuteurs sont deja actifs.', 'limit_reached')
+            return ToolResult.failure('start_timer', 'Dix minuteurs sont déjà actifs.', 'limit_reached')
         while len(self.timers) >= 20:
             oldest = next((key for key, t in self.timers.items() if t['task'].done()), None)
             if oldest is None:
@@ -38,7 +38,7 @@ class TimerService:
         timer = {'id': key, 'label': label.strip(), 'seconds': seconds, 'deadline': self.clock()+seconds, 'state': 'running'}
         self.timers[key] = timer
         timer['task'] = asyncio.create_task(self._run(timer))
-        return ToolResult.success('start_timer', 'Minuteur lance. Si Jarvis se ferme avant la fin, il devient un rappel.', **self._view(timer))
+        return ToolResult.success('start_timer', 'Minuteur lancé. Si Jarvis se ferme avant la fin, il devient un rappel.', **self._view(timer))
 
     def _view(self, timer):
         return {key: timer[key] for key in ('id', 'label', 'seconds', 'state')} | {
@@ -70,7 +70,7 @@ class TimerService:
         if timer['state'] == 'running':
             timer['state'] = 'cancelled'
             timer['task'].cancel()
-        return ToolResult.success('cancel_timer', 'Etat du minuteur.', **self._view(timer))
+        return ToolResult.success('cancel_timer', 'État du minuteur.', **self._view(timer))
 
     async def aclose(self, handoff=None):
         """Stop every timer; a running one is passed to `handoff(label, due_at)`

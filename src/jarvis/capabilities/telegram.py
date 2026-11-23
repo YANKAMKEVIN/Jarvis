@@ -56,7 +56,7 @@ class TelegramMessaging:
         if len(needle.lstrip("@")) < MIN_RECIPIENT_LENGTH:
             return ToolResult.failure(
                 action="verify_recipient",
-                message="Le destinataire attendu est trop court pour etre verifie.",
+                message="Le destinataire attendu est trop court pour être vérifié.",
                 error_code="invalid_recipient",
             ), None
 
@@ -68,7 +68,7 @@ class TelegramMessaging:
         except TelegramApiError as error:
             return ToolResult.failure(
                 action="verify_recipient",
-                message=f"{error.message} Rien n'a ete prepare.",
+                message=f"{error.message} Rien n'a été préparé.",
                 error_code=error.code,
             ), None
 
@@ -103,7 +103,7 @@ class TelegramMessaging:
         if not isinstance(text, str) or not text.strip():
             return ToolResult.failure(
                 action="send_text",
-                message="Le message a envoyer est vide.",
+                message="Le message à envoyer est vide.",
                 error_code="invalid_text",
             )
 
@@ -128,13 +128,13 @@ class TelegramMessaging:
                 )
             return ToolResult.failure(
                 action="send_text",
-                message=f"{error.message} Rien n'a ete envoye.",
+                message=f"{error.message} Rien n'a été envoyé.",
                 error_code=error.code,
             )
 
         return ToolResult.success(
             action="send_text",
-            message="Message envoye : Telegram a confirme sa reception.",
+            message="Message envoyé : Telegram a confirmé sa reception.",
             command_executed=True,
             state_confirmed=True,
             app="Telegram",
@@ -175,7 +175,7 @@ class TelegramMessaging:
     def _verified(kind: Any, expected_recipient: str) -> ToolResult:
         return ToolResult.success(
             action="verify_recipient",
-            message="Le destinataire Telegram a ete verifie (une seule conversation correspond).",
+            message="Le destinataire Telegram a été vérifié (une seule conversation correspond).",
             recipient_verified=True,
             target_app="Telegram",
             recipient_kind=kind,

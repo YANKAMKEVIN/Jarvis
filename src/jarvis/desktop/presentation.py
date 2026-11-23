@@ -4,9 +4,9 @@ import json
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 LABELS = {
-    'start_timer': 'Minuteur', 'list_timers': 'Minuteurs', 'cancel_timer': 'Minuteur', 'timer_finished': 'Minuteur termine',
-    'search_notes': 'Recherche de notes', 'read_note': 'Lecture de note', 'append_note': 'Ajout a une note',
-    'manage_checklist': 'Checklist', 'find_free_slots': 'Disponibilites', 'calendar_conflicts': 'Conflits d’agenda',
+    'start_timer': 'Minuteur', 'list_timers': 'Minuteurs', 'cancel_timer': 'Minuteur', 'timer_finished': 'Minuteur terminé',
+    'search_notes': 'Recherche de notes', 'read_note': 'Lecture de note', 'append_note': 'Ajout à une note',
+    'manage_checklist': 'Checklist', 'find_free_slots': 'Disponibilités', 'calendar_conflicts': 'Conflits d’agenda',
     'compare_documents': 'Comparaison de documents', 'extract_document_actions': 'Extraction du document',
     'pause_task': 'Pause de mission', 'resume_task': 'Reprise de mission',
     'open_app': 'Application', 'close_app': 'Application', 'focus_window': 'Fenêtre',

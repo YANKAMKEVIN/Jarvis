@@ -137,8 +137,8 @@ class InteractionCapability:
         return ToolResult.success(
             action="select_all_and_copy",
             message=(
-                "Les commandes selectionner tout puis copier ont ete envoyees "
-                "dans l'ordre, puis le presse-papiers a ete relu."
+                "Les commandes sélectionner tout puis copier ont été envoyées "
+                "dans l'ordre, puis le presse-papiers a été relu."
             ),
             command_executed=True,
             state_confirmed=state_confirmed,
@@ -228,9 +228,9 @@ class InteractionCapability:
         return ToolResult.success(
             action="select_all_and_delete",
             message=(
-                "La cible editable a ete verifiee, puis selectionner tout et "
-                "supprimer ont ete envoyes ; l'effacement ne peut pas etre "
-                "confirme."
+                "La cible editable a été vérifiée, puis sélectionner tout et "
+                "supprimer ont été envoyés ; l'effacement ne peut pas être "
+                "confirmé."
             ),
             command_executed=True,
             state_confirmed=False,
@@ -320,7 +320,7 @@ class InteractionCapability:
 
         return ToolResult.success(
             action="open_app_and_focus_ui",
-            message="L'application et la cible Accessibility ont ete focalisees.",
+            message="L'application et la cible Accessibility ont été focalisées.",
             command_executed=True,
             state_confirmed=True,
             target_app=app_name,
@@ -383,8 +383,8 @@ class InteractionCapability:
         return ToolResult.success(
             action="open_app_and_type",
             message=(
-                "L'application a ete mise au premier plan et la saisie a ete "
-                "envoyee ; l'effet applicatif n'est pas confirme."
+                "L'application a été mise au premier plan et la saisie a été "
+                "envoyée ; l'effet applicatif n'est pas confirmé."
             ),
             command_executed=True,
             state_confirmed=False,
@@ -511,7 +511,7 @@ class InteractionCapability:
         return ToolResult.success(
             action="focus_app_ui_and_type",
             message=(
-                "La cible a ete verifiee et la commande de saisie a ete envoyee."
+                "La cible a été vérifiée et la commande de saisie a été envoyée."
             ),
             command_executed=True,
             state_confirmed=False,

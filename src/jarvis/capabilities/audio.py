@@ -19,14 +19,14 @@ class AudioCapability:
         except (TypeError, ValueError):
             return ToolResult.failure(
                 action="set_volume",
-                message="Le volume doit etre un nombre entier entre 0 et 100.",
+                message="Le volume doit être un nombre entier entre 0 et 100.",
                 error_code="invalid_volume",
             )
 
         if not 0 <= level <= 100:
             return ToolResult.failure(
                 action="set_volume",
-                message="Le volume doit etre compris entre 0 et 100.",
+                message="Le volume doit être compris entre 0 et 100.",
                 error_code="volume_out_of_range",
             )
 
@@ -36,7 +36,7 @@ class AudioCapability:
         if not decision.allowed:
             return ToolResult.failure(
                 action="set_volume",
-                message="Jarvis n'est pas autorise a modifier le volume.",
+                message="Jarvis n'est pas autorisé à modifier le volume.",
                 error_code="security_denied",
                 reason=decision.reason,
             )
@@ -45,7 +45,7 @@ class AudioCapability:
             return ToolResult.failure(
                 action="set_volume",
                 message=(
-                    "Cette action necessite une confirmation non disponible "
+                    "Cette action nécessite une confirmation non disponible "
                     "en mode Live."
                 ),
                 error_code="confirmation_required",
@@ -58,7 +58,7 @@ class AudioCapability:
         except Exception as error:
             return ToolResult.failure(
                 action="set_volume",
-                message=f"Echec du reglage du volume : {error}",
+                message=f"Échec du réglage du volume : {error}",
                 error_code="system_error",
             )
 
@@ -75,7 +75,7 @@ class AudioCapability:
         except Exception as error:
             return ToolResult.failure(
                 action="get_volume",
-                message=f"Echec de la lecture du volume actuel : {error}",
+                message=f"Échec de la lecture du volume actuel : {error}",
                 error_code="system_error",
             )
 

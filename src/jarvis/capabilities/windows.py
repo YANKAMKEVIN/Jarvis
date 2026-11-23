@@ -139,7 +139,7 @@ class WindowCapability:
             return ToolResult.failure(
                 action="move_window",
                 message=(
-                    "La position doit etre left, right, center ou fullscreen."
+                    "La position doit être left, right, center ou fullscreen."
                 ),
                 error_code="invalid_window_position",
             )
@@ -182,26 +182,26 @@ class WindowCapability:
                 and isinstance(right_app, str) and right_app.strip()):
             return ToolResult.failure(
                 action="arrange_windows",
-                message="Indique les deux applications a placer cote a cote.",
+                message="Indique les deux applications à placer cote à côté.",
                 error_code="invalid_app_name",
             )
         left = self.move_window("left", left_app.strip())
         if not left.ok:
             return ToolResult.failure(
                 action="arrange_windows",
-                message=f"Impossible de placer {left_app} a gauche.",
+                message=f"Impossible de placer {left_app} à gauche.",
                 error_code=left.error_code or "move_failed",
             )
         right = self.move_window("right", right_app.strip())
         if not right.ok:
             return ToolResult.failure(
                 action="arrange_windows",
-                message=f"{left_app} placee a gauche, mais impossible de placer {right_app} a droite.",
+                message=f"{left_app} placée à gauche, mais impossible de placer {right_app} à droite.",
                 error_code=right.error_code or "move_failed",
             )
         return ToolResult.success(
             action="arrange_windows",
-            message=f"{left_app} a gauche et {right_app} a droite.",
+            message=f"{left_app} à gauche et {right_app} à droite.",
             left_app=left_app.strip(),
             right_app=right_app.strip(),
             left_confirmed=bool(left.data.get("state_confirmed")),
@@ -259,7 +259,7 @@ class WindowCapability:
         if not decision.allowed:
             return ToolResult.failure(
                 action=action,
-                message="Jarvis n'est pas autorise a controler cette fenetre.",
+                message="Jarvis n'est pas autorisé à contrôler cette fenêtre.",
                 error_code="security_denied",
                 reason=decision.reason,
             )
@@ -268,7 +268,7 @@ class WindowCapability:
             return ToolResult.failure(
                 action=action,
                 message=(
-                    "Cette action necessite une confirmation non disponible "
+                    "Cette action nécessite une confirmation non disponible "
                     "en mode Live."
                 ),
                 error_code="confirmation_required",
@@ -285,6 +285,6 @@ class WindowCapability:
 
         return ToolResult.failure(
             action=action,
-            message=f"Echec du controle de fenetre : {error}",
+            message=f"Échec du contrôle de fenêtre : {error}",
             error_code=error_code,
         )

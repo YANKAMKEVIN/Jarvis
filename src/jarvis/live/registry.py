@@ -485,10 +485,10 @@ class ToolRegistry:
                 return ToolResult.failure(
                     action=name,
                     message=(
-                        "Mode securite actif (lecture seule) : cette action "
+                        "Mode sécurité actif (lecture seule) : cette action "
                         "modifierait le Mac ou enverrait quelque chose vers "
-                        "l'exterieur, donc elle est bloquee et rien n'a ete fait. "
-                        "Dis « quitte le mode securite » pour la reactiver."
+                        "l'exterieur, donc elle est bloquée et rien n'a été fait. "
+                        "Dis « quitte le mode sécurité » pour la reactiver."
                     ),
                     error_code="read_only_mode",
                 ).to_livekit_dict()
@@ -513,7 +513,7 @@ class ToolRegistry:
         total = sum(counts.values())
         return ToolResult.success(
             action="clear_personal_data",
-            message=f"{total} element(s) efface(s) ({', '.join(f'{k}: {v}' for k, v in counts.items())}).",
+            message=f"{total} élément(s) efface(s) ({', '.join(f'{k}: {v}' for k, v in counts.items())}).",
             cleared=counts,
             total_cleared=total,
         )
@@ -527,7 +527,7 @@ class ToolRegistry:
         except Exception as error:
             result = ToolResult.failure(
                 action="web_answer",
-                message=f"La recherche web a echoue : {error}",
+                message=f"La recherche web a échoué : {error}",
                 error_code="system_error",
             )
         self._activity({"phase": "result", "tool": "search_the_web",

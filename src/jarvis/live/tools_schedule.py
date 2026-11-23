@@ -50,7 +50,7 @@ def schedule_tools(self) -> dict:
         if not isinstance(text, str) or not text.strip():
             return ToolResult.failure(
                 action="schedule_message",
-                message="Le message a planifier est obligatoire.",
+                message="Le message à planifier est obligatoire.",
                 error_code="invalid_text",
             ).to_livekit_dict()
         if not isinstance(recipient, str) or not recipient.strip():
@@ -71,7 +71,7 @@ def schedule_tools(self) -> dict:
         if recurrence not in ("none", "daily", "weekly"):
             return ToolResult.failure(
                 action="schedule_message",
-                message="La recurrence doit etre none, daily ou weekly.",
+                message="La recurrence doit être none, daily ou weekly.",
                 error_code="invalid_recurrence",
             ).to_livekit_dict()
 
@@ -79,7 +79,7 @@ def schedule_tools(self) -> dict:
             return ToolResult.failure(
                 action="schedule_message",
                 message=(
-                    f"Jarvis ne sait pas envoyer de message verifie sur {app_name}. "
+                    f"Jarvis ne sait pas envoyer de message vérifié sur {app_name}. "
                     "Applications prises en charge : WhatsApp et Telegram."
                 ),
                 error_code="messaging_app_unsupported",
@@ -98,7 +98,7 @@ def schedule_tools(self) -> dict:
             )
             return ToolResult.success(
                 action="schedule_message",
-                message="Message planifie.",
+                message="Message planifié.",
                 scheduled_id=row["id"],
                 recipient=row["recipient"],
                 due_at=row["due_at"],
@@ -112,7 +112,7 @@ def schedule_tools(self) -> dict:
         return ToolResult.success(
             action="schedule_message",
             message=(
-                "Envoi planifie a confirmer. Annonce le destinataire, le contenu "
+                "Envoi planifié à confirmer. Annonce le destinataire, le contenu "
                 "et l'heure, puis attends la confirmation avant confirm_action."
             ),
             requires_confirmation=True,
@@ -154,7 +154,7 @@ def schedule_tools(self) -> dict:
         ]
         return ToolResult.success(
             action="list_scheduled_messages",
-            message=f"{len(messages)} message(s) planifie(s) en attente. {len(review_items)} envoi(s) a verifier ; aucune relance automatique pour ceux-ci.",
+            message=f"{len(messages)} message(s) planifie(s) en attente. {len(review_items)} envoi(s) à vérifier ; aucune relance automatique pour ceux-ci.",
             scheduled=messages,
             count=len(messages),
             requires_review=review_items,
@@ -177,12 +177,12 @@ def schedule_tools(self) -> dict:
         if not cancelled:
             return ToolResult.failure(
                 action="cancel_scheduled_message",
-                message="Aucun message planifie en attente avec cet id.",
+                message="Aucun message planifié en attente avec cet id.",
                 error_code="scheduled_message_not_found",
             ).to_livekit_dict()
         return ToolResult.success(
             action="cancel_scheduled_message",
-            message="Message planifie annule.",
+            message="Message planifié annulé.",
             scheduled_id=message_id,
         ).to_livekit_dict()
 
@@ -223,7 +223,7 @@ def schedule_tools(self) -> dict:
             ).to_livekit_dict()
         return ToolResult.success(
             action="set_reminder",
-            message="Rappel enregistre.",
+            message="Rappel enregistré.",
             reminder_id=row["id"],
             due_at=row["due_at"],
             recurrence=row["recurrence"],
@@ -271,7 +271,7 @@ def schedule_tools(self) -> dict:
             ).to_livekit_dict()
         return ToolResult.success(
             action="cancel_reminder",
-            message="Rappel annule.",
+            message="Rappel annulé.",
             reminder_id=reminder_id,
         ).to_livekit_dict()
 

@@ -110,7 +110,7 @@ def office_tools(self) -> dict:
         if not isinstance(title, str) or not title.strip():
             return ToolResult.failure(
                 action="create_calendar_event",
-                message="Le titre de l'evenement est obligatoire.",
+                message="Le titre de l'événement est obligatoire.",
                 error_code="invalid_title",
             ).to_livekit_dict()
         from jarvis.capabilities.calendar import _parse_iso
@@ -120,13 +120,13 @@ def office_tools(self) -> dict:
         except ValueError:
             return ToolResult.failure(
                 action="create_calendar_event",
-                message="Les dates doivent etre au format ISO 8601.",
+                message="Les dates doivent être au format ISO 8601.",
                 error_code="invalid_datetime",
             ).to_livekit_dict()
         if end_dt <= start_dt:
             return ToolResult.failure(
                 action="create_calendar_event",
-                message="La fin doit etre apres le debut.",
+                message="La fin doit être après le début.",
                 error_code="invalid_range",
             ).to_livekit_dict()
 
@@ -138,7 +138,7 @@ def office_tools(self) -> dict:
         return ToolResult.success(
             action="create_calendar_event",
             message=(
-                "Evenement a confirmer. Annonce le titre, le jour et l'heure, "
+                "Événement à confirmer. Annonce le titre, le jour et l'heure, "
                 "puis attends la confirmation avant confirm_action."
             ),
             requires_confirmation=True,

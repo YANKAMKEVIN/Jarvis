@@ -21,7 +21,7 @@ class ShortcutsCapability:
             )
         except Exception as error:
             return ToolResult.failure(
-                action="list_shortcuts", message=f"Echec : {error}", error_code="system_error",
+                action="list_shortcuts", message=f"Échec : {error}", error_code="system_error",
             )
         return ToolResult.success(
             action="list_shortcuts",
@@ -39,11 +39,11 @@ class ShortcutsCapability:
             )
         except Exception as error:
             return ToolResult.failure(
-                action="run_shortcut", message=f"Echec : {error}", error_code="system_error",
+                action="run_shortcut", message=f"Échec : {error}", error_code="system_error",
             )
         return ToolResult.success(
             action="run_shortcut",
-            message=f"Raccourci « {name.strip()} » lance.",
+            message=f"Raccourci « {name.strip()} » lancé.",
             command_executed=True,
             state_confirmed=False,
             shortcut=name.strip(),

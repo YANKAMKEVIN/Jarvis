@@ -202,7 +202,7 @@ class MessagingCapability:
         if not isinstance(text, str) or not text.strip():
             return ToolResult.failure(
                 action="send_text",
-                message="Le message a envoyer est vide.",
+                message="Le message à envoyer est vide.",
                 error_code="invalid_text",
             )
 
@@ -261,8 +261,8 @@ class MessagingCapability:
             return ToolResult.failure(
                 action="send_text",
                 message=(
-                    "Le message n'a pas pu etre saisi dans le champ (bouton d'envoi "
-                    "absent). Rien n'a ete envoye."
+                    "Le message n'a pas pu être saisi dans le champ (bouton d'envoi "
+                    "absent). Rien n'a été envoyé."
                 ),
                 error_code="composer_not_filled",
             )
@@ -315,7 +315,7 @@ class MessagingCapability:
         if len(needle) < MIN_RECIPIENT_LENGTH:
             return ToolResult.failure(
                 action="verify_recipient",
-                message="Le destinataire attendu est trop court pour etre verifie.",
+                message="Le destinataire attendu est trop court pour être vérifié.",
                 error_code="invalid_recipient",
             )
 
@@ -325,8 +325,8 @@ class MessagingCapability:
             return ToolResult.failure(
                 action="verify_recipient",
                 message=(
-                    "Impossible de lire la fenetre active pour verifier le "
-                    "destinataire ; aucun envoi n'a ete prepare."
+                    "Impossible de lire la fenêtre active pour vérifier le "
+                    "destinataire ; aucun envoi n'a été préparé."
                 ),
                 error_code=active.error_code or "no_window",
             )
@@ -355,8 +355,8 @@ class MessagingCapability:
             return ToolResult.failure(
                 action="verify_recipient",
                 message=(
-                    "Impossible d'inspecter la fenetre pour verifier le "
-                    "destinataire ; aucun envoi n'a ete prepare."
+                    "Impossible d'inspecter la fenêtre pour vérifier le "
+                    "destinataire ; aucun envoi n'a été préparé."
                 ),
                 error_code=inspected.error_code or "inspect_failed",
             )
@@ -397,7 +397,7 @@ class MessagingCapability:
 
         return ToolResult.success(
             action="verify_recipient",
-            message="Le destinataire de la conversation ouverte a ete verifie.",
+            message="Le destinataire de la conversation ouverte a été vérifié.",
             recipient_verified=True,
             target_app=observed_app,
             recipient_length=len(expected_recipient),
@@ -454,7 +454,7 @@ class MessagingCapability:
         if query is None:
             return ToolResult.failure(
                 action="navigate_to_recipient",
-                message="La recherche de contact n'est pas supportee pour cette application.",
+                message="La recherche de contact n'est pas supportée pour cette application.",
                 error_code="search_not_supported",
             )
 
@@ -485,7 +485,7 @@ class MessagingCapability:
         if not search.ok:
             return ToolResult.failure(
                 action="navigate_to_recipient",
-                message="Le champ de recherche n'a pas pu etre active.",
+                message="Le champ de recherche n'a pas pu être activé.",
                 error_code=search.error_code or "search_field_not_found",
             )
 
@@ -500,7 +500,7 @@ class MessagingCapability:
         if typed.data.get("command_executed") is not True:
             return ToolResult.failure(
                 action="navigate_to_recipient",
-                message="La saisie du nom dans la recherche a echoue.",
+                message="La saisie du nom dans la recherche a échoué.",
                 error_code=typed.error_code or "command_not_executed",
             )
 
@@ -511,7 +511,7 @@ class MessagingCapability:
         if entered.data.get("command_executed") is not True:
             return ToolResult.failure(
                 action="navigate_to_recipient",
-                message="L'ouverture du resultat de recherche a echoue.",
+                message="L'ouverture du résultat de recherche a échoué.",
                 error_code=entered.error_code or "command_not_executed",
             )
 
@@ -519,7 +519,7 @@ class MessagingCapability:
 
         return ToolResult.success(
             action="navigate_to_recipient",
-            message="Navigation vers le contact envoyee ; verification en cours.",
+            message="Navigation vers le contact envoyée ; vérification en cours.",
             target_app=app_name,
             recipient_length=len(expected_recipient),
         )

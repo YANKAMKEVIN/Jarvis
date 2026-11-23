@@ -43,8 +43,8 @@ class KeyboardCapability:
         return ToolResult.success(
             action="type_text",
             message=(
-                "La commande de saisie a ete envoyee, mais Jarvis ne peut "
-                "pas confirmer que le texte a ete applique."
+                "La commande de saisie a été envoyée, mais Jarvis ne peut "
+                "pas confirmer que le texte a été appliqué."
             ),
             **state,
         )
@@ -70,7 +70,7 @@ class KeyboardCapability:
         return ToolResult.success(
             action="press_key",
             message=(
-                "La touche a ete envoyee, mais Jarvis ne peut pas confirmer "
+                "La touche a été envoyée, mais Jarvis ne peut pas confirmer "
                 "son effet dans l'application active."
             ),
             **state,
@@ -100,7 +100,7 @@ class KeyboardCapability:
         return ToolResult.success(
             action="hotkey",
             message=(
-                "Le raccourci clavier a ete envoye, mais Jarvis ne peut pas "
+                "Le raccourci clavier a été envoyé, mais Jarvis ne peut pas "
                 "confirmer son effet dans l'application active."
             ),
             **state,
@@ -128,7 +128,7 @@ class KeyboardCapability:
         return ToolResult.success(
             action="delete_selection",
             message=(
-                "La commande de suppression a ete envoyee, mais Jarvis ne peut "
+                "La commande de suppression a été envoyée, mais Jarvis ne peut "
                 "pas confirmer son effet dans l'application active."
             ),
             **state,
@@ -140,7 +140,7 @@ class KeyboardCapability:
         if not decision.allowed:
             return ToolResult.failure(
                 action=action,
-                message="Jarvis n'est pas autorise a envoyer cette action clavier.",
+                message="Jarvis n'est pas autorisé à envoyer cette action clavier.",
                 error_code="security_denied",
                 reason=decision.reason,
             )
@@ -149,7 +149,7 @@ class KeyboardCapability:
             return ToolResult.failure(
                 action=action,
                 message=(
-                    "Cette action necessite une confirmation non disponible "
+                    "Cette action nécessite une confirmation non disponible "
                     "en mode Live."
                 ),
                 error_code="confirmation_required",
@@ -173,6 +173,6 @@ class KeyboardCapability:
     def _system_error_result(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message=f"Echec de l'action clavier : {error}",
+            message=f"Échec de l'action clavier : {error}",
             error_code="system_error",
         )

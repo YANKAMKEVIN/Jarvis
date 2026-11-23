@@ -88,15 +88,15 @@ class MailCapability:
         if not remote_allowed(_MAIL_ALLOW_REMOTE) and not model_is_local(self._get_model()):
             return ToolResult.failure(
                 action,
-                "Resume refuse : le planificateur configure n'est pas local, le contenu "
-                "des mails sortirait de cette machine. Utilise un modele local (Ollama) "
+                "Résumé refusé : le planificateur configure n'est pas local, le contenu "
+                "des mails sortirait de cette machine. Utilise un modèle local (Ollama) "
                 "ou autorise explicitement l'envoi distant avec JARVIS_MAIL_ALLOW_REMOTE.",
                 "remote_model_blocked",
             )
         if self.imap_reader is None or not self.imap_reader.configured():
             return ToolResult.failure(
                 action,
-                "Le resume de mails necessite IMAP (JARVIS_IMAP_HOST / JARVIS_IMAP_USER) "
+                "Le résumé de mails nécessite IMAP (JARVIS_IMAP_HOST / JARVIS_IMAP_USER) "
                 "pour lire le corps des messages. Je peux sinon lister les non-lus.",
                 "imap_not_configured",
             )
@@ -112,7 +112,7 @@ class MailCapability:
         emails = state.get("emails", [])
         if not emails:
             return ToolResult.success(
-                action, "Aucun mail non lu a resumer.", items=[], count=0)
+                action, "Aucun mail non lu à résumer.", items=[], count=0)
 
         payload = [
             {"index": i, "from": mail.get("sender", ""),
@@ -144,8 +144,8 @@ class MailCapability:
         except Exception:
             return ToolResult.failure(
                 action,
-                "Resume indisponible : le modele n'a pas renvoye un resultat exploitable. "
-                "Rien n'est invente.",
+                "Résumé indisponible : le modèle n'a pas renvoyé un résultat exploitable. "
+                "Rien n'est inventé.",
                 "invalid_summary",
             )
 
@@ -158,7 +158,7 @@ class MailCapability:
         ]
         return ToolResult.success(
             action,
-            f"{len(items)} mail(s) non lu(s) resume(s) (genere, a verifier).",
+            f"{len(items)} mail(s) non lu(s) résumé(s) (généré, à vérifier).",
             items=items, count=len(items), generated_summary=True,
         )
 
@@ -185,7 +185,7 @@ class MailCapability:
 
         return ToolResult.success(
             action="draft_email",
-            message=f"Brouillon prepare pour {recipient.strip()} (non envoye).",
+            message=f"Brouillon prepare pour {recipient.strip()} (non envoyé).",
             **state,
         )
 
@@ -198,5 +198,5 @@ class MailCapability:
     @staticmethod
     def _system_error(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
-            action=action, message=f"Echec de la messagerie : {error}", error_code="system_error",
+            action=action, message=f"Échec de la messagerie : {error}", error_code="system_error",
         )

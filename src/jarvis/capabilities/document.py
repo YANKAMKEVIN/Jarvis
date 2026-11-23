@@ -62,8 +62,8 @@ class DocumentCapability:
             return None
         return ToolResult.failure(
             action,
-            "Analyse refusee : le planificateur configure n'est pas local, le contenu du document "
-            "sortirait de cette machine. Utilise un modele local (Ollama) ou autorise explicitement "
+            "Analyse refusée : le planificateur configure n'est pas local, le contenu du document "
+            "sortirait de cette machine. Utilise un modèle local (Ollama) ou autorise explicitement "
             "l'envoi distant avec JARVIS_DOCUMENT_ALLOW_REMOTE.",
             "remote_model_blocked",
         )
@@ -107,7 +107,7 @@ class DocumentCapability:
         except Exception as error:
             return ToolResult.failure(
                 action="ask_about_document",
-                message=f"L'analyse du document a echoue : {error}",
+                message=f"L'analyse du document a échoué : {error}",
                 error_code="model_error",
             )
 
@@ -115,7 +115,7 @@ class DocumentCapability:
         if not answer:
             return ToolResult.failure(
                 action="ask_about_document",
-                message="Le modele n'a pas renvoye de reponse.",
+                message="Le modèle n'a pas renvoyé de réponse.",
                 error_code="empty_result",
             )
         return ToolResult.success(
@@ -170,10 +170,10 @@ class DocumentCapability:
                     if item['type'] == 'shared' and not (item['evidence_left'] and item['evidence_right']):
                         raise ValueError('unsupported_evidence')
                 checked.append(item)
-            return ToolResult.success(action, 'Analyse proposee a verifier avec les extraits cites. Aucune action n’a ete executee.',
+            return ToolResult.success(action, 'Analyse proposée à vérifier avec les extraits cités. Aucune action n’a été exécutée.',
                 items=checked, documents=[doc['name'] for doc in docs], truncated=any(doc['truncated'] for doc in docs), generated_analysis=True)
         except Exception:
-            return ToolResult.failure(action, 'Analyse structuree indisponible ou preuves non verifiables. Aucun resultat n’est invente.', 'invalid_analysis')
+            return ToolResult.failure(action, 'Analyse structurée indisponible ou preuves non vérifiables. Aucun résultat n’est inventé.', 'invalid_analysis')
 
     def compare(self, left, right):
         return self._structured('compare_documents', [left, right],

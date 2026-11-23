@@ -115,7 +115,7 @@ class FilesCapability:
         return ToolResult.success(
             action="open_file",
             message=(
-                "La commande d'ouverture du fichier a ete envoyee, mais "
+                "La commande d'ouverture du fichier a été envoyée, mais "
                 "Jarvis ne peut pas confirmer visuellement l'ouverture."
             ),
             **state,
@@ -137,7 +137,7 @@ class FilesCapability:
         return ToolResult.success(
             action="open_folder",
             message=(
-                "La commande d'ouverture du dossier a ete envoyee, mais "
+                "La commande d'ouverture du dossier a été envoyée, mais "
                 "Jarvis ne peut pas confirmer visuellement l'ouverture."
             ),
             **state,
@@ -230,7 +230,7 @@ class FilesCapability:
         if not decision.allowed:
             return ToolResult.failure(
                 action=action,
-                message="Jarvis n'est pas autorise a effectuer cette action fichier.",
+                message="Jarvis n'est pas autorisé à effectuer cette action fichier.",
                 error_code="security_denied",
                 reason=decision.reason,
             )
@@ -239,7 +239,7 @@ class FilesCapability:
             return ToolResult.failure(
                 action=action,
                 message=(
-                    "Cette action necessite une confirmation non disponible "
+                    "Cette action nécessite une confirmation non disponible "
                     "en mode Live."
                 ),
                 error_code="confirmation_required",
@@ -263,6 +263,6 @@ class FilesCapability:
     def _system_error_result(action: str, error: Exception) -> ToolResult:
         return ToolResult.failure(
             action=action,
-            message=f"Echec de l'operation fichier : {error}",
+            message=f"Échec de l'opération fichier : {error}",
             error_code="system_error",
         )
