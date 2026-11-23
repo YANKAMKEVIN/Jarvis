@@ -413,6 +413,21 @@ class LiveRuntime:
         self.emit({'type':'routine_result','name':name,'ok':bool(result.get('ok')),'reason':result.get('error_code','')})
         self._task_progress()
 
+    async def _queue_missed_reminders(self):
+        """Reminders delivered since the last session, said once Jarvis is idle."""
+        from jarvis.schedule.missed import missed_announcement, missed_reminders, read_last_session_end
+        store = getattr(self.components.assistant.registry, 'reminder_store', None)
+        if store is None:
+            return None
+        try:
+            rows = await asyncio.to_thread(missed_reminders, store, read_last_session_end())
+        except Exception:
+            return None  # Never block the session on the reminder store.
+        instructions = missed_announcement(rows)
+        if instructions is not None:
+            await self._announce_task(instructions)
+        return instructions
+
     async def _announce_task(self,instructions):
         while len(self.task_announcements) >= 10:
             if self.stop_requested.is_set() or self.closing:
@@ -632,6 +647,7 @@ class LiveRuntime:
                 c.audio.play_cue("ready")
             self.state("muted" if self.mute_requested.is_set() or self._standby() else "listening")
             phase = "session"
+            await self._queue_missed_reminders()
             from jarvis.live.prompts import INSIGHT_ANNOUNCEMENT
             if not self.ptt_mode_requested.is_set() and self.wake_listener is None:
                 c.session.generate_reply(instructions=session_greeting())
@@ -762,6 +778,9 @@ class LiveRuntime:
                 "session": "La session vocale a rencontré un problème. Vérifiez la connexion et les périphériques audio.",
             }[phase]
         finally:
+            if self.ready:
+                from jarvis.schedule.missed import record_session_end
+                record_session_end()
             self.closing = True
             self.ready = False
             if self.wake_listener is not None:
