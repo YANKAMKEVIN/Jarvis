@@ -44,6 +44,8 @@ class _SingleTask:
         self._outcome: TaskOutcome | None = None
         self._id: str | None = None
         self._current_tool = None
+        self._run_started: float | None = None
+        self._budget: tuple[int, float] | None = None
         self.phase = "queued"
         self.read_only = False
         self.desktop_gate = None
@@ -76,6 +78,8 @@ class _SingleTask:
         self._steps = []
         self._current_tool = None
         self._outcome = None
+        self._run_started = None
+        self._budget = None
         self._started = self.clock()
         self._task = asyncio.get_running_loop().create_task(self._run(self._goal, self._cancel))
         return {
@@ -127,9 +131,14 @@ class _SingleTask:
             return None
         status = self._outcome.status if self._outcome is not None else (
             ("cancelling" if self._cancel.is_set() else self.phase) if self.running else "unknown")
-        return {"id": self._id, "status": status,
-                "steps": [step.to_dict() for step in self._steps],
-                "step_count": len(self._steps)}
+        snapshot = {"id": self._id, "status": status,
+                    "steps": [step.to_dict() for step in self._steps],
+                    "step_count": len(self._steps)}
+        if self.running and self._run_started is not None and self._budget is not None:
+            # Budget of the planner run (steps and seconds), shown beside the timeline.
+            snapshot.update(elapsed_seconds=int(self.clock() - self._run_started),
+                            max_steps=self._budget[0], max_seconds=int(self._budget[1]))
+        return snapshot
 
     def last_completed(self) -> tuple[str, list[str]] | None:
         """The last successfully completed task as (goal, ordered ok tool names).
@@ -212,6 +221,9 @@ class _SingleTask:
                             raise WaitingCancelled()
                         self.phase = "running"
                         engine = self.engine_factory()
+                        self._run_started = self.clock()
+                        if isinstance(engine, PlannerEngine):
+                            self._budget = (engine.max_steps, engine.max_seconds)
                         if self.read_only:
                             if not isinstance(engine, PlannerEngine):
                                 raise ValueError("Research requires a restricted planner")

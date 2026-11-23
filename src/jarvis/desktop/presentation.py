@@ -65,7 +65,12 @@ def step_kind(status):
 def mission_progress(task):
     """Short position in a mission. The planner reveals steps once executed, so no total is known."""
     done = task.get('step_count', 0)
-    if task.get('status') in {'running', 'cancelling'} and task.get('current'):
+    running = task.get('status') in {'running', 'cancelling'}
+    if running and task.get('max_steps'):
+        # Budget visible: a mission that loops shows it is burning its steps or time.
+        step = done + 1 if task.get('current') else done
+        return f"Étape {step}/{task['max_steps']} · {task.get('elapsed_seconds', 0)} s sur {task.get('max_seconds', 0)}"
+    if running and task.get('current'):
         return f'Étape {done + 1} en cours'
     return count_label(done, 'étape traitée', 'étapes traitées')
 
@@ -366,5 +371,14 @@ def project_task(snapshot):
             'read_only': snapshot.get('read_only') is True,
             'current': LABELS.get(snapshot.get('current_tool'), 'Outil Jarvis') if snapshot.get('current_tool') else '',
             'status': status if status in TASK_TEXT else 'unknown', 'steps': steps,
-            'step_count': len(raw_steps) if isinstance(raw_steps, list) else 0}
+            'step_count': len(raw_steps) if isinstance(raw_steps, list) else 0,
+            **_budget(snapshot)}
+
+
+def _budget(snapshot):
+    """Planner budget of a running mission, when the snapshot carries it."""
+    values = {key: snapshot.get(key) for key in ('elapsed_seconds', 'max_steps', 'max_seconds')}
+    if all(type(value) is int and value >= 0 for value in values.values()) and values['max_steps']:
+        return values
+    return {}
 
