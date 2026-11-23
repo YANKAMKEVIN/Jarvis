@@ -14,8 +14,12 @@ class HistoryDialog(QDialog):
         layout.addWidget(self.filter);self.list=QListWidget();self.list.setAccessibleName('Missions et procédures enregistrées');layout.addWidget(self.list)
         self.details=QPlainTextEdit();self.details.setReadOnly(True);self.details.setAccessibleName('Résultats et étapes disponibles');layout.addWidget(self.details)
         actions=QGridLayout()
-        for index,(title,callback) in enumerate([('Actualiser',self.reload),('Nouvelle mission similaire…',self.resume),('Mémoriser la dernière réussite…',self.learn),('Exporter les détails…',self.export),('Afficher les fichiers produits',self.reveal),('Effacer les résultats archivés',self.clear_archive)]):
+        for index,(title,callback) in enumerate([('Refaire',self.redo),('Actualiser',self.reload),('Nouvelle mission similaire…',self.resume),('Mémoriser la dernière réussite…',self.learn),('Exporter les détails…',self.export),('Afficher les fichiers produits',self.reveal),('Effacer les résultats archivés',self.clear_archive)]):
             b=QPushButton(title);b.clicked.connect(callback);actions.addWidget(b,index//2,index%2)
+            if callback==self.redo:
+                self.redo_button=b;b.setEnabled(False)
+                b.setToolTip('Relance la même mission terminée, ou la procédure choisie. Les envois restent à confirmer.')
+                b.setAccessibleName('Refaire la mission ou la procédure sélectionnée')
         layout.addLayout(actions);self.status=QLabel('Les objectifs sont conservés localement. L’archivage des résultats d’outils pendant 30 jours est optionnel ; aucune conversation n’est enregistrée.');self.status.setWordWrap(True);layout.addWidget(self.status)
         close=QPushButton('Fermer');close.clicked.connect(self.close);layout.addWidget(close)
         self.search.textChanged.connect(self.reload);self.filter.currentIndexChanged.connect(self.reload);self.list.currentItemChanged.connect(self.select);self.reload()
@@ -40,6 +44,7 @@ class HistoryDialog(QDialog):
         item=self.list.currentItem();return item.data(Qt.ItemDataRole.UserRole) if item else None
     def select(self,*_):
         row=self.current()
+        self.redo_button.setEnabled(bool(row) and row.get('status') in {'completed','procedure'})
         if not row:self.details.clear();return
         parts=[row['goal'],row['status']]
         for step in row.get('steps',[]):parts.append(step.get('label','')+' · '+step.get('status',''))
@@ -50,6 +55,13 @@ class HistoryDialog(QDialog):
             for card in self.experience.c.cards.values():
                 parts += [card.get('title',''),card.get('body',''),*card.get('items',[])]
         self.details.setPlainText('\n'.join(str(p) for p in parts))
+    def redo(self):
+        """Shortcut: the same completed goal (or procedure) again, through the usual guarded tools."""
+        row=self.current()
+        if not row or row.get('status') not in {'completed','procedure'}:
+            self.status.setText('Choisissez une mission terminée ou une procédure à refaire.');return
+        if row['status']=='procedure':self.experience.submit('run_procedure',{'name':row['goal']})
+        else:self.experience.submit('run_task',{'goal':row['goal']})
     def resume(self):
         row=self.current()
         if not row:return
