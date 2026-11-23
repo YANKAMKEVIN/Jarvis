@@ -21,6 +21,12 @@ SEARXNG_BASE_URL = os.environ.get(
     "SEARXNG_BASE_URL",
     "http://127.0.0.1:8888",
 )
-SEARXNG_TIMEOUT_SECONDS = float(
-    os.environ.get("SEARXNG_TIMEOUT_SECONDS", "5")
-)
+def _timeout_seconds(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, "").strip().replace(",", ".") or default)
+    except ValueError:
+        return default
+    return value if 0 < value <= 120 else default
+
+
+SEARXNG_TIMEOUT_SECONDS = _timeout_seconds("SEARXNG_TIMEOUT_SECONDS", 5.0)

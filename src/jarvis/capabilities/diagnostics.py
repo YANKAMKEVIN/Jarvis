@@ -56,7 +56,15 @@ def _default_checks() -> dict[str, Check]:
         "vision": _vision,
         "local_model": _local_model,
         "imap_mail": _imap,
+        "live_settings": _live_settings,
     }
+
+
+def _live_settings() -> tuple[bool, str]:
+    from jarvis.live.config import live_config_warnings
+
+    warnings = live_config_warnings()
+    return (not warnings), ("; ".join(warnings) if warnings else "reglages valides")
 
 
 def _accessibility() -> tuple[bool, str]:
