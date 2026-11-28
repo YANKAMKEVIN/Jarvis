@@ -52,6 +52,8 @@ SAFE_MODE_ALLOWED = frozenset({
     "remember_context", "recall_context",
     "set_reminder", "cancel_reminder", "list_reminders",
     "save_macro", "list_macros", "delete_macro", "save_task_procedure",
+    # Session timers live in memory and only speak back to the user.
+    "start_timer", "list_timers", "cancel_timer",
     # Token-usage introspection (reads the user's own local transcripts).
     "token_usage", "token_usage_by_model", "token_usage_by_project",
     "token_usage_trend", "compare_token_usage", "recent_claude_sessions",
