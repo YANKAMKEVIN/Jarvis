@@ -38,7 +38,6 @@ ALLOWED_OVERSIZE: dict[str, int] = {
     "tests/test_filesystem_tools.py": 441,
     "tests/test_interaction_capability.py": 1299,
     "tests/test_knowledge.py": 1656,
-    "tests/test_live_poc.py": 3937,
     "tests/test_macos_tools.py": 1442,
     "tests/test_memory_capability.py": 425,
     "tests/test_messaging_capability.py": 496,
