@@ -55,14 +55,10 @@ def _load():
     return json.loads(FIXTURE.read_text(encoding="utf-8")) if FIXTURE.exists() else {}
 
 
-_SNAPSHOT = _load()
-
-
-def test_update_snapshot_when_requested():
-    if os.environ.get("JARVIS_UPDATE_MODULE_API") != "1":
-        pytest.skip("snapshot regeneration not requested")
+if os.environ.get("JARVIS_UPDATE_MODULE_API") == "1":
     FIXTURE.write_text(json.dumps({m: _describe(m) for m in MODULES}, indent=1) + "\n",
                        encoding="utf-8")
+_SNAPSHOT = _load()
 
 
 @pytest.mark.parametrize("module_name", MODULES)
