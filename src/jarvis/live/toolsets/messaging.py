@@ -135,7 +135,7 @@ def build(registry: "ToolRegistry") -> dict[str, Any]:
             ).to_livekit_dict()
 
         recipient_from_memory = False
-        if has_recipient:
+        if has_recipient and isinstance(recipient, str):  # narrows str | None
             # Apply memory locally: "ma mere" -> stored contact name (or the
             # name stored for this app). The model never needs (nor
             # receives) the stored name.

@@ -50,6 +50,7 @@ ignore_missing_imports = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 no_implicit_optional = true
+check_untyped_defs = true
 
 # Pure, small modules are held to fully annotated signatures.
 [[tool.mypy.overrides]]
