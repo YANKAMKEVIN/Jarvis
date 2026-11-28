@@ -31,7 +31,6 @@ ALLOWED_OVERSIZE: dict[str, int] = {
     "src/jarvis/knowledge/service.py": 619,
     "src/jarvis/memory/store.py": 538,
     "src/jarvis/planner/tasks.py": 411,
-    "src/jarvis/tools/accessibility.py": 1196,
     "src/jarvis/tools/browser.py": 509,
     "src/jarvis/tools/filesystem.py": 887,
     "src/jarvis/tools/keyboard.py": 465,
