@@ -48,6 +48,8 @@ src/jarvis/
 ├── memory/            # Mémoire durable locale (SQLite + FTS5, filtre à secrets)
 ├── planner/           # Planification : tâches longues en arrière-plan (Ollama local)
 └── live/              # POC Gemini Live + LiveKit (isolé)
+    ├── registry.py    # Façade : ToolRegistry, create_live_registry, SAFE_MODE_ALLOWED
+    └── toolsets/      # Tools Live par domaine (système, fichiers, UI, messagerie…)
 ```
 
 Deux niveaux séparent clairement l'intention et l'exécution :
@@ -232,9 +234,21 @@ rédaction.
 ## Tests
 
 ```bash
-.venv/bin/python -m pip install -e '.[desktop,live,test]'
+.venv/bin/python -m pip install -e '.[desktop,live,test,typecheck]'
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -m 'not live' -q
+.venv/bin/python scripts/check_file_sizes.py   # aucun fichier > 400 lignes hors liste
+.venv/bin/python -m mypy                       # typage progressif (fichiers listés dans pyproject.toml)
 ```
+
+Garde-fous de structure, tous lancés par la CI :
+
+- `tests/test_live_tool_catalog.py` fige les noms, l'ordre et les schémas JSON
+  des tools Live (`tests/fixtures/live_tool_catalog.json`). Après un changement
+  volontaire du catalogue : `JARVIS_UPDATE_TOOL_CATALOG=1 pytest tests/test_live_tool_catalog.py`.
+- `scripts/check_file_sizes.py` refuse un nouveau fichier de plus de 400 lignes ;
+  les fichiers encore trop gros ont un plafond qui ne peut que baisser.
+- mypy vérifie les modules listés dans `[tool.mypy]` ; un module y entre quand
+  il est propre, sans exiger de corriger tout le dépôt d'un coup.
 
 Les contrôles de qualité avec le vrai modèle local et le Web se lancent séparément.
 Voir [la stratégie de tests et les régressions couvertes](docs/testing-quality.md).
