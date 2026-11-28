@@ -21,7 +21,6 @@ SCANNED_DIRS = ("src", "scripts", "tests")
 # Explicit, decreasing list of the files still above MAX_LINES (path: ceiling).
 ALLOWED_OVERSIZE: dict[str, int] = {
     "scripts/smoke_test.py": 1735,
-    "src/jarvis/capabilities/interaction.py": 889,
     "src/jarvis/capabilities/messaging.py": 569,
     "src/jarvis/desktop/app.py": 1739,
     "src/jarvis/desktop/charts.py": 923,
