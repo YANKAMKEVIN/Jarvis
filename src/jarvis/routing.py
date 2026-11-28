@@ -34,7 +34,9 @@ class RequestRouter:
         r"^(?:mets|regle|baisse|monte)\b.*\bvolume\b",
         r"^(?:coupe|remets)\b.*\bson\b",
         r"^(?:recherche|cherche)\b",
-        r"^(?:va|ouvre)\b.*\b(?:sur|\.com|\.fr|\.org|\.net)\b",
+        # normalize_text() turns "youtube.com" into "youtube com": match the
+        # bare top-level domain, never a literal dot (which can not survive).
+        r"^(?:va|ouvre)\b.*\b(?:sur|com|fr|org|net)\b",
         r"^(?:quelle date sommes nous|nous sommes quel jour|donne moi la date)\b",
     ]
 

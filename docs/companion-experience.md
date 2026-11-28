@@ -150,7 +150,7 @@ conceptuel n’est présenté comme une capture de l’application.
 Tests pertinents :
 
 ```sh
-QT_QPA_PLATFORM=offscreen python -m pytest tests/test_desktop*.py tests/test_macros.py tests/test_live_poc.py tests/test_read_only_mode.py tests/test_multi_missions.py -q
+QT_QPA_PLATFORM=offscreen python -m pytest tests/test_desktop*.py tests/test_macros.py tests/test_live_poc_*.py tests/test_read_only_mode.py tests/test_multi_missions.py -q
 ```
 
 La vérification native a enregistré le raccourci Carbon, les deux observateurs

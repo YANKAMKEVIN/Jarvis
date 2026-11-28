@@ -64,6 +64,24 @@ class ReadOnlyModeTests(unittest.TestCase):
         self.assertEqual(result["volume"], 42)
         self.assertEqual(audio.calls, [("get_volume",)])
 
+    def test_session_timers_stay_usable_in_safe_mode(self):
+        # Timers are in-memory and only speak back to the user: reading the
+        # remaining time must not be refused like an outward action.
+        registry, tools, _ = self._registry()
+        registry.read_only_mode = True
+
+        async def scenario():
+            started = await tools["start_timer"](60, "Essai")
+            listed = await tools["list_timers"]()
+            cancelled = await tools["cancel_timer"](started["id"])
+            await registry.aclose()
+            return started, listed, cancelled
+
+        started, listed, cancelled = asyncio.run(scenario())
+        self.assertTrue(started["ok"])
+        self.assertEqual([t["id"] for t in listed["timers"]], [started["id"]])
+        self.assertEqual(cancelled["state"], "cancelled")
+
     def test_blocked_tool_runs_again_once_safe_mode_is_off(self):
         registry, tools, audio = self._registry()
         registry.read_only_mode = True
