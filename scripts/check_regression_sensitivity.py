@@ -28,7 +28,7 @@ MUTATIONS=[
     ('sqlite_erasure_disabled','jarvis/storage_privacy.py',
      'PRAGMA secure_delete=ON', 'PRAGMA secure_delete=OFF',
      'tests/test_qa_privacy_erasure.py::test_archive_clear_removes_payload_from_database_and_wal'),
-    ('pdf_page_truncation_hidden','jarvis/tools/filesystem.py',
+    ('pdf_page_truncation_hidden','jarvis/tools/filesystem_reading.py',
      'truncated = pages_truncated or len(text) > cap', 'truncated = len(text) > cap',
      'tests/test_qa_document_privacy.py::test_page_limit_is_reported_as_incomplete_even_for_short_pdf_pages'),
     ('archive_parent_secret_kept','jarvis/desktop/result_history.py',
