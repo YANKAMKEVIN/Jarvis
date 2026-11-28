@@ -23,7 +23,6 @@ ALLOWED_OVERSIZE: dict[str, int] = {
     "scripts/smoke_test.py": 1735,
     "src/jarvis/capabilities/messaging.py": 569,
     "src/jarvis/desktop/app.py": 1739,
-    "src/jarvis/desktop/charts.py": 923,
     "src/jarvis/desktop/companion.py": 411,
     "src/jarvis/desktop/live_audio.py": 470,
     "src/jarvis/desktop/live_runtime.py": 753,
