@@ -25,7 +25,6 @@ ALLOWED_OVERSIZE: dict[str, int] = {
     "src/jarvis/desktop/app.py": 1739,
     "src/jarvis/desktop/companion.py": 411,
     "src/jarvis/desktop/live_audio.py": 470,
-    "src/jarvis/desktop/live_runtime.py": 753,
     "src/jarvis/desktop/onboarding.py": 498,
     "src/jarvis/knowledge/service.py": 619,
     "src/jarvis/memory/store.py": 538,
